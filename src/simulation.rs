@@ -19,10 +19,23 @@ use openmm_sys::{
     OpenMM_Context_create,
     OpenMM_Context_setPositions,
     OpenMM_Context_destroy,
+    OpenMM_Context_getState,
+    OpenMM_State_destroy,
+    OpenMM_State_DataType_OpenMM_State_Positions,
+    OpenMM_State_getPositions,
+    OpenMM_Vec3Array_getSize,
+    OpenMM_Vec3Array_get,
+    OpenMM_Vec3_scale,
 };
+
+use crate::frame::FrameData;
 
 pub trait Simulation {
     fn step(&mut self, steps: i32);
+}
+
+pub trait ToFrameData {
+    fn to_framedata(&self) -> FrameData;
 }
 
 pub struct TestSimulation {
@@ -63,6 +76,7 @@ impl TestSimulation {
 
 impl Drop for TestSimulation {
     fn drop(&mut self) {
+        println!("Frop!");
         unsafe {
             OpenMM_Vec3Array_destroy(self.init_pos);
             OpenMM_Context_destroy(self.context);
@@ -77,5 +91,33 @@ impl Simulation for TestSimulation {
         unsafe {
             OpenMM_Integrator_step(self.integrator, steps);
         }
+    }
+}
+
+impl ToFrameData for TestSimulation {
+    fn to_framedata(&self) -> FrameData {
+        let mut positions = Vec::<f32>::new();
+        unsafe {
+            let state = OpenMM_Context_getState(
+                self.context,
+                OpenMM_State_DataType_OpenMM_State_Positions as i32,
+                0,
+            );
+            let pos_state = OpenMM_State_getPositions(state);
+            let particle_count = OpenMM_Vec3Array_getSize(pos_state);
+            println!("{particle_count}");
+            for i in 0..particle_count {
+                let pos = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, i), 1.0);
+                positions.push(pos.x as f32);
+                positions.push(pos.y as f32);
+                positions.push(pos.z as f32);
+            }
+            OpenMM_State_destroy(state);
+        }
+        let mut frame = FrameData::empty();
+        println!("{:?}", positions);
+        frame.insert_number_value("particle.count", (positions.len() / 3) as f64).unwrap();
+        frame.insert_float_array("particle.positions", positions).unwrap();
+        frame
     }
 }
