@@ -1,15 +1,12 @@
 extern crate openmm_sys;
-use std::cell::RefCell;
-
 
 use openmm_sys::{
-    OpenMM_Force, OpenMM_Force_destroy,
+    OpenMM_Force,
     OpenMM_System,
     OpenMM_System_create, OpenMM_System_destroy,
     OpenMM_System_addForce,
     OpenMM_System_addParticle,
-    OpenMM_NonbondedForce,
-    OpenMM_NonbondedForce_create, OpenMM_NonbondedForce_destroy,
+    OpenMM_NonbondedForce_create,
     OpenMM_NonbondedForce_addParticle,
     OpenMM_Vec3,
     OpenMM_Vec3Array,
@@ -20,13 +17,8 @@ use openmm_sys::{
     OpenMM_VerletIntegrator_create,
     OpenMM_Context,
     OpenMM_Context_create,
-    OpenMM_Context_getPlatform,
     OpenMM_Context_setPositions,
-    OpenMM_Context_getState, OpenMM_Context_destroy,
-    OpenMM_Platform_getName,
-    OpenMM_State_destroy,
-    OpenMM_State_DataType_OpenMM_State_Positions,
-    OpenMM_State_getTime,
+    OpenMM_Context_destroy,
 };
 
 pub trait Simulation {
@@ -71,21 +63,17 @@ impl TestSimulation {
 
 impl Drop for TestSimulation {
     fn drop(&mut self) {
-        println!("Frop!");
         unsafe {
             OpenMM_Vec3Array_destroy(self.init_pos);
             OpenMM_Context_destroy(self.context);
             OpenMM_Integrator_destroy(self.integrator);
             OpenMM_System_destroy(self.system);
         }
-        println!("Frop ok");
     }
 }
 
 impl Simulation for TestSimulation {
     fn step(&mut self, steps: i32) {
-        unsafe {println!("{:?}", self.integrator)};
-        println!("werp");
         unsafe {
             OpenMM_Integrator_step(self.integrator, steps);
         }
