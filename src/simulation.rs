@@ -105,7 +105,6 @@ impl ToFrameData for TestSimulation {
             );
             let pos_state = OpenMM_State_getPositions(state);
             let particle_count = OpenMM_Vec3Array_getSize(pos_state);
-            println!("{particle_count}");
             for i in 0..particle_count {
                 let pos = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, i), 1.0);
                 positions.push(pos.x as f32);
@@ -115,7 +114,6 @@ impl ToFrameData for TestSimulation {
             OpenMM_State_destroy(state);
         }
         let mut frame = FrameData::empty();
-        println!("{:?}", positions);
         frame.insert_number_value("particle.count", (positions.len() / 3) as f64).unwrap();
         frame.insert_float_array("particle.positions", positions).unwrap();
         frame

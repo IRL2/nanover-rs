@@ -11,6 +11,8 @@ tonic = "0.4"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 prost = "0.7"
 prost-types = "0.7.0"
+futures = "*"
+tokio-stream = { version = "0.1", features = ["net"] }
 
 [build-dependencies]
 tonic-build = "0.4"
