@@ -4,11 +4,9 @@ use crate::proto::protocol::trajectory::{
     GetFrameResponse,
 };
 use crate::frame::FrameData;
-use crate::frame_broadcaster::FrameBroadcaster;
-use crate::broadcaster::{BroadcastReceiver, Broadcaster};
 use futures::Stream;
-use std::{error::Error, io::ErrorKind, net::ToSocketAddrs, pin::Pin, time::Duration};
-use tonic::{transport::Server, Request, Response, Status, Streaming};
+use std::{pin::Pin, time::Duration};
+use tonic::{Response, Status};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -29,7 +27,6 @@ impl Iterator for FrameResponseIterator {
 }
 
 pub struct Trajectory {
-//    frame_source: Arc<Mutex<FrameData>>,
     frame_source: Arc<Mutex<FrameData>>,
 }
 
@@ -48,11 +45,6 @@ impl TrajectoryService for Trajectory {
         _request: tonic::Request<GetFrameRequest>,
     ) -> Result<tonic::Response<Self::SubscribeLatestFramesStream>, tonic::Status> {
         println!("Hello there!");
-        //let mut frame = FrameData::empty();
-        //frame.insert_number_value("message.number", 2.3).unwrap();
-        //let frame = self.frame_source.recv().await.unwrap().unwrap();
-        //let repeat = std::iter::repeat(GetFrameResponse {frame_index: 1, frame: Some(frame)});
-        //let mut stream = Box::pin(tokio_stream::iter(repeat).throttle(Duration::from_millis(200)));
         let receiver = Arc::clone(&self.frame_source);
         let responses = FrameResponseIterator {frame_source: receiver};
         let mut stream = Box::pin(tokio_stream::iter(responses).throttle(Duration::from_millis(200)));

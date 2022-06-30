@@ -6,18 +6,8 @@ use std::{time, thread};
 use std::time::Duration;
 use tonic::transport::Server;
 use std::net::ToSocketAddrs;
-use tokio::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
-/*
-fn main() {
-    let mut simulation = TestSimulation::new();
-    println!("Hoy!");
-    println!("Hello, world!");
-    simulation.step(10);
-    println!("{:?}", simulation.to_framedata());
-}
-*/
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,19 +29,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let elapsed = now.elapsed();
             let time_left = interval - elapsed;
             thread::sleep(time_left);
-            //println!("{:?}", frame);
-            //interval.tick().await;
-            /*
-            match tx.blocking_send(Result::<_, ()>::Ok(frame)) {
-                Ok(_) => {
-                    // item (server response) was queued to be send to client
-                }
-                Err(_item) => {
-                    // output_stream was build from rx and both are dropped
-                    break;
-                }
-            }
-            */
         }
     });
     println!("Let's go!");
