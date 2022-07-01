@@ -1,7 +1,11 @@
 use narupa_rs::frame::FrameData;
 use narupa_rs::simulation::{Simulation, ToFrameData, TestSimulation};
 use narupa_rs::proto::protocol::trajectory::trajectory_service_server::TrajectoryServiceServer;
+use narupa_rs::proto::protocol::command::command_server::CommandServer;
+use narupa_rs::proto::protocol::state::state_server::StateServer;
 use narupa_rs::trajectory::Trajectory;
+use narupa_rs::commands::CommandService;
+use narupa_rs::state::StateService;
 use std::{time, thread};
 use std::time::Duration;
 use tonic::transport::Server;
@@ -33,9 +37,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     println!("Let's go!");
     let server = Trajectory::new(Arc::clone(&frame_source));
+    let command_service = CommandService {};
+    let state_service = StateService {};
     Server::builder()
         .add_service(TrajectoryServiceServer::new(server))
-        .serve("[::1]:50051".to_socket_addrs().unwrap().next().unwrap())
+        .add_service(CommandServer::new(command_service))
+        .add_service(StateServer::new(state_service))
+        .serve("[::]:50051".to_socket_addrs().unwrap().next().unwrap())
         .await
         .unwrap();
     Ok(())
