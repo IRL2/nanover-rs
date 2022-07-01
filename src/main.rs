@@ -12,10 +12,21 @@ use std::sync::{Arc, Mutex};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // We have 2 separate threads: one runs the simulation, and the other one
+    //runs the GRPC server. Here, we setup how the two threads talk
+    // to each other.
+    // TODO: actually implement the state service
+    // TODO: actually implement the command service
     let empty_frame = FrameData::empty();
     let frame_source = Arc::new(Mutex::new(empty_frame));
+
+    // Run the simulation thread.
+    // TODO: build the simulation from an input file and
+    // provide the file as a CLI argument
     let sim_clone = Arc::clone(&frame_source);
     tokio::task::spawn_blocking(move || {
+        // TODO: check if there isn't a throttled iterator, otherwise write one.
+        // TODO: make the throttling interval a CLI argument
         let mut simulation = TestSimulation::new();
         let interval = Duration::from_millis(200);
         for i in 0.. {
@@ -32,6 +43,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             thread::sleep(time_left);
         }
     });
+
+    // Run the GRPC server on the main thread.
+    // TODO: make the address and port CLI arguments
     println!("Let's go!");
     let server = Trajectory::new(Arc::clone(&frame_source));
     let command_service = CommandService {};
