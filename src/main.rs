@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(TrajectoryServiceServer::new(server))
         .add_service(CommandServer::new(command_service))
         .add_service(StateServer::new(state_service))
-        .serve("[::]:50051".to_socket_addrs().unwrap().next().unwrap())
+        .serve("[::]:38801".to_socket_addrs().unwrap().next().unwrap())
         .await
         .unwrap();
     Ok(())
