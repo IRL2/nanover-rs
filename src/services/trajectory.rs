@@ -11,6 +11,8 @@ use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tokio::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
+pub use crate::proto::protocol::trajectory::trajectory_service_server::TrajectoryServiceServer;
+
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<GetFrameResponse, Status>> + Send + Sync>>;
 
 struct FrameResponseIterator {

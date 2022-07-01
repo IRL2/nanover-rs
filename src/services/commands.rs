@@ -2,6 +2,8 @@ use crate::proto::protocol::command::command_server::Command;
 use crate::proto::protocol::command::{GetCommandsRequest, GetCommandsReply, CommandMessage, CommandReply};
 use prost::alloc::vec::Vec;
 
+pub use crate::proto::protocol::command::command_server::CommandServer;
+
 pub struct CommandService {}
 
 #[tonic::async_trait]

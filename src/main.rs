@@ -1,11 +1,8 @@
 use narupa_rs::frame::FrameData;
 use narupa_rs::simulation::{Simulation, ToFrameData, TestSimulation};
-use narupa_rs::proto::protocol::trajectory::trajectory_service_server::TrajectoryServiceServer;
-use narupa_rs::proto::protocol::command::command_server::CommandServer;
-use narupa_rs::proto::protocol::state::state_server::StateServer;
-use narupa_rs::trajectory::Trajectory;
-use narupa_rs::commands::CommandService;
-use narupa_rs::state::StateService;
+use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
+use narupa_rs::services::commands::{CommandService, CommandServer};
+use narupa_rs::services::state::{StateService, StateServer};
 use std::{time, thread};
 use std::time::Duration;
 use tonic::transport::Server;

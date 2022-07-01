@@ -11,6 +11,8 @@ use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use std::{pin::Pin, time::Duration};
 
+pub use crate::proto::protocol::state::state_server::StateServer;
+
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<StateUpdate, tonic::Status>> + Send + Sync>>;
 
