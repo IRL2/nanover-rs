@@ -9,7 +9,7 @@ use futures::Stream;
 use tonic::{Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
-use std::{error::Error, io::ErrorKind, net::ToSocketAddrs, pin::Pin, time::Duration};
+use std::{pin::Pin, time::Duration};
 
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<StateUpdate, tonic::Status>> + Send + Sync>>;
@@ -22,7 +22,7 @@ impl State for StateService {
 
     async fn subscribe_state_updates(
         &self,
-        request: tonic::Request<SubscribeStateUpdatesRequest>,
+        _request: tonic::Request<SubscribeStateUpdatesRequest>,
     ) -> Result<tonic::Response<Self::SubscribeStateUpdatesStream>, tonic::Status> {
         let repeat = std::iter::repeat(StateUpdate {changed_keys: None});
         let mut stream = Box::pin(tokio_stream::iter(repeat).throttle(Duration::from_millis(200)));
@@ -51,14 +51,14 @@ impl State for StateService {
 
     async fn update_state(
         &self,
-        request: tonic::Request<UpdateStateRequest>,
+        _request: tonic::Request<UpdateStateRequest>,
     ) -> Result<tonic::Response<UpdateStateResponse>, tonic::Status> {
         Ok(Response::new(UpdateStateResponse {success: true}))
     }
 
     async fn update_locks(
         &self,
-        request: tonic::Request<UpdateLocksRequest>,
+        _request: tonic::Request<UpdateLocksRequest>,
     ) -> Result<tonic::Response<UpdateLocksResponse>, tonic::Status> {
         Ok(Response::new(UpdateLocksResponse {success: true}))
     }
