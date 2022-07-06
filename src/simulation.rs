@@ -149,6 +149,7 @@ pub struct XMLSimulation {
     init_pos: *mut OpenMM_Vec3Array,
     integrator: *mut OpenMM_Integrator,
     context: *mut OpenMM_Context,
+    topology: pdbtbx::PDB,
 }
 
 impl XMLSimulation {
@@ -317,7 +318,7 @@ impl XMLSimulation {
             println!("Integrator read");
             let context = OpenMM_Context_create(system, integrator);
             OpenMM_Context_setPositions(context, init_pos);
-            Self {system, init_pos, integrator, context}
+            Self {system, init_pos, integrator, context, topology: structure}
         };
         sim
     }
@@ -365,6 +366,12 @@ impl ToFrameData for XMLSimulation {
         let mut frame = FrameData::empty();
         frame.insert_number_value("particle.count", (positions.len() / 3) as f64).unwrap();
         frame.insert_float_array("particle.positions", positions).unwrap();
+
+        let elements: Vec<u32> = self.topology.atoms()
+            .map(|atom| {atom.atomic_number().unwrap_or(0).try_into().unwrap()}).collect();
+        frame.insert_index_array("particle.elements", elements).unwrap();
+        
+
         frame
     }
 }
