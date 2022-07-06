@@ -33,8 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let file = File::open("17-ala.xml").unwrap();
         let file_buffer = BufReader::new(file);
         let mut simulation = XMLSimulation::new(file_buffer);
-        let interval = Duration::from_millis(200);
-        for i in 0.. {
+        let interval = Duration::from_millis(33);
+        for _i in 0.. {
             let now = time::Instant::now();
             //println!("{i}");
             simulation.step(10);
@@ -44,7 +44,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 *source = frame;
             }
             let elapsed = now.elapsed();
-            let time_left = interval - elapsed;
+            let time_left = match interval.checked_sub(elapsed) {
+                Some(d) => d,
+                None => Duration::from_millis(0),
+            };
+            println!("Time to sleep {time_left:?}");
             thread::sleep(time_left);
         }
     });

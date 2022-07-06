@@ -44,12 +44,13 @@ impl TrajectoryService for Trajectory {
 
     async fn subscribe_latest_frames(
         &self,
-        _request: tonic::Request<GetFrameRequest>,
+        request: tonic::Request<GetFrameRequest>,
     ) -> Result<tonic::Response<Self::SubscribeLatestFramesStream>, tonic::Status> {
         println!("Hello there!");
+        let interval = (request.into_inner().frame_interval * 1000.0) as u64;
         let receiver = Arc::clone(&self.frame_source);
         let responses = FrameResponseIterator {frame_source: receiver};
-        let mut stream = Box::pin(tokio_stream::iter(responses).throttle(Duration::from_millis(200)));
+        let mut stream = Box::pin(tokio_stream::iter(responses).throttle(Duration::from_millis(interval)));
         let (tx, rx) = mpsc::channel(128);
         tokio::spawn(async move {
             while let Some(item) = stream.next().await {
