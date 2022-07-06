@@ -1,5 +1,5 @@
 use narupa_rs::frame::FrameData;
-use narupa_rs::simulation::{Simulation, ToFrameData, TestSimulation};
+use narupa_rs::simulation::{Simulation, ToFrameData, XMLSimulation};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::services::commands::{CommandService, CommandServer};
 use narupa_rs::services::state::{StateService, StateServer};
@@ -8,6 +8,8 @@ use std::time::Duration;
 use tonic::transport::Server;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
+use std::fs::File;
+use std::io::BufReader;
 
 
 #[tokio::main]
@@ -27,11 +29,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::task::spawn_blocking(move || {
         // TODO: check if there isn't a throttled iterator, otherwise write one.
         // TODO: make the throttling interval a CLI argument
-        let mut simulation = TestSimulation::new();
+        //let mut simulation = TestSimulation::new();
+        let file = File::open("17-ala.xml").unwrap();
+        let file_buffer = BufReader::new(file);
+        let mut simulation = XMLSimulation::new(file_buffer);
         let interval = Duration::from_millis(200);
         for i in 0.. {
             let now = time::Instant::now();
-            println!("{i}");
+            //println!("{i}");
             simulation.step(10);
             {
                 let frame = simulation.to_framedata();

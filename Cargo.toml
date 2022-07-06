@@ -13,6 +13,8 @@ prost = "0.7"
 prost-types = "0.7.0"
 futures = "*"
 tokio-stream = { version = "0.1", features = ["net"] }
+quick-xml = "*"
+pdbtbx = "*"
 
 [build-dependencies]
 tonic-build = "0.4"
