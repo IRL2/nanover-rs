@@ -295,7 +295,12 @@ impl XMLSimulation {
             println!("Entering the unsafe section");
             let init_pos = OpenMM_Vec3Array_create(n_atoms.try_into().unwrap());
             for (i, atom) in structure.atoms().enumerate() {
-                let position = OpenMM_Vec3 {x: atom.x(), y: atom.y(), z: atom.z()};
+                // The input structure is in angstsroms, but we need to provide nm.
+                let position = OpenMM_Vec3 {
+                    x: atom.x() / 10.0,
+                    y: atom.y() / 10.0,
+                    z: atom.z() / 10.0,
+                };
                 OpenMM_Vec3Array_set(init_pos, i.try_into().unwrap(), position);
             }
             println!("Coordinate array built");
