@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::str;
 use std::io::{BufReader, Read, Cursor};
-use std::ffi::CString;
+use std::ffi::{CString, CStr};
 use openmm_sys::{
     OpenMM_Force,
     OpenMM_System,
@@ -35,6 +35,8 @@ use openmm_sys::{
     OpenMM_XmlSerializer_deserializeSystem,
     OpenMM_XmlSerializer_deserializeIntegrator,
     OpenMM_System_getNumParticles,
+    OpenMM_Context_getPlatform,
+    OpenMM_Platform_getName,
 };
 use quick_xml::Writer;
 use quick_xml::events::{Event, BytesEnd, BytesStart};
@@ -150,6 +152,7 @@ pub struct XMLSimulation {
     integrator: *mut OpenMM_Integrator,
     context: *mut OpenMM_Context,
     topology: pdbtbx::PDB,
+    platform_name: String,
 }
 
 impl XMLSimulation {
@@ -318,9 +321,19 @@ impl XMLSimulation {
             println!("Integrator read");
             let context = OpenMM_Context_create(system, integrator);
             OpenMM_Context_setPositions(context, init_pos);
-            Self {system, init_pos, integrator, context, topology: structure}
+
+            let platform = OpenMM_Context_getPlatform(context);
+            let platform_name = CStr::from_ptr(OpenMM_Platform_getName(platform))
+                .to_str().unwrap()
+                .to_string();
+
+            Self {system, init_pos, integrator, context, topology: structure, platform_name}
         };
         sim
+    }
+    
+    pub fn get_platform_name(&self) -> String {
+        self.platform_name.clone()
     }
 }
 
@@ -370,7 +383,6 @@ impl ToFrameData for XMLSimulation {
         let elements: Vec<u32> = self.topology.atoms()
             .map(|atom| {atom.atomic_number().unwrap_or(0).try_into().unwrap()}).collect();
         frame.insert_index_array("particle.elements", elements).unwrap();
-        
 
         frame
     }

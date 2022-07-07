@@ -34,6 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let file_buffer = BufReader::new(file);
         let mut simulation = XMLSimulation::new(file_buffer);
         let interval = Duration::from_millis(33);
+        println!("Platform: {}", simulation.get_platform_name());
+        println!("Start simulating");
         for _i in 0.. {
             let now = time::Instant::now();
             //println!("{i}");
