@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use prost_types::{Value, value::Kind};
 use crate::proto::protocol::{ValueArray, FloatArray, IndexArray};
 use crate::proto::protocol::value_array::Values;
+use crate::broadcaster::Mergeable;
 
 pub use crate::proto::protocol::trajectory::FrameData;
 
@@ -37,5 +38,13 @@ impl FrameData {
             None => Ok(()),
             Some(_) => Err(()),
         }
+    }
+}
+
+impl Mergeable<FrameData> for FrameData {
+    fn merge(&mut self, other: &FrameData) {
+        let cloned_other = other.clone();
+        self.values.extend(cloned_other.values);
+        self.arrays.extend(cloned_other.arrays);
     }
 }

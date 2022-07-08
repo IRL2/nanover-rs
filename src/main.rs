@@ -1,4 +1,6 @@
 use narupa_rs::frame::FrameData;
+use narupa_rs::broadcaster::Broadcaster;
+use narupa_rs::frame_broadcaster::FrameBroadcaster;
 use narupa_rs::simulation::{Simulation, ToFrameData, XMLSimulation};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::services::commands::{CommandService, CommandServer};
@@ -20,7 +22,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: actually implement the state service
     // TODO: actually implement the command service
     let empty_frame = FrameData::empty();
-    let frame_source = Arc::new(Mutex::new(empty_frame));
+    //let frame_source = Arc::new(Mutex::new(empty_frame));
+    let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame)));
 
     // Run the simulation thread.
     // TODO: build the simulation from an input file and
@@ -43,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 let frame = simulation.to_framedata();
                 let mut source = sim_clone.lock().unwrap();
-                *source = frame;
+                source.send(frame).unwrap();
             }
             let elapsed = now.elapsed();
             let time_left = match interval.checked_sub(elapsed) {
