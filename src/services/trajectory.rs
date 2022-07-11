@@ -57,13 +57,15 @@ impl TrajectoryService for Trajectory {
         let (tx, rx) = mpsc::channel(128);
         tokio::spawn(async move {
             while let Some(item) = stream.next().await {
-                match tx.send(Result::<_, Status>::Ok(item)).await {
-                    Ok(_) => {
-                        // item (server response) was queued to be send to client
-                    }
-                    Err(_item) => {
-                        // output_stream was build from rx and both are dropped
-                        break;
+                if let Some(_) = item.frame {
+                    match tx.send(Result::<_, Status>::Ok(item)).await {
+                        Ok(_) => {
+                            // item (server response) was queued to be send to client
+                        }
+                        Err(_item) => {
+                            // output_stream was build from rx and both are dropped
+                            break;
+                        }
                     }
                 }
             }
