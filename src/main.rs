@@ -37,6 +37,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let file_buffer = BufReader::new(file);
         let mut simulation = XMLSimulation::new(file_buffer);
         let interval = Duration::from_millis(33);
+        {
+            sim_clone.lock().unwrap()
+                .send(simulation.to_topology_framedata()).unwrap();
+        }
         println!("Platform: {}", simulation.get_platform_name());
         println!("Start simulating");
         for _i in 0.. {

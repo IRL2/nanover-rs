@@ -19,7 +19,6 @@ impl FrameBroadcaster {
 }
 
 impl Broadcaster for FrameBroadcaster {
-    type Update = FrameData;
     type Content = FrameData;
 
     fn get_receivers(&self) -> ReceiverVec<FrameData> {
@@ -30,7 +29,7 @@ impl Broadcaster for FrameBroadcaster {
         self.current.lock().unwrap().clone()
     }
 
-    fn update_current(&mut self, other: &Self::Update) {
+    fn update_current(&mut self, other: &Self::Content) {
         self.current.lock().unwrap().merge(other);
     }
 }

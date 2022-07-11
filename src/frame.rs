@@ -41,7 +41,7 @@ impl FrameData {
     }
 }
 
-impl Mergeable<FrameData> for FrameData {
+impl Mergeable for FrameData {
     fn merge(&mut self, other: &FrameData) {
         let cloned_other = other.clone();
         self.values.extend(cloned_other.values);
