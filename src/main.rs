@@ -1,6 +1,7 @@
 use narupa_rs::frame::FrameData;
 use narupa_rs::broadcaster::Broadcaster;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
+use narupa_rs::state_broadcaster::StateBroadcaster;
 use narupa_rs::simulation::{Simulation, ToFrameData, XMLSimulation};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::services::commands::{CommandService, CommandServer};
@@ -24,6 +25,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let empty_frame = FrameData::empty();
     //let frame_source = Arc::new(Mutex::new(empty_frame));
     let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame)));
+
+    let shared_state = Arc::new(Mutex::new(StateBroadcaster::new()));
 
     // Run the simulation thread.
     // TODO: build the simulation from an input file and
@@ -67,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Let's go!");
     let server = Trajectory::new(Arc::clone(&frame_source));
     let command_service = CommandService {};
-    let state_service = StateService {};
+    let state_service = StateService::new(Arc::clone(&shared_state));
     Server::builder()
         .add_service(TrajectoryServiceServer::new(server))
         .add_service(CommandServer::new(command_service))
