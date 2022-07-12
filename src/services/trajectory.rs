@@ -18,7 +18,6 @@ pub use crate::proto::protocol::trajectory::trajectory_service_server::Trajector
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<GetFrameResponse, Status>> + Send + Sync>>;
 
 struct FrameResponseIterator {
-    //frame_source: Arc<Mutex<FrameData>>
     frame_source: Arc<Mutex<BroadcastReceiver<FrameData>>>
 }
 
