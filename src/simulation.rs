@@ -29,6 +29,7 @@ use openmm_sys::{
     OpenMM_State_destroy,
     OpenMM_State_DataType_OpenMM_State_Positions,
     OpenMM_State_getPositions,
+    OpenMM_State_getPeriodicBoxVectors,
     OpenMM_Vec3Array_getSize,
     OpenMM_Vec3Array_get,
     OpenMM_Vec3_scale,
@@ -365,12 +366,14 @@ impl Simulation for XMLSimulation {
 impl ToFrameData for XMLSimulation {
     fn to_framedata(&self) -> FrameData {
         let mut positions = Vec::<f32>::new();
+        let mut box_vectors = Vec::<f32>::new();
         unsafe {
             let state = OpenMM_Context_getState(
                 self.context,
                 OpenMM_State_DataType_OpenMM_State_Positions as i32,
                 0,
             );
+
             let pos_state = OpenMM_State_getPositions(state);
             let particle_count = OpenMM_Vec3Array_getSize(pos_state);
             for i in 0..particle_count {
@@ -379,11 +382,27 @@ impl ToFrameData for XMLSimulation {
                 positions.push(pos.y as f32);
                 positions.push(pos.z as f32);
             }
+
+            let mut a = OpenMM_Vec3{x: 0.0, y: 0.0, z: 0.0};
+            let mut b = OpenMM_Vec3{x: 0.0, y: 0.0, z: 0.0};
+            let mut c = OpenMM_Vec3{x: 0.0, y: 0.0, z: 0.0};
+            OpenMM_State_getPeriodicBoxVectors(state, &mut a, &mut b, &mut c);
+            box_vectors.push(a.x as f32);
+            box_vectors.push(a.y as f32);
+            box_vectors.push(a.z as f32);
+            box_vectors.push(b.x as f32);
+            box_vectors.push(b.y as f32);
+            box_vectors.push(b.z as f32);
+            box_vectors.push(c.x as f32);
+            box_vectors.push(c.y as f32);
+            box_vectors.push(c.z as f32);
+
             OpenMM_State_destroy(state);
         }
         let mut frame = FrameData::empty();
         frame.insert_number_value("particle.count", (positions.len() / 3) as f64).unwrap();
         frame.insert_float_array("particle.positions", positions).unwrap();
+        frame.insert_float_array("system.box.vectors", box_vectors).unwrap();
 
         frame
     }
