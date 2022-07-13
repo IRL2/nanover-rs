@@ -20,6 +20,7 @@ pdbtbx = "*"
 tonic-build = "0.4"
 
 [dependencies.openmm-sys]
-version = "7.4.1"
+version = "*"
 #features = ["static-lib"]#, "cpu"]
+#path = "/home/jon/rust/openmm-rust/openmm-sys/"
 features = ["cpu"]
