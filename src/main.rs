@@ -2,7 +2,14 @@ use narupa_rs::frame::FrameData;
 use narupa_rs::broadcaster::Broadcaster;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
 use narupa_rs::state_broadcaster::StateBroadcaster;
-use narupa_rs::simulation::{Simulation, ToFrameData, XMLSimulation};
+use narupa_rs::simulation::{
+    Simulation,
+    ToFrameData,
+    XMLSimulation,
+    IMD,
+    IMDInteraction,
+    InteractionKind,
+};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::services::commands::{CommandService, CommandServer};
 use narupa_rs::services::state::{StateService, StateServer};
@@ -13,7 +20,84 @@ use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 use std::fs::File;
 use std::io::BufReader;
+use prost_types::value::Kind;
 
+
+fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDInteraction, ()> {
+    // Extract the interaction content that is under several layers of enums.
+    // Fail already if we cannot: it means the input does not have the expected format.
+    let content = match &state_interaction.kind {
+        Some(Kind::StructValue(inside)) => {inside},
+        _ => return Err(()),
+    };
+
+    let kind = content.fields.get("interaction_type");
+    if kind.is_none() {return Err(())};
+    let kind = kind.unwrap();
+    let kind = match &kind.kind {
+        Some(Kind::StringValue(inside)) => inside,
+        _ => return Err(()),
+    };
+    let kind = if kind == "gaussian" {
+        InteractionKind::GAUSSIAN
+    } else if kind == "spring" {
+        InteractionKind::HARMONIC
+    } else {
+        return Err(());
+    };
+
+    let max_force = content.fields.get("max_force");
+    let max_force = match max_force {
+        None => None,
+        Some(inside) => {
+            match inside.kind {
+                Some(Kind::NumberValue(value)) => Some(value),
+                _ => return Err(()),
+            }
+        }
+    };
+
+    let particles = content.fields.get("particles");
+    let particles: Vec<usize> = match particles {
+        Some(inside) => {
+            match &inside.kind {
+                Some(Kind::ListValue(values)) => {
+                    values.values
+                        .iter()
+                        .filter(|v| v.kind.is_some())
+                        .map(|v| v.kind.as_ref().unwrap())
+                        // We just ignore invalid values
+                        .filter(|v| if let Kind::NumberValue(_) = v {true} else {false})
+                        .map(|v| if let Kind::NumberValue(inner) = v {(*inner) as usize} else {panic!("Oops")})
+                        .collect()
+                },
+                _ => return Err(()),
+            }
+        }
+        _ => return Err(()),
+    };
+
+    let position = content.fields.get("position");
+    let position: Vec<f64> = match position {
+        Some(inside) => match &inside.kind {
+            Some(Kind::ListValue(values)) => {
+                values.values
+                    .iter()
+                    .filter(|v| v.kind.is_some())
+                    .map(|v| v.kind.as_ref().unwrap())
+                    .filter(|v| if let Kind::NumberValue(_) = v {true} else {false})
+                    .map(|v| if let Kind::NumberValue(inner) = v {*inner} else {panic!("Oops")})
+                    .collect()
+            },
+            _ => return Err(()),
+        },
+        _ => return Err(()),
+    };
+    if position.len() != 3 {return Err(())}
+    let position: [f64; 3] = position.try_into().unwrap();
+
+    Ok(IMDInteraction::new(position, particles, kind, max_force))
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,6 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: build the simulation from an input file and
     // provide the file as a CLI argument
     let sim_clone = Arc::clone(&frame_source);
+    let state_clone = Arc::clone(&shared_state);
     tokio::task::spawn_blocking(move || {
         // TODO: check if there isn't a throttled iterator, otherwise write one.
         // TODO: make the throttling interval a CLI argument
@@ -55,6 +140,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut source = sim_clone.lock().unwrap();
                 source.send(frame).unwrap();
             }
+            let state_interactions: Vec<IMDInteraction> = {
+                let state = state_clone.lock().unwrap();
+                let interaction_iter = state.iter();
+                interaction_iter
+                    .filter(|kv| kv.0.starts_with("interaction."))
+                    .map(|kv| {
+                        let value = kv.1;
+                        read_state_interaction(value)
+                    })
+                    .filter(|result| result.is_ok())
+                    .filter_map(|interaction| if let InteractionKind::GAUSSIAN = interaction.as_ref().unwrap().kind
+                        {Some(interaction.unwrap())} else {None}
+                    )
+                    //.inspect(|interaction| {
+                    //    println!("{interaction:?}");
+                    //})
+                    .collect()
+            };
+            let imd_interactions = simulation.compute_forces(&state_interactions);
+
+            simulation.update_imd_forces(imd_interactions).unwrap();
             let elapsed = now.elapsed();
             let time_left = match interval.checked_sub(elapsed) {
                 Some(d) => d,

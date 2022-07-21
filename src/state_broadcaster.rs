@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex};
-use std::collections::BTreeMap;
+use std::collections::{btree_map, BTreeMap};
 use prost_types::{Value, Struct};
 
 use crate::proto::protocol::state::StateUpdate;
@@ -15,6 +15,10 @@ impl StateBroadcaster {
         let state = BTreeMap::new();
         let receivers = Arc::new(Mutex::new(Vec::new()));
         Self {state, receivers}
+    }
+
+    pub fn iter(&self) -> btree_map::Iter<String, Value> {
+        self.state.iter()
     }
 }
 

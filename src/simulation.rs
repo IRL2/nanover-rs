@@ -8,6 +8,7 @@ use std::io::{BufReader, Read, Cursor};
 use std::ffi::{CString, CStr};
 use openmm_sys::{
     OpenMM_System,
+    OpenMM_System_addForce,
     OpenMM_System_destroy,
     OpenMM_Vec3,
     OpenMM_Vec3Array,
@@ -30,14 +31,54 @@ use openmm_sys::{
     OpenMM_XmlSerializer_deserializeSystem,
     OpenMM_XmlSerializer_deserializeIntegrator,
     OpenMM_System_getNumParticles,
+    OpenMM_System_getParticleMass,
     OpenMM_Context_getPlatform,
     OpenMM_Platform_getName,
+    OpenMM_Force,
+    OpenMM_CustomExternalForce,
+    OpenMM_CustomExternalForce_create,
+    OpenMM_CustomExternalForce_destroy,
+    OpenMM_CustomExternalForce_addPerParticleParameter,
+    OpenMM_CustomExternalForce_addParticle,
+    OpenMM_CustomExternalForce_setParticleParameters,
+    OpenMM_DoubleArray_create,
+    OpenMM_DoubleArray_destroy,
+    OpenMM_DoubleArray_set,
 };
 use quick_xml::Writer;
 use quick_xml::events::{Event, BytesEnd, BytesStart};
 use quick_xml::Reader;
 
 use crate::frame::FrameData;
+
+#[derive(Debug)]
+pub enum InteractionKind {
+    GAUSSIAN,
+    HARMONIC,
+}
+
+#[derive(Debug)]
+pub struct IMDInteraction {
+    position: [f64; 3],
+    particles: Vec<usize>,
+    pub kind: InteractionKind,
+    max_force: Option<f64>,
+}
+
+impl IMDInteraction {
+    pub fn new(position: [f64; 3], particles: Vec<usize>, kind: InteractionKind, max_force: Option<f64>) -> Self {
+        Self {position, particles, kind, max_force}
+    }
+}
+
+pub struct InteractionForce {
+    pub selection: usize,
+    pub force: [f64; 3],
+}
+
+pub struct Interaction {
+    pub forces: Vec<InteractionForce>,
+}
 
 pub trait Simulation {
     fn step(&mut self, steps: i32);
@@ -46,6 +87,10 @@ pub trait Simulation {
 pub trait ToFrameData {
     fn to_framedata(&self) -> FrameData;
     fn to_topology_framedata(&self) -> FrameData;
+}
+
+pub trait IMD {
+    fn update_imd_forces(&self, interactions: Vec<Interaction>) -> Result<(), ()>;
 }
 
 enum ReadState {
@@ -67,6 +112,8 @@ pub struct XMLSimulation {
     context: *mut OpenMM_Context,
     topology: pdbtbx::PDB,
     platform_name: String,
+    imd_force: *mut OpenMM_CustomExternalForce,
+    n_particles: usize,
 }
 
 impl XMLSimulation {
@@ -223,14 +270,21 @@ impl XMLSimulation {
             }
             println!("Coordinate array built");
 
-            //println!("{}", system_content.to_str().unwrap());
             {
                 let mut file = File::create("foo.xml").unwrap();
                 file.write_all(system_content.to_bytes()).unwrap();
             }
             let system = OpenMM_XmlSerializer_deserializeSystem(system_content.as_ptr());
             println!("System read");
-            println!("Paticles in system: {}", OpenMM_System_getNumParticles(system));
+            let n_particles = OpenMM_System_getNumParticles(system);
+            let imd_force = Self::add_imd_force(n_particles);
+            let cast_as_force = imd_force as *mut OpenMM_Force;
+            OpenMM_System_addForce(system, cast_as_force);
+            let n_particles = n_particles as usize;
+            if n_particles != n_atoms {
+                panic!("The number of particles in the structure does not match the system.");
+            }
+            println!("Particles in system: {}", n_particles);
             let integrator = OpenMM_XmlSerializer_deserializeIntegrator(integrator_content.as_ptr());
             println!("Integrator read");
             let context = OpenMM_Context_create(system, integrator);
@@ -241,13 +295,108 @@ impl XMLSimulation {
                 .to_str().unwrap()
                 .to_string();
 
-            Self {system, init_pos, integrator, context, topology: structure, platform_name}
+            Self {
+                system,
+                init_pos,
+                integrator,
+                context,
+                topology: structure,
+                platform_name,
+                imd_force,
+                n_particles,
+            }
         };
         sim
     }
     
     pub fn get_platform_name(&self) -> String {
         self.platform_name.clone()
+    }
+
+    unsafe fn add_imd_force(n_particles: i32) -> *mut OpenMM_CustomExternalForce {
+        let energy_expression = CString::new("-fx * x - fy * y - fz * z").unwrap();
+        let force = OpenMM_CustomExternalForce_create(energy_expression.into_raw() as *const i8);
+        OpenMM_CustomExternalForce_addPerParticleParameter(
+            force, CString::new("fx").unwrap().into_raw());
+        OpenMM_CustomExternalForce_addPerParticleParameter(
+            force, CString::new("fy").unwrap().into_raw());
+        OpenMM_CustomExternalForce_addPerParticleParameter(
+            force, CString::new("fz").unwrap().into_raw());
+        for i in 0..n_particles {
+            let zeros = OpenMM_DoubleArray_create(3);
+            OpenMM_DoubleArray_set(zeros, 0, 0.0);
+            OpenMM_DoubleArray_set(zeros, 1, 0.0);
+            OpenMM_DoubleArray_set(zeros, 2, 0.0);
+            OpenMM_CustomExternalForce_addParticle(force, i, zeros);
+        }
+        force
+    }
+
+    pub fn compute_forces(&self, imd_interaction: &Vec<IMDInteraction>) -> Vec<Interaction> {
+        unsafe {
+            let state = OpenMM_Context_getState(
+                self.context,
+                OpenMM_State_DataType_OpenMM_State_Positions as i32,
+                0,
+            );
+            let pos_state = OpenMM_State_getPositions(state);
+            let interactions = imd_interaction.iter().map(|imd| {
+                let selection: Vec<i32> = imd.particles.iter()
+                    // *Ignore* particle indices that are out of bound.
+                    .filter(|p| **p < self.n_particles)
+                    // Convert particle indices to i32 so we can use them
+                    // in OpenMM methods. *Ignore* indices that do not fit.
+                    .flat_map(|p| (*p).try_into())
+                    .collect();
+                let (com_sum, total_mass) = selection.iter()
+                    // Retrieve the position and mass of the selected particles.
+                    .map(|p| {
+                        let position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *p), 1.0);
+                        let mass = OpenMM_System_getParticleMass(self.system, *p);
+                        ([position.x, position.y, position.z], mass)
+                    })
+                    .fold(([0.0, 0.0, 0.0], 0.0), |acc, x| {
+                        (
+                            [
+                                acc.0[0] + x.0[0] * x.1,
+                                acc.0[1] + x.0[1] * x.1,
+                                acc.0[2] + x.0[2] * x.1,
+                            ],
+                            acc.1 + x.1
+                        )
+                    });
+                let com = [
+                    com_sum[0] / total_mass,
+                    com_sum[1] / total_mass,
+                    com_sum[2] / total_mass,
+                ];
+                let c = imd.position;
+                let diff = [
+                    com[0] - c[0],
+                    com[1] - c[1],
+                    com[2] - c[2], 
+                ];
+                let sigma_sqr = 1.0;  // For now we use this as a constant. It is in the python version.
+                let distance_sqr = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
+                let gauss = (-distance_sqr / (2.0 * sigma_sqr)).exp();
+                let com_force = [
+                    -(diff[0] / sigma_sqr) * gauss,
+                    -(diff[1] / sigma_sqr) * gauss,
+                    -(diff[2] / sigma_sqr) * gauss,
+                ];
+                let force_per_particle = [
+                    com_force[0] / self.n_particles as f64,
+                    com_force[1] / self.n_particles as f64,
+                    com_force[2] / self.n_particles as f64,
+                ];
+                Interaction {forces: selection.iter().map(|p| InteractionForce {selection: *p as usize, force: force_per_particle}).collect()}
+            })
+            .collect();
+
+            OpenMM_State_destroy(state);
+
+            interactions
+        }
     }
 }
 
@@ -259,6 +408,7 @@ impl Drop for XMLSimulation {
             OpenMM_Context_destroy(self.context);
             OpenMM_Integrator_destroy(self.integrator);
             OpenMM_System_destroy(self.system);
+            OpenMM_CustomExternalForce_destroy(self.imd_force);
         }
     }
 }
@@ -326,5 +476,29 @@ impl ToFrameData for XMLSimulation {
         frame.insert_index_array("particle.elements", elements).unwrap();
 
         frame
+    }
+}
+
+impl IMD for XMLSimulation {
+    fn update_imd_forces(&self, interactions: Vec<Interaction>) -> Result<(), ()> {
+        for interaction in interactions {
+            for particle in interaction.forces {
+                let index: i32 = particle.selection
+                    .try_into()
+                    .expect("Particle index does not fir an i32.");
+                if particle.selection >= self.n_particles {
+                    return Err(());
+                }
+                unsafe {
+                    let force_array = OpenMM_DoubleArray_create(3);
+                    OpenMM_DoubleArray_set(force_array, 0, particle.force[0]);
+                    OpenMM_DoubleArray_set(force_array, 1, particle.force[1]);
+                    OpenMM_DoubleArray_set(force_array, 2, particle.force[2]);
+                    OpenMM_CustomExternalForce_setParticleParameters(
+                        self.imd_force, index, index, force_array);
+                }       
+            }
+        }
+        Ok(())
     }
 }
