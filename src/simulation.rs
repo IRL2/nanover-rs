@@ -6,6 +6,7 @@ use std::io::prelude::*;
 use std::str;
 use std::io::{BufReader, Read, Cursor};
 use std::ffi::{CString, CStr};
+use std::collections::{BTreeMap, HashSet};
 use openmm_sys::{
     OpenMM_System,
     OpenMM_System_addForce,
@@ -90,7 +91,7 @@ pub trait ToFrameData {
 }
 
 pub trait IMD {
-    fn update_imd_forces(&self, interactions: Vec<Interaction>) -> Result<(), ()>;
+    fn update_imd_forces(&mut self, interactions: Vec<Interaction>) -> Result<(), ()>;
 }
 
 enum ReadState {
@@ -114,6 +115,7 @@ pub struct XMLSimulation {
     platform_name: String,
     imd_force: *mut OpenMM_CustomExternalForce,
     n_particles: usize,
+    previous_particle_touched: HashSet<i32>,
 }
 
 impl XMLSimulation {
@@ -294,6 +296,8 @@ impl XMLSimulation {
             let platform_name = CStr::from_ptr(OpenMM_Platform_getName(platform))
                 .to_str().unwrap()
                 .to_string();
+            
+            let previous_particle_touched = HashSet::new();
 
             Self {
                 system,
@@ -304,6 +308,7 @@ impl XMLSimulation {
                 platform_name,
                 imd_force,
                 n_particles,
+                previous_particle_touched,
             }
         };
         sim
@@ -480,25 +485,51 @@ impl ToFrameData for XMLSimulation {
 }
 
 impl IMD for XMLSimulation {
-    fn update_imd_forces(&self, interactions: Vec<Interaction>) -> Result<(), ()> {
-        for interaction in interactions {
-            for particle in interaction.forces {
-                let index: i32 = particle.selection
-                    .try_into()
-                    .expect("Particle index does not fir an i32.");
-                if particle.selection >= self.n_particles {
-                    return Err(());
-                }
-                unsafe {
-                    let force_array = OpenMM_DoubleArray_create(3);
-                    OpenMM_DoubleArray_set(force_array, 0, particle.force[0]);
-                    OpenMM_DoubleArray_set(force_array, 1, particle.force[1]);
-                    OpenMM_DoubleArray_set(force_array, 2, particle.force[2]);
-                    OpenMM_CustomExternalForce_setParticleParameters(
-                        self.imd_force, index, index, force_array);
-                }       
+    fn update_imd_forces(&mut self, interactions: Vec<Interaction>) -> Result<(), ()> {
+        let mut forces = zeroed_out(&self.previous_particle_touched);
+        let accumulated_forces = accumulate_forces(interactions);
+        self.previous_particle_touched = HashSet::new();
+        accumulated_forces.iter().for_each(|kv| {self.previous_particle_touched.insert(*kv.0);});
+
+        forces.extend(accumulated_forces);
+        for (index, force) in forces {
+            if index as usize >= self.n_particles {
+                return Err(());
+            }
+            unsafe {
+                let force_array = OpenMM_DoubleArray_create(3);
+                OpenMM_DoubleArray_set(force_array, 0, force[0]);
+                OpenMM_DoubleArray_set(force_array, 1, force[1]);
+                OpenMM_DoubleArray_set(force_array, 2, force[2]);
+                OpenMM_CustomExternalForce_setParticleParameters(
+                    self.imd_force, index, index, force_array);
             }
         }
         Ok(())
     }
+}
+
+fn accumulate_forces(interactions: Vec<Interaction>) -> BTreeMap<i32, [f64; 3]> {
+    let mut btree: BTreeMap<i32, [f64;3]> = BTreeMap::new();
+    for interaction in interactions {
+        for particle in interaction.forces {
+            let index: i32 = particle.selection
+                .try_into()
+                .expect("Particle index does not fit an i32.");
+            btree.entry(index)
+                .and_modify(|f| {
+                    f[0] += particle.force[0];
+                    f[1] += particle.force[1];
+                    f[2] += particle.force[2];
+                })
+                .or_insert(particle.force);
+        }
+    }
+    btree
+}
+
+fn zeroed_out(indices: &HashSet<i32>) -> BTreeMap<i32, [f64; 3]> {
+    let mut btree: BTreeMap<i32, [f64; 3]> = BTreeMap::new();
+    indices.iter().for_each(|i| {btree.insert(*i, [0.0, 0.0, 0.0]);});
+    btree
 }
