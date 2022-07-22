@@ -7,6 +7,7 @@ use std::str;
 use std::io::{BufReader, Read, Cursor};
 use std::ffi::{CString, CStr};
 use std::collections::{BTreeMap, HashSet};
+use std::env;
 use openmm_sys::{
     OpenMM_System,
     OpenMM_System_addForce,
@@ -36,6 +37,7 @@ use openmm_sys::{
     OpenMM_Context_getPlatform,
     OpenMM_Platform_getName,
     OpenMM_Platform_getNumPlatforms,
+    OpenMM_Platform_loadPluginsFromDirectory,
     OpenMM_Force,
     OpenMM_CustomExternalForce,
     OpenMM_CustomExternalForce_create,
@@ -262,6 +264,18 @@ impl XMLSimulation {
 
         let sim = unsafe {
             println!("Entering the unsafe section");
+
+            println!("Loading plugins");
+            match env::var("OPENMM_PLUGIN_DIR") {
+                Ok(dirname) => {
+                    let lib_directory = CString::new(dirname).unwrap();
+                    OpenMM_Platform_loadPluginsFromDirectory(lib_directory.into_raw());
+                },
+                Err(_) => {
+                    println!("No plugin to load, set OPENMM_PLUGIN_DIR");
+                },
+            }
+
             let n_platform = OpenMM_Platform_getNumPlatforms();
             println!("Number of platforms regitered: {n_platform}");
 
