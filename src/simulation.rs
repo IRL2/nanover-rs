@@ -35,6 +35,7 @@ use openmm_sys::{
     OpenMM_System_getParticleMass,
     OpenMM_Context_getPlatform,
     OpenMM_Platform_getName,
+    OpenMM_Platform_getNumPlatforms,
     OpenMM_Force,
     OpenMM_CustomExternalForce,
     OpenMM_CustomExternalForce_create,
@@ -261,6 +262,9 @@ impl XMLSimulation {
 
         let sim = unsafe {
             println!("Entering the unsafe section");
+            let n_platform = OpenMM_Platform_getNumPlatforms();
+            println!("Number of platforms regitered: {n_platform}");
+
             let init_pos = OpenMM_Vec3Array_create(n_atoms.try_into().unwrap());
             for (i, atom) in structure.atoms().enumerate() {
                 // The input structure is in angstsroms, but we need to provide nm.
