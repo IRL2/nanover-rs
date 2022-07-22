@@ -75,11 +75,12 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
                 Some(Kind::ListValue(values)) => {
                     values.values
                         .iter()
-                        .filter(|v| v.kind.is_some())
-                        .map(|v| v.kind.as_ref().unwrap())
+                        .filter_map(|v| v.kind.as_ref())
                         // We just ignore invalid values
-                        .filter(|v| matches!(v, Kind::NumberValue(_)))
-                        .map(|v| if let Kind::NumberValue(inner) = v {(*inner) as usize} else {panic!("Oops")})
+                        .filter_map(|v| match v {
+                            Kind::NumberValue(inner) => Some((*inner) as usize),
+                            _ => None,
+                        })
                         .collect()
                 },
                 _ => return Err(()),
@@ -94,10 +95,11 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
             Some(Kind::ListValue(values)) => {
                 values.values
                     .iter()
-                    .filter(|v| v.kind.is_some())
-                    .map(|v| v.kind.as_ref().unwrap())
-                    .filter(|v| matches!(v, Kind::NumberValue(_)))
-                    .map(|v| if let Kind::NumberValue(inner) = v {*inner} else {panic!("Oops")})
+                    .filter_map(|v| v.kind.as_ref())
+                    .filter_map(|v| match v {
+                        Kind::NumberValue(inner) => Some(*inner),
+                        _ => None,
+                    })
                     .collect()
             },
             _ => return Err(()),
