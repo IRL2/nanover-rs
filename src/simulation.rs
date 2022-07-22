@@ -42,6 +42,7 @@ use openmm_sys::{
     OpenMM_CustomExternalForce_addPerParticleParameter,
     OpenMM_CustomExternalForce_addParticle,
     OpenMM_CustomExternalForce_setParticleParameters,
+    OpenMM_CustomExternalForce_updateParametersInContext,
     OpenMM_DoubleArray_create,
     OpenMM_DoubleArray_set,
 };
@@ -504,6 +505,11 @@ impl IMD for XMLSimulation {
                     self.imd_force, index, index, force_array);
             }
         }
+
+        unsafe {
+            OpenMM_CustomExternalForce_updateParametersInContext(self.imd_force, self.context);
+        }
+
         Ok(())
     }
 }
