@@ -57,6 +57,17 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
         }
     };
 
+    let scale = content.fields.get("scale");
+    let scale = match scale {
+        None => 1.0,
+        Some(inside) => {
+            match inside.kind {
+                Some(Kind::NumberValue(value)) => value,
+                _ => return Err(()),
+            }
+        }
+    };
+
     let particles = content.fields.get("particles");
     let particles: Vec<usize> = match particles {
         Some(inside) => {
@@ -96,7 +107,7 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
     if position.len() != 3 {return Err(())}
     let position: [f64; 3] = position.try_into().unwrap();
 
-    Ok(IMDInteraction::new(position, particles, kind, max_force))
+    Ok(IMDInteraction::new(position, particles, kind, max_force, scale))
 }
 
 #[tokio::main]

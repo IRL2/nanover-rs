@@ -64,11 +64,12 @@ pub struct IMDInteraction {
     particles: Vec<usize>,
     pub kind: InteractionKind,
     max_force: Option<f64>,
+    scale: f64,
 }
 
 impl IMDInteraction {
-    pub fn new(position: [f64; 3], particles: Vec<usize>, kind: InteractionKind, max_force: Option<f64>) -> Self {
-        Self {position, particles, kind, max_force}
+    pub fn new(position: [f64; 3], particles: Vec<usize>, kind: InteractionKind, max_force: Option<f64>, scale: f64) -> Self {
+        Self {position, particles, kind, max_force, scale}
     }
 }
 
@@ -353,13 +354,16 @@ impl XMLSimulation {
                     // in OpenMM methods. *Ignore* indices that do not fit.
                     .flat_map(|p| (*p).try_into())
                     .collect();
+                let masses: Vec<f64> = selection.iter()
+                    .map(|p| OpenMM_System_getParticleMass(self.system, *p))
+                    .collect();
                 let (com_sum, total_mass) = selection.iter()
-                    // Retrieve the position and mass of the selected particles.
+                    // Retrieve the position the selected particles.
                     .map(|p| {
                         let position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *p), 1.0);
-                        let mass = OpenMM_System_getParticleMass(self.system, *p);
-                        ([position.x, position.y, position.z], mass)
+                        [position.x, position.y, position.z]
                     })
+                    .zip(&masses)
                     .fold(([0.0, 0.0, 0.0], 0.0), |acc, x| {
                         (
                             [
@@ -381,20 +385,26 @@ impl XMLSimulation {
                     com[1] - c[1],
                     com[2] - c[2], 
                 ];
-                let sigma_sqr = 1.0;  // For now we use this as a constant. It is in the python version.
-                let distance_sqr = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
-                let gauss = (-distance_sqr / (2.0 * sigma_sqr)).exp();
-                let com_force = [
-                    -(diff[0] / sigma_sqr) * gauss,
-                    -(diff[1] / sigma_sqr) * gauss,
-                    -(diff[2] / sigma_sqr) * gauss,
-                ];
+                let sigma = 1.0;  // For now we use this as a constant. It is in the python version.
+                let com_force = compute_gaussian_force(diff, sigma);
+                
                 let force_per_particle = [
-                    com_force[0] / self.n_particles as f64,
-                    com_force[1] / self.n_particles as f64,
-                    com_force[2] / self.n_particles as f64,
+                    imd.scale * com_force[0] / self.n_particles as f64,
+                    imd.scale * com_force[1] / self.n_particles as f64,
+                    imd.scale * com_force[2] / self.n_particles as f64,
                 ];
-                Interaction {forces: selection.iter().map(|p| InteractionForce {selection: *p as usize, force: force_per_particle}).collect()}
+                Interaction {
+                    forces: selection.iter().zip(&masses)
+                        .map(|pm| InteractionForce {
+                            selection: *pm.0 as usize,
+                            force: [
+                                force_per_particle[0] * pm.1,
+                                force_per_particle[1] * pm.1,
+                                force_per_particle[2] * pm.1,
+                            ]
+                        })
+                        .collect()
+                }
             })
             .collect();
 
@@ -537,4 +547,15 @@ fn zeroed_out(indices: &HashSet<i32>) -> BTreeMap<i32, [f64; 3]> {
     let mut btree: BTreeMap<i32, [f64; 3]> = BTreeMap::new();
     indices.iter().for_each(|i| {btree.insert(*i, [0.0, 0.0, 0.0]);});
     btree
+}
+
+fn compute_gaussian_force(diff: [f64; 3], sigma: f64) -> [f64; 3] {
+    let sigma_sqr = sigma * sigma;
+    let distance_sqr = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
+    let gauss = (-distance_sqr / (2.0 * sigma_sqr)).exp();
+    [
+        -(diff[0] / sigma_sqr) * gauss,
+        -(diff[1] / sigma_sqr) * gauss,
+        -(diff[2] / sigma_sqr) * gauss,
+    ]
 }
