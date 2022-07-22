@@ -43,7 +43,6 @@ use openmm_sys::{
     OpenMM_CustomExternalForce_addParticle,
     OpenMM_CustomExternalForce_setParticleParameters,
     OpenMM_DoubleArray_create,
-    OpenMM_DoubleArray_destroy,
     OpenMM_DoubleArray_set,
 };
 use quick_xml::Writer;
@@ -337,7 +336,7 @@ impl XMLSimulation {
         force
     }
 
-    pub fn compute_forces(&self, imd_interaction: &Vec<IMDInteraction>) -> Vec<Interaction> {
+    pub fn compute_forces(&self, imd_interaction: &[IMDInteraction]) -> Vec<Interaction> {
         unsafe {
             let state = OpenMM_Context_getState(
                 self.context,

@@ -12,7 +12,7 @@ pub trait Broadcaster {
 
     fn get_rx(&mut self) -> Arc<Mutex<BroadcastReceiver<Self::Content>>> {
         let current = self.get_current();
-        let receiver = Arc::new(Mutex::new(BroadcastReceiver::new(current.clone())));
+        let receiver = Arc::new(Mutex::new(BroadcastReceiver::new(current)));
         let clone = Arc::clone(&receiver);
         self.get_receivers().lock().unwrap().push(receiver);
         clone

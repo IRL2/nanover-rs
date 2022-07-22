@@ -67,7 +67,7 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
                         .filter(|v| v.kind.is_some())
                         .map(|v| v.kind.as_ref().unwrap())
                         // We just ignore invalid values
-                        .filter(|v| if let Kind::NumberValue(_) = v {true} else {false})
+                        .filter(|v| matches!(v, Kind::NumberValue(_)))
                         .map(|v| if let Kind::NumberValue(inner) = v {(*inner) as usize} else {panic!("Oops")})
                         .collect()
                 },
@@ -85,7 +85,7 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
                     .iter()
                     .filter(|v| v.kind.is_some())
                     .map(|v| v.kind.as_ref().unwrap())
-                    .filter(|v| if let Kind::NumberValue(_) = v {true} else {false})
+                    .filter(|v| matches!(v, Kind::NumberValue(_)))
                     .map(|v| if let Kind::NumberValue(inner) = v {*inner} else {panic!("Oops")})
                     .collect()
             },
@@ -102,7 +102,7 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // We have 2 separate threads: one runs the simulation, and the other one
-    //runs the GRPC server. Here, we setup how the two threads talk
+    // runs the GRPC server. Here, we setup how the two threads talk
     // to each other.
     // TODO: actually implement the state service
     // TODO: actually implement the command service

@@ -22,6 +22,12 @@ impl StateBroadcaster {
     }
 }
 
+impl Default for StateBroadcaster {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Broadcaster for StateBroadcaster {
     type Content = StateUpdate;
 

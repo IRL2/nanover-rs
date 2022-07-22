@@ -26,7 +26,7 @@ impl Iterator for FrameResponseIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         let frame = self.frame_source.lock().unwrap().recv();
-        Some(GetFrameResponse {frame: frame, frame_index: 0})
+        Some(GetFrameResponse {frame, frame_index: 0})
     }
 }
 
@@ -36,7 +36,7 @@ pub struct Trajectory {
 
 impl Trajectory {
     pub fn new(frame_source: Arc<Mutex<FrameBroadcaster>>) -> Self {
-        Self {frame_source: frame_source}
+        Self {frame_source}
     }
 }
 
@@ -56,7 +56,7 @@ impl TrajectoryService for Trajectory {
         let (tx, rx) = mpsc::channel(128);
         tokio::spawn(async move {
             while let Some(item) = stream.next().await {
-                if let Some(_) = item.frame {
+                if item.frame.is_some() {
                     match tx.send(Result::<_, Status>::Ok(item)).await {
                         Ok(_) => {
                             // item (server response) was queued to be send to client
