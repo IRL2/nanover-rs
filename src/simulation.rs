@@ -386,7 +386,10 @@ impl XMLSimulation {
                     com[2] - c[2], 
                 ];
                 let sigma = 1.0;  // For now we use this as a constant. It is in the python version.
-                let com_force = compute_gaussian_force(diff, sigma);
+                let com_force = match imd.kind {
+                    InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
+                    InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
+                };
                 
                 let force_per_particle = [
                     imd.scale * com_force[0] / self.n_particles as f64,
@@ -500,10 +503,10 @@ impl IMD for XMLSimulation {
         let accumulated_forces = accumulate_forces(interactions);
         self.previous_particle_touched = HashSet::new();
         accumulated_forces.iter().for_each(|kv| {self.previous_particle_touched.insert(*kv.0);});
-
         forces.extend(accumulated_forces);
-        for (index, force) in forces {
-            if index as usize >= self.n_particles {
+
+        for (index, force) in &forces {
+            if *index as usize >= self.n_particles {
                 return Err(());
             }
             unsafe {
@@ -512,7 +515,7 @@ impl IMD for XMLSimulation {
                 OpenMM_DoubleArray_set(force_array, 1, force[1]);
                 OpenMM_DoubleArray_set(force_array, 2, force[2]);
                 OpenMM_CustomExternalForce_setParticleParameters(
-                    self.imd_force, index, index, force_array);
+                    self.imd_force, *index, *index, force_array);
             }
         }
 
@@ -557,5 +560,14 @@ fn compute_gaussian_force(diff: [f64; 3], sigma: f64) -> [f64; 3] {
         -(diff[0] / sigma_sqr) * gauss,
         -(diff[1] / sigma_sqr) * gauss,
         -(diff[2] / sigma_sqr) * gauss,
+    ]
+}
+
+fn compute_harmonic_force(diff: [f64; 3], k: f64) -> [f64; 3] {
+    let factor = -2.0 * k;
+    [
+        factor * diff[0],
+        factor * diff[1],
+        factor * diff[2],
     ]
 }

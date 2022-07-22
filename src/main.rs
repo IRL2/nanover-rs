@@ -161,9 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         read_state_interaction(value)
                     })
                     .filter(|result| result.is_ok())
-                    .filter_map(|interaction| if let InteractionKind::GAUSSIAN = interaction.as_ref().unwrap().kind
-                        {Some(interaction.unwrap())} else {None}
-                    )
+                    .filter_map(|interaction| interaction.ok())
                     //.inspect(|interaction| {
                     //    println!("{interaction:?}");
                     //})
@@ -177,7 +175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(d) => d,
                 None => Duration::from_millis(0),
             };
-            println!("Time to sleep {time_left:?}");
+            //println!("Time to sleep {time_left:?}");
             thread::sleep(time_left);
         }
     });
