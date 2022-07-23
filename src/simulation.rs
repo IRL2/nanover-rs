@@ -365,6 +365,7 @@ impl XMLSimulation {
             );
             let pos_state = OpenMM_State_getPositions(state);
             let interactions = imd_interaction.iter().map(|imd| {
+                let max_force = imd.max_force.unwrap_or(f64::INFINITY);
                 let selection: Vec<i32> = imd.particles.iter()
                     // *Ignore* particle indices that are out of bound.
                     .filter(|p| **p < self.n_particles)
@@ -419,9 +420,9 @@ impl XMLSimulation {
                         .map(|pm| InteractionForce {
                             selection: *pm.0 as usize,
                             force: [
-                                force_per_particle[0] * pm.1,
-                                force_per_particle[1] * pm.1,
-                                force_per_particle[2] * pm.1,
+                                (force_per_particle[0] * pm.1).clamp(-max_force, max_force),
+                                (force_per_particle[1] * pm.1).clamp(-max_force, max_force),
+                                (force_per_particle[2] * pm.1).clamp(-max_force, max_force),
                             ]
                         })
                         .collect()
