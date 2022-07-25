@@ -11,7 +11,9 @@ use futures::Stream;
 use tonic::{Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use prost_types::value::Kind;
 use std::{pin::Pin, time::Duration, sync::{Arc, Mutex}};
+use std::collections::BTreeMap;
 
 pub use crate::proto::protocol::state::state_server::StateServer;
 
@@ -94,8 +96,39 @@ impl State for StateService {
 
     async fn update_locks(
         &self,
-        _request: tonic::Request<UpdateLocksRequest>,
+        request: tonic::Request<UpdateLocksRequest>,
     ) -> Result<tonic::Response<UpdateLocksResponse>, tonic::Status> {
-        Ok(Response::new(UpdateLocksResponse {success: true}))
+        let inner_request = request.into_inner();
+        let success_response = Ok(Response::new(UpdateLocksResponse {success: true}));
+
+        // This is an undocumented behavior in the python version:
+        // the lock_keys attribute of the request can be None, but
+        // this is not handled by the python version of te server.
+        // Hre, we assume that this case is valid and results in a
+        // no-op.
+        if inner_request.lock_keys.is_none() {return success_response};
+        let lock_keys = inner_request.lock_keys.unwrap();
+
+        let token = inner_request.access_token;
+        let mut requested_updates: BTreeMap<String, Option<Duration>> = BTreeMap::new();
+        for update in lock_keys.fields.into_iter() {
+            let (key, value) = update;
+            match value.kind {
+                // Protobuf values can be empty without being null.
+                // Here, we conflate a lack of value and a null value.
+                None => requested_updates.insert(key.clone(), None),
+
+                Some(Kind::NumberValue(seconds)) => requested_updates.insert(key.clone(), Some(Duration::from_secs_f64(seconds))),
+                Some(_) => {
+                    return Err(tonic::Status::invalid_argument("Misformated lock update."));
+                },
+            };
+        }
+
+        let mut state = self.shared_state.lock().unwrap();
+        match state.atomic_lock_updates(token, requested_updates) {
+            Ok(()) => success_response,
+            Err(()) => Ok(Response::new(UpdateLocksResponse {success: false})),
+        }
     }
 }

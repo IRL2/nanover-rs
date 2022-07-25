@@ -1,25 +1,90 @@
 use std::sync::{Arc, Mutex};
 use std::collections::{btree_map, BTreeMap};
+use std::time::{Instant, Duration};
 use prost_types::{Value, Struct};
 
 use crate::proto::protocol::state::StateUpdate;
 use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec};
 
+pub struct StateLock {
+    token: String,
+    timeout: Option<Instant>,
+}
+
 pub struct StateBroadcaster {
     state: BTreeMap<String, Value>,
+    locks: BTreeMap<String, StateLock>,
     receivers: ReceiverVec<StateUpdate>,
 }
 
 impl StateBroadcaster {
     pub fn new() -> Self {
         let state = BTreeMap::new();
+        let locks = BTreeMap::new();
         let receivers = Arc::new(Mutex::new(Vec::new()));
-        Self {state, receivers}
+        Self {state, receivers, locks}
     }
 
     pub fn iter(&self) -> btree_map::Iter<String, Value> {
         self.state.iter()
     }
+
+    pub fn atomic_lock_updates(
+            &mut self,
+            token: String,
+            requested_updates: BTreeMap<String, Option<Duration>>,
+    ) -> Result<(), ()> {
+        let now = Instant::now();
+
+        let requested_removals: Vec<&String> = requested_updates.iter()
+            .filter_map(|kv| match kv.1 {
+                None => Some(kv.0),
+                Some(_) => None,
+            })
+            .collect();
+
+        for key in requested_removals {
+            match self.locks.get(key) {
+                Some(lock) if can_write(lock, &now, &token) => {
+                    self.locks.remove(key);
+                },
+                _ => {},
+            }
+        }
+
+        let mut updates: BTreeMap<String, StateLock> = BTreeMap::new();
+        for (key, duration) in requested_updates {
+            match self.locks.get(&key) {
+                Some(lock) if !can_write(lock, &now, &token) => {
+                    // There is a lock and we do not own it.
+                    // We cancel the whole update.
+                    return Err(());
+                },
+                _ => {
+                    let timeout = match duration {
+                        None => None,
+                        Some(d) => Some(now + d),
+                    };
+                    updates.insert(key, StateLock {token: token.clone(), timeout})
+                }
+            };
+        }
+        self.locks.append(&mut updates);
+
+        Ok(())
+    }
+}
+
+fn has_lock_expired(lock: &StateLock, now: &Instant) -> bool {
+    match lock.timeout {
+        None => false,
+        Some(timeout) if &timeout < now => false,
+        Some(_) => true,
+    }
+}
+
+fn can_write(lock: &StateLock, now: &Instant, token: &String) -> bool {
+    &lock.token == token || has_lock_expired(lock, now)
 }
 
 impl Default for StateBroadcaster {
