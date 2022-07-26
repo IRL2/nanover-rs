@@ -73,6 +73,13 @@ impl StateBroadcaster {
 
         Ok(())
     }
+    
+    pub fn can_write_key(&self, key: &String, now: &Instant, token: &String) -> bool {
+        match self.locks.get(key) {
+            None => true,
+            Some(lock) => can_write(lock, now, token),
+        }
+    }
 }
 
 fn has_lock_expired(lock: &StateLock, now: &Instant) -> bool {

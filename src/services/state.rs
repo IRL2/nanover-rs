@@ -14,6 +14,7 @@ use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use prost_types::value::Kind;
 use std::{pin::Pin, time::Duration, sync::{Arc, Mutex}};
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 pub use crate::proto::protocol::state::state_server::StateServer;
 
@@ -88,10 +89,30 @@ impl State for StateService {
         &self,
         request: tonic::Request<UpdateStateRequest>,
     ) -> Result<tonic::Response<UpdateStateResponse>, tonic::Status> {
-        if let Some(update) = request.into_inner().update {
-            self.shared_state.lock().unwrap().send(update).unwrap();
-        }
-        Ok(Response::new(UpdateStateResponse {success: true}))
+        let inner_request = request.into_inner();
+        let token = inner_request.access_token;
+        let can_update = match inner_request.update {
+            None => {
+                // There is nothing to update so it necesserally succeed.
+                true
+            },
+            Some(update) => {
+                let mut state = self.shared_state.lock().unwrap();
+                let now = Instant::now();
+                let can_update = match &update.changed_keys {
+                    None => true,
+                    Some(changed_keys) => {
+                        changed_keys.fields.keys()
+                            .all(|key| {state.can_write_key(key, &now, &token)})
+                    },
+                };
+                if can_update {
+                    state.send(update).unwrap();
+                };
+                can_update
+            },
+        };
+        Ok(Response::new(UpdateStateResponse {success: can_update}))
     }
 
     async fn update_locks(
