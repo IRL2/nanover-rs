@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::collections::{btree_map, BTreeMap};
 use std::time::{Instant, Duration};
-use prost_types::{Value, Struct};
+use prost_types::{Value, Struct, value::Kind};
 
 use crate::proto::protocol::state::StateUpdate;
 use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec};
@@ -117,8 +117,13 @@ impl Broadcaster for StateBroadcaster {
             None => {},
             Some(ref changes) => {
                 self.state.extend(changes.fields.clone());
-                // TODO: prune keys when the value is nil
-                // use self.state.retain
+                self.state.retain(|_, value| {
+                    // A Null value in an update marks the key-value pair to be
+                    // deleted in the shared state. So a Null value in the shared
+                    // state is a key-value pair to be deleted. Here, we treat the
+                    // absence of value and an actual NullValue as being the same.
+                    !matches!(value.kind, None | Some(Kind::NullValue(_)))
+                });
             }
         }
     }
@@ -135,6 +140,5 @@ impl Mergeable for StateUpdate {
                 self.changed_keys = Some(changed.clone());
             }
         }
-
     }
 }
