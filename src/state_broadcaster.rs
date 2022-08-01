@@ -66,10 +66,7 @@ impl StateBroadcaster {
                     return Err(());
                 }
                 _ => {
-                    let timeout = match duration {
-                        None => None,
-                        Some(d) => Some(now + d),
-                    };
+                    let timeout = duration.map(|d| now + d);
                     updates.insert(
                         key,
                         StateLock {

@@ -94,8 +94,8 @@ enum ReadState {
 
 enum StructureType {
     None,
-    PDB,
-    PDBx,
+    Pdb,
+    Pdbx,
 }
 
 pub struct XMLSimulation {
@@ -134,8 +134,8 @@ impl XMLSimulation {
                     println!("Start {name_str}");
                     read_state = ReadState::CopyStructure;
                     structure_type = match name {
-                        b"pdb" => StructureType::PDB,
-                        b"pdbx" => StructureType::PDBx,
+                        b"pdb" => StructureType::Pdb,
+                        b"pdbx" => StructureType::Pdbx,
                         // Cannot happen because of the condition above
                         _ => panic!("Unrecognised structure type."),
                     };
@@ -229,7 +229,7 @@ impl XMLSimulation {
         };
         let structure = match structure_type {
             StructureType::None => panic!("No structure found."),
-            StructureType::PDB => {
+            StructureType::Pdb => {
                 let (structure, _) = pdbtbx::open_pdb_raw(
                     BufReader::new(Cursor::new(structure_buffer)),
                     pdbtbx::Context::None,
@@ -238,7 +238,7 @@ impl XMLSimulation {
                 .unwrap();
                 structure
             }
-            StructureType::PDBx => {
+            StructureType::Pdbx => {
                 let (structure, _) = pdbtbx::open_mmcif_raw(
                     str::from_utf8(&structure_buffer).unwrap(),
                     pdbtbx::StrictnessLevel::Loose,
