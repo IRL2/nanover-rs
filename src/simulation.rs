@@ -1,57 +1,33 @@
 extern crate openmm_sys;
 extern crate pdbtbx;
 
-use std::fs::File;
-use std::io::prelude::*;
-use std::str;
-use std::io::{BufReader, Read, Cursor};
-use std::ffi::{CString, CStr};
+use openmm_sys::{
+    OpenMM_Context, OpenMM_Context_create, OpenMM_Context_destroy, OpenMM_Context_getPlatform,
+    OpenMM_Context_getState, OpenMM_Context_setPositions, OpenMM_CustomExternalForce,
+    OpenMM_CustomExternalForce_addParticle, OpenMM_CustomExternalForce_addPerParticleParameter,
+    OpenMM_CustomExternalForce_create, OpenMM_CustomExternalForce_destroy,
+    OpenMM_CustomExternalForce_setParticleParameters,
+    OpenMM_CustomExternalForce_updateParametersInContext, OpenMM_DoubleArray_create,
+    OpenMM_DoubleArray_set, OpenMM_Force, OpenMM_Integrator, OpenMM_Integrator_destroy,
+    OpenMM_Integrator_step, OpenMM_Platform_getName, OpenMM_Platform_getNumPlatforms,
+    OpenMM_Platform_loadPluginsFromDirectory, OpenMM_State_DataType_OpenMM_State_Positions,
+    OpenMM_State_destroy, OpenMM_State_getPeriodicBoxVectors, OpenMM_State_getPositions,
+    OpenMM_System, OpenMM_System_addForce, OpenMM_System_destroy, OpenMM_System_getNumParticles,
+    OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create,
+    OpenMM_Vec3Array_destroy, OpenMM_Vec3Array_get, OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set,
+    OpenMM_Vec3_scale, OpenMM_XmlSerializer_deserializeIntegrator,
+    OpenMM_XmlSerializer_deserializeSystem,
+};
+use quick_xml::events::{BytesEnd, BytesStart, Event};
+use quick_xml::Reader;
+use quick_xml::Writer;
 use std::collections::{BTreeMap, HashSet};
 use std::env;
-use openmm_sys::{
-    OpenMM_System,
-    OpenMM_System_addForce,
-    OpenMM_System_destroy,
-    OpenMM_Vec3,
-    OpenMM_Vec3Array,
-    OpenMM_Vec3Array_create, OpenMM_Vec3Array_destroy,
-    OpenMM_Vec3Array_set,
-    OpenMM_Integrator, OpenMM_Integrator_destroy,
-    OpenMM_Integrator_step,
-    OpenMM_Context,
-    OpenMM_Context_create,
-    OpenMM_Context_setPositions,
-    OpenMM_Context_destroy,
-    OpenMM_Context_getState,
-    OpenMM_State_destroy,
-    OpenMM_State_DataType_OpenMM_State_Positions,
-    OpenMM_State_getPositions,
-    OpenMM_State_getPeriodicBoxVectors,
-    OpenMM_Vec3Array_getSize,
-    OpenMM_Vec3Array_get,
-    OpenMM_Vec3_scale,
-    OpenMM_XmlSerializer_deserializeSystem,
-    OpenMM_XmlSerializer_deserializeIntegrator,
-    OpenMM_System_getNumParticles,
-    OpenMM_System_getParticleMass,
-    OpenMM_Context_getPlatform,
-    OpenMM_Platform_getName,
-    OpenMM_Platform_getNumPlatforms,
-    OpenMM_Platform_loadPluginsFromDirectory,
-    OpenMM_Force,
-    OpenMM_CustomExternalForce,
-    OpenMM_CustomExternalForce_create,
-    OpenMM_CustomExternalForce_destroy,
-    OpenMM_CustomExternalForce_addPerParticleParameter,
-    OpenMM_CustomExternalForce_addParticle,
-    OpenMM_CustomExternalForce_setParticleParameters,
-    OpenMM_CustomExternalForce_updateParametersInContext,
-    OpenMM_DoubleArray_create,
-    OpenMM_DoubleArray_set,
-};
-use quick_xml::Writer;
-use quick_xml::events::{Event, BytesEnd, BytesStart};
-use quick_xml::Reader;
+use std::ffi::{CStr, CString};
+use std::fs::File;
+use std::io::prelude::*;
+use std::io::{BufReader, Cursor, Read};
+use std::str;
 
 use crate::frame::FrameData;
 
@@ -71,8 +47,20 @@ pub struct IMDInteraction {
 }
 
 impl IMDInteraction {
-    pub fn new(position: [f64; 3], particles: Vec<usize>, kind: InteractionKind, max_force: Option<f64>, scale: f64) -> Self {
-        Self {position, particles, kind, max_force, scale}
+    pub fn new(
+        position: [f64; 3],
+        particles: Vec<usize>,
+        kind: InteractionKind,
+        max_force: Option<f64>,
+        scale: f64,
+    ) -> Self {
+        Self {
+            position,
+            particles,
+            kind,
+            max_force,
+            scale,
+        }
     }
 }
 
@@ -151,13 +139,13 @@ impl XMLSimulation {
                         // Cannot happen because of the condition above
                         _ => panic!("Unrecognised structure type."),
                     };
-                },
+                }
                 Ok(Event::End(ref e)) if e.name() == b"pdbx" || e.name() == b"pdb" => {
                     let name = e.name();
                     let name_str = str::from_utf8(name).unwrap();
                     println!("End {name_str}");
                     read_state = ReadState::Ignore;
-                },
+                }
                 Ok(Event::Text(ref e)) => {
                     if let ReadState::CopyStructure = read_state {
                         structure_buffer.extend(e.iter());
@@ -178,7 +166,7 @@ impl XMLSimulation {
                         elem.extend_attributes(e.attributes().map(|attr| attr.unwrap()));
                         writer.write_event(Event::Start(elem)).unwrap();
                     }
-                },
+                }
                 Ok(Event::End(ref e)) => {
                     let name = e.name();
                     let name_str = str::from_utf8(name).unwrap();
@@ -196,12 +184,11 @@ impl XMLSimulation {
                         writer = Writer::new(Cursor::new(Vec::new()));
                         if name == b"System" {
                             system_content = Some(to_write.into_inner().into_inner());
-                        }
-                        else if name == b"Integrator" {
+                        } else if name == b"Integrator" {
                             integrator_content = Some(to_write.into_inner().into_inner());
                         }
                     }
-                },
+                }
                 Ok(Event::Empty(ref e)) => {
                     let name = e.name();
                     let name_str = str::from_utf8(name).unwrap();
@@ -219,17 +206,16 @@ impl XMLSimulation {
                         writer = Writer::new(Cursor::new(Vec::new()));
                         if name == b"System" {
                             system_content = Some(to_write.into_inner().into_inner());
-                        }
-                        else if name == b"Integrator" {
+                        } else if name == b"Integrator" {
                             integrator_content = Some(to_write.into_inner().into_inner());
                         }
                     }
                 }
 
                 // End
-                Ok(Event::Eof) => {break},
+                Ok(Event::Eof) => break,
                 Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
-                _ => {},
+                _ => {}
             }
         }
 
@@ -247,17 +233,19 @@ impl XMLSimulation {
                 let (structure, _) = pdbtbx::open_pdb_raw(
                     BufReader::new(Cursor::new(structure_buffer)),
                     pdbtbx::Context::None,
-                    pdbtbx::StrictnessLevel::Loose
-                ).unwrap();
+                    pdbtbx::StrictnessLevel::Loose,
+                )
+                .unwrap();
                 structure
-            },
+            }
             StructureType::PDBx => {
                 let (structure, _) = pdbtbx::open_mmcif_raw(
                     str::from_utf8(&structure_buffer).unwrap(),
-                    pdbtbx::StrictnessLevel::Loose
-                ).unwrap();
+                    pdbtbx::StrictnessLevel::Loose,
+                )
+                .unwrap();
                 structure
-            },
+            }
         };
         let n_atoms = structure.atom_count();
         println!("Particles in the structure: {n_atoms}");
@@ -270,10 +258,10 @@ impl XMLSimulation {
                 Ok(dirname) => {
                     let lib_directory = CString::new(dirname).unwrap();
                     OpenMM_Platform_loadPluginsFromDirectory(lib_directory.into_raw());
-                },
+                }
                 Err(_) => {
                     println!("No plugin to load, set OPENMM_PLUGIN_DIR");
-                },
+                }
             }
 
             let n_platform = OpenMM_Platform_getNumPlatforms();
@@ -306,16 +294,18 @@ impl XMLSimulation {
                 panic!("The number of particles in the structure does not match the system.");
             }
             println!("Particles in system: {}", n_particles);
-            let integrator = OpenMM_XmlSerializer_deserializeIntegrator(integrator_content.as_ptr());
+            let integrator =
+                OpenMM_XmlSerializer_deserializeIntegrator(integrator_content.as_ptr());
             println!("Integrator read");
             let context = OpenMM_Context_create(system, integrator);
             OpenMM_Context_setPositions(context, init_pos);
 
             let platform = OpenMM_Context_getPlatform(context);
             let platform_name = CStr::from_ptr(OpenMM_Platform_getName(platform))
-                .to_str().unwrap()
+                .to_str()
+                .unwrap()
                 .to_string();
-            
+
             let previous_particle_touched = HashSet::new();
 
             Self {
@@ -332,7 +322,7 @@ impl XMLSimulation {
         };
         sim
     }
-    
+
     pub fn get_platform_name(&self) -> String {
         self.platform_name.clone()
     }
@@ -341,11 +331,17 @@ impl XMLSimulation {
         let energy_expression = CString::new("-fx * x - fy * y - fz * z").unwrap();
         let force = OpenMM_CustomExternalForce_create(energy_expression.into_raw() as *const i8);
         OpenMM_CustomExternalForce_addPerParticleParameter(
-            force, CString::new("fx").unwrap().into_raw());
+            force,
+            CString::new("fx").unwrap().into_raw(),
+        );
         OpenMM_CustomExternalForce_addPerParticleParameter(
-            force, CString::new("fy").unwrap().into_raw());
+            force,
+            CString::new("fy").unwrap().into_raw(),
+        );
         OpenMM_CustomExternalForce_addPerParticleParameter(
-            force, CString::new("fz").unwrap().into_raw());
+            force,
+            CString::new("fz").unwrap().into_raw(),
+        );
         for i in 0..n_particles {
             let zeros = OpenMM_DoubleArray_create(3);
             OpenMM_DoubleArray_set(zeros, 0, 0.0);
@@ -364,71 +360,76 @@ impl XMLSimulation {
                 0,
             );
             let pos_state = OpenMM_State_getPositions(state);
-            let interactions = imd_interaction.iter().map(|imd| {
-                let max_force = imd.max_force.unwrap_or(f64::INFINITY);
-                let selection: Vec<i32> = imd.particles.iter()
-                    // *Ignore* particle indices that are out of bound.
-                    .filter(|p| **p < self.n_particles)
-                    // Convert particle indices to i32 so we can use them
-                    // in OpenMM methods. *Ignore* indices that do not fit.
-                    .flat_map(|p| (*p).try_into())
-                    .collect();
-                let masses: Vec<f64> = selection.iter()
-                    .map(|p| OpenMM_System_getParticleMass(self.system, *p))
-                    .collect();
-                let (com_sum, total_mass) = selection.iter()
-                    // Retrieve the position the selected particles.
-                    .map(|p| {
-                        let position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *p), 1.0);
-                        [position.x, position.y, position.z]
-                    })
-                    .zip(&masses)
-                    .fold(([0.0, 0.0, 0.0], 0.0), |acc, x| {
-                        (
-                            [
-                                acc.0[0] + x.0[0] * x.1,
-                                acc.0[1] + x.0[1] * x.1,
-                                acc.0[2] + x.0[2] * x.1,
-                            ],
-                            acc.1 + x.1
-                        )
-                    });
-                let com = [
-                    com_sum[0] / total_mass,
-                    com_sum[1] / total_mass,
-                    com_sum[2] / total_mass,
-                ];
-                let c = imd.position;
-                let diff = [
-                    com[0] - c[0],
-                    com[1] - c[1],
-                    com[2] - c[2], 
-                ];
-                let sigma = 1.0;  // For now we use this as a constant. It is in the python version.
-                let com_force = match imd.kind {
-                    InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
-                    InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
-                };
-                
-                let force_per_particle = [
-                    imd.scale * com_force[0] / self.n_particles as f64,
-                    imd.scale * com_force[1] / self.n_particles as f64,
-                    imd.scale * com_force[2] / self.n_particles as f64,
-                ];
-                Interaction {
-                    forces: selection.iter().zip(&masses)
-                        .map(|pm| InteractionForce {
-                            selection: *pm.0 as usize,
-                            force: [
-                                (force_per_particle[0] * pm.1).clamp(-max_force, max_force),
-                                (force_per_particle[1] * pm.1).clamp(-max_force, max_force),
-                                (force_per_particle[2] * pm.1).clamp(-max_force, max_force),
-                            ]
+            let interactions = imd_interaction
+                .iter()
+                .map(|imd| {
+                    let max_force = imd.max_force.unwrap_or(f64::INFINITY);
+                    let selection: Vec<i32> = imd
+                        .particles
+                        .iter()
+                        // *Ignore* particle indices that are out of bound.
+                        .filter(|p| **p < self.n_particles)
+                        // Convert particle indices to i32 so we can use them
+                        // in OpenMM methods. *Ignore* indices that do not fit.
+                        .flat_map(|p| (*p).try_into())
+                        .collect();
+                    let masses: Vec<f64> = selection
+                        .iter()
+                        .map(|p| OpenMM_System_getParticleMass(self.system, *p))
+                        .collect();
+                    let (com_sum, total_mass) = selection
+                        .iter()
+                        // Retrieve the position the selected particles.
+                        .map(|p| {
+                            let position =
+                                OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *p), 1.0);
+                            [position.x, position.y, position.z]
                         })
-                        .collect()
-                }
-            })
-            .collect();
+                        .zip(&masses)
+                        .fold(([0.0, 0.0, 0.0], 0.0), |acc, x| {
+                            (
+                                [
+                                    acc.0[0] + x.0[0] * x.1,
+                                    acc.0[1] + x.0[1] * x.1,
+                                    acc.0[2] + x.0[2] * x.1,
+                                ],
+                                acc.1 + x.1,
+                            )
+                        });
+                    let com = [
+                        com_sum[0] / total_mass,
+                        com_sum[1] / total_mass,
+                        com_sum[2] / total_mass,
+                    ];
+                    let c = imd.position;
+                    let diff = [com[0] - c[0], com[1] - c[1], com[2] - c[2]];
+                    let sigma = 1.0; // For now we use this as a constant. It is in the python version.
+                    let com_force = match imd.kind {
+                        InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
+                        InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
+                    };
+
+                    let force_per_particle = [
+                        imd.scale * com_force[0] / self.n_particles as f64,
+                        imd.scale * com_force[1] / self.n_particles as f64,
+                        imd.scale * com_force[2] / self.n_particles as f64,
+                    ];
+                    Interaction {
+                        forces: selection
+                            .iter()
+                            .zip(&masses)
+                            .map(|pm| InteractionForce {
+                                selection: *pm.0 as usize,
+                                force: [
+                                    (force_per_particle[0] * pm.1).clamp(-max_force, max_force),
+                                    (force_per_particle[1] * pm.1).clamp(-max_force, max_force),
+                                    (force_per_particle[2] * pm.1).clamp(-max_force, max_force),
+                                ],
+                            })
+                            .collect(),
+                    }
+                })
+                .collect();
 
             OpenMM_State_destroy(state);
 
@@ -478,9 +479,21 @@ impl ToFrameData for XMLSimulation {
                 positions.push(pos.z as f32);
             }
 
-            let mut a = OpenMM_Vec3{x: 0.0, y: 0.0, z: 0.0};
-            let mut b = OpenMM_Vec3{x: 0.0, y: 0.0, z: 0.0};
-            let mut c = OpenMM_Vec3{x: 0.0, y: 0.0, z: 0.0};
+            let mut a = OpenMM_Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
+            let mut b = OpenMM_Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
+            let mut c = OpenMM_Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
             OpenMM_State_getPeriodicBoxVectors(state, &mut a, &mut b, &mut c);
             box_vectors.push(a.x as f32);
             box_vectors.push(a.y as f32);
@@ -495,9 +508,15 @@ impl ToFrameData for XMLSimulation {
             OpenMM_State_destroy(state);
         }
         let mut frame = FrameData::empty();
-        frame.insert_number_value("particle.count", (positions.len() / 3) as f64).unwrap();
-        frame.insert_float_array("particle.positions", positions).unwrap();
-        frame.insert_float_array("system.box.vectors", box_vectors).unwrap();
+        frame
+            .insert_number_value("particle.count", (positions.len() / 3) as f64)
+            .unwrap();
+        frame
+            .insert_float_array("particle.positions", positions)
+            .unwrap();
+        frame
+            .insert_float_array("system.box.vectors", box_vectors)
+            .unwrap();
 
         frame
     }
@@ -506,11 +525,18 @@ impl ToFrameData for XMLSimulation {
         let mut frame = FrameData::empty();
 
         let n_particles = self.topology.atom_count();
-        frame.insert_number_value("particle.count", (n_particles) as f64).unwrap();
+        frame
+            .insert_number_value("particle.count", (n_particles) as f64)
+            .unwrap();
 
-        let elements: Vec<u32> = self.topology.atoms()
-            .map(|atom| {atom.atomic_number().unwrap_or(0).try_into().unwrap()}).collect();
-        frame.insert_index_array("particle.elements", elements).unwrap();
+        let elements: Vec<u32> = self
+            .topology
+            .atoms()
+            .map(|atom| atom.atomic_number().unwrap_or(0).try_into().unwrap())
+            .collect();
+        frame
+            .insert_index_array("particle.elements", elements)
+            .unwrap();
 
         frame
     }
@@ -521,7 +547,9 @@ impl IMD for XMLSimulation {
         let mut forces = zeroed_out(&self.previous_particle_touched);
         let accumulated_forces = accumulate_forces(interactions);
         self.previous_particle_touched = HashSet::new();
-        accumulated_forces.iter().for_each(|kv| {self.previous_particle_touched.insert(*kv.0);});
+        accumulated_forces.iter().for_each(|kv| {
+            self.previous_particle_touched.insert(*kv.0);
+        });
         forces.extend(accumulated_forces);
 
         for (index, force) in &forces {
@@ -534,7 +562,11 @@ impl IMD for XMLSimulation {
                 OpenMM_DoubleArray_set(force_array, 1, force[1]);
                 OpenMM_DoubleArray_set(force_array, 2, force[2]);
                 OpenMM_CustomExternalForce_setParticleParameters(
-                    self.imd_force, *index, *index, force_array);
+                    self.imd_force,
+                    *index,
+                    *index,
+                    force_array,
+                );
             }
         }
 
@@ -547,13 +579,15 @@ impl IMD for XMLSimulation {
 }
 
 fn accumulate_forces(interactions: Vec<Interaction>) -> BTreeMap<i32, [f64; 3]> {
-    let mut btree: BTreeMap<i32, [f64;3]> = BTreeMap::new();
+    let mut btree: BTreeMap<i32, [f64; 3]> = BTreeMap::new();
     for interaction in interactions {
         for particle in interaction.forces {
-            let index: i32 = particle.selection
+            let index: i32 = particle
+                .selection
                 .try_into()
                 .expect("Particle index does not fit an i32.");
-            btree.entry(index)
+            btree
+                .entry(index)
                 .and_modify(|f| {
                     f[0] += particle.force[0];
                     f[1] += particle.force[1];
@@ -567,7 +601,9 @@ fn accumulate_forces(interactions: Vec<Interaction>) -> BTreeMap<i32, [f64; 3]> 
 
 fn zeroed_out(indices: &HashSet<i32>) -> BTreeMap<i32, [f64; 3]> {
     let mut btree: BTreeMap<i32, [f64; 3]> = BTreeMap::new();
-    indices.iter().for_each(|i| {btree.insert(*i, [0.0, 0.0, 0.0]);});
+    indices.iter().for_each(|i| {
+        btree.insert(*i, [0.0, 0.0, 0.0]);
+    });
     btree
 }
 
@@ -584,9 +620,5 @@ fn compute_gaussian_force(diff: [f64; 3], sigma: f64) -> [f64; 3] {
 
 fn compute_harmonic_force(diff: [f64; 3], k: f64) -> [f64; 3] {
     let factor = -2.0 * k;
-    [
-        factor * diff[0],
-        factor * diff[1],
-        factor * diff[2],
-    ]
+    [factor * diff[0], factor * diff[1], factor * diff[2]]
 }

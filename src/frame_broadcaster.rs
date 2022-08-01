@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
+use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec};
 use crate::frame::FrameData;
-use crate::broadcaster::{Broadcaster, ReceiverVec, Mergeable};
+use std::sync::{Arc, Mutex};
 
 pub struct FrameBroadcaster {
     receivers: ReceiverVec<FrameData>,

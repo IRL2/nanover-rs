@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use std::fmt::Debug;
+use std::sync::{Arc, Mutex};
 
 pub type ReceiverVec<T> = Arc<Mutex<Vec<Arc<Mutex<BroadcastReceiver<T>>>>>>;
 
@@ -41,7 +41,9 @@ pub trait Broadcaster {
 
 impl<T: Debug> BroadcastReceiver<T> {
     pub fn new(current: T) -> Self {
-        Self {content: Some(current)}
+        Self {
+            content: Some(current),
+        }
     }
 
     pub fn recv(&mut self) -> Option<T> {

@@ -1,5 +1,7 @@
 use crate::proto::protocol::command::command_server::Command;
-use crate::proto::protocol::command::{GetCommandsRequest, GetCommandsReply, CommandMessage, CommandReply};
+use crate::proto::protocol::command::{
+    CommandMessage, CommandReply, GetCommandsReply, GetCommandsRequest,
+};
 use prost::alloc::vec::Vec;
 
 pub use crate::proto::protocol::command::command_server::CommandServer;
@@ -13,10 +15,12 @@ impl Command for CommandService {
         _request: tonic::Request<GetCommandsRequest>,
     ) -> Result<tonic::Response<GetCommandsReply>, tonic::Status> {
         let command_list: Vec<CommandMessage> = Vec::new();
-        let reply = GetCommandsReply {commands: command_list};
+        let reply = GetCommandsReply {
+            commands: command_list,
+        };
         Ok(tonic::Response::new(reply))
     }
-    
+
     async fn run_command(
         &self,
         _request: tonic::Request<CommandMessage>,

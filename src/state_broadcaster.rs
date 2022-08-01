@@ -1,10 +1,10 @@
-use std::sync::{Arc, Mutex};
+use prost_types::{value::Kind, Struct, Value};
 use std::collections::{btree_map, BTreeMap};
-use std::time::{Instant, Duration};
-use prost_types::{Value, Struct, value::Kind};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use crate::proto::protocol::state::StateUpdate;
 use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec};
+use crate::proto::protocol::state::StateUpdate;
 
 pub struct StateLock {
     token: String,
@@ -22,7 +22,11 @@ impl StateBroadcaster {
         let state = BTreeMap::new();
         let locks = BTreeMap::new();
         let receivers = Arc::new(Mutex::new(Vec::new()));
-        Self {state, receivers, locks}
+        Self {
+            state,
+            receivers,
+            locks,
+        }
     }
 
     pub fn iter(&self) -> btree_map::Iter<String, Value> {
@@ -30,13 +34,14 @@ impl StateBroadcaster {
     }
 
     pub fn atomic_lock_updates(
-            &mut self,
-            token: String,
-            requested_updates: BTreeMap<String, Option<Duration>>,
+        &mut self,
+        token: String,
+        requested_updates: BTreeMap<String, Option<Duration>>,
     ) -> Result<(), ()> {
         let now = Instant::now();
 
-        let requested_removals: Vec<&String> = requested_updates.iter()
+        let requested_removals: Vec<&String> = requested_updates
+            .iter()
             .filter_map(|kv| match kv.1 {
                 None => Some(kv.0),
                 Some(_) => None,
@@ -47,8 +52,8 @@ impl StateBroadcaster {
             match self.locks.get(key) {
                 Some(lock) if can_write(lock, &now, &token) => {
                     self.locks.remove(key);
-                },
-                _ => {},
+                }
+                _ => {}
             }
         }
 
@@ -59,13 +64,19 @@ impl StateBroadcaster {
                     // There is a lock and we do not own it.
                     // We cancel the whole update.
                     return Err(());
-                },
+                }
                 _ => {
                     let timeout = match duration {
                         None => None,
                         Some(d) => Some(now + d),
                     };
-                    updates.insert(key, StateLock {token: token.clone(), timeout})
+                    updates.insert(
+                        key,
+                        StateLock {
+                            token: token.clone(),
+                            timeout,
+                        },
+                    )
                 }
             };
         }
@@ -73,7 +84,7 @@ impl StateBroadcaster {
 
         Ok(())
     }
-    
+
     pub fn can_write_key(&self, key: &String, now: &Instant, token: &String) -> bool {
         match self.locks.get(key) {
             None => true,
@@ -108,13 +119,17 @@ impl Broadcaster for StateBroadcaster {
     }
 
     fn get_current(&self) -> Self::Content {
-        let structure = Struct{fields: self.state.clone()};
-        StateUpdate{changed_keys: Some(structure)}
+        let structure = Struct {
+            fields: self.state.clone(),
+        };
+        StateUpdate {
+            changed_keys: Some(structure),
+        }
     }
 
     fn update_current(&mut self, other: &Self::Content) {
         match &other.changed_keys {
-            None => {},
+            None => {}
             Some(ref changes) => {
                 self.state.extend(changes.fields.clone());
                 self.state.retain(|_, value| {
@@ -132,10 +147,10 @@ impl Broadcaster for StateBroadcaster {
 impl Mergeable for StateUpdate {
     fn merge(&mut self, other: &Self) {
         match (&mut self.changed_keys, &other.changed_keys) {
-            (_, None) => {},
+            (_, None) => {}
             (Some(ref mut current), Some(changed)) => {
                 current.fields.extend(changed.clone().fields);
-            },
+            }
             (None, Some(changed)) => {
                 self.changed_keys = Some(changed.clone());
             }

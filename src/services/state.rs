@@ -1,29 +1,30 @@
-use crate::proto::protocol::state::{
-    StateUpdate,
-    SubscribeStateUpdatesRequest,
-    UpdateStateRequest, UpdateStateResponse,
-    UpdateLocksRequest, UpdateLocksResponse,
-};
+use crate::broadcaster::{BroadcastReceiver, Broadcaster};
 use crate::proto::protocol::state::state_server::State;
+use crate::proto::protocol::state::{
+    StateUpdate, SubscribeStateUpdatesRequest, UpdateLocksRequest, UpdateLocksResponse,
+    UpdateStateRequest, UpdateStateResponse,
+};
 use crate::state_broadcaster::StateBroadcaster;
-use crate::broadcaster::{Broadcaster, BroadcastReceiver};
 use futures::Stream;
-use tonic::{Response, Status};
-use tokio::sync::mpsc;
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use prost_types::value::Kind;
-use std::{pin::Pin, time::Duration, sync::{Arc, Mutex}};
 use std::collections::BTreeMap;
 use std::time::Instant;
+use std::{
+    pin::Pin,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use tokio::sync::mpsc;
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use tonic::{Response, Status};
 
 pub use crate::proto::protocol::state::state_server::StateServer;
-
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<StateUpdate, tonic::Status>> + Send + Sync>>;
 
 struct StateUpdateIterator {
     //frame_source: Arc<Mutex<FrameData>>
-    update_source: Arc<Mutex<BroadcastReceiver<StateUpdate>>>
+    update_source: Arc<Mutex<BroadcastReceiver<StateUpdate>>>,
 }
 
 impl Iterator for StateUpdateIterator {
@@ -41,7 +42,7 @@ pub struct StateService {
 
 impl StateService {
     pub fn new(shared_state: Arc<Mutex<StateBroadcaster>>) -> Self {
-        Self {shared_state}
+        Self { shared_state }
     }
 }
 
@@ -53,13 +54,11 @@ impl State for StateService {
         &self,
         request: tonic::Request<SubscribeStateUpdatesRequest>,
     ) -> Result<tonic::Response<Self::SubscribeStateUpdatesStream>, tonic::Status> {
-        let update_source = {
-            self.shared_state.lock().unwrap().get_rx()
-        };
-        let update_iterator = StateUpdateIterator {update_source};
+        let update_source = { self.shared_state.lock().unwrap().get_rx() };
+        let update_iterator = StateUpdateIterator { update_source };
         let interval = (request.into_inner().update_interval * 1000.0) as u64;
-        let mut stream = Box::pin(tokio_stream::iter(update_iterator)
-            .throttle(Duration::from_millis(interval)));
+        let mut stream =
+            Box::pin(tokio_stream::iter(update_iterator).throttle(Duration::from_millis(interval)));
 
         // spawn and channel are required if you want handle "disconnect" functionality
         // the `out_stream` will not be polled after client disconnect
@@ -95,24 +94,26 @@ impl State for StateService {
             None => {
                 // There is nothing to update so it necesserally succeed.
                 true
-            },
+            }
             Some(update) => {
                 let mut state = self.shared_state.lock().unwrap();
                 let now = Instant::now();
                 let can_update = match &update.changed_keys {
                     None => true,
-                    Some(changed_keys) => {
-                        changed_keys.fields.keys()
-                            .all(|key| {state.can_write_key(key, &now, &token)})
-                    },
+                    Some(changed_keys) => changed_keys
+                        .fields
+                        .keys()
+                        .all(|key| state.can_write_key(key, &now, &token)),
                 };
                 if can_update {
                     state.send(update).unwrap();
                 };
                 can_update
-            },
+            }
         };
-        Ok(Response::new(UpdateStateResponse {success: can_update}))
+        Ok(Response::new(UpdateStateResponse {
+            success: can_update,
+        }))
     }
 
     async fn update_locks(
@@ -120,14 +121,16 @@ impl State for StateService {
         request: tonic::Request<UpdateLocksRequest>,
     ) -> Result<tonic::Response<UpdateLocksResponse>, tonic::Status> {
         let inner_request = request.into_inner();
-        let success_response = Ok(Response::new(UpdateLocksResponse {success: true}));
+        let success_response = Ok(Response::new(UpdateLocksResponse { success: true }));
 
         // This is an undocumented behavior in the python version:
         // the lock_keys attribute of the request can be None, but
         // this is not handled by the python version of te server.
         // Hre, we assume that this case is valid and results in a
         // no-op.
-        if inner_request.lock_keys.is_none() {return success_response};
+        if inner_request.lock_keys.is_none() {
+            return success_response;
+        };
         let lock_keys = inner_request.lock_keys.unwrap();
 
         let token = inner_request.access_token;
@@ -139,17 +142,19 @@ impl State for StateService {
                 // Here, we conflate a lack of value and a null value.
                 None => requested_updates.insert(key.clone(), None),
 
-                Some(Kind::NumberValue(seconds)) => requested_updates.insert(key.clone(), Some(Duration::from_secs_f64(seconds))),
+                Some(Kind::NumberValue(seconds)) => {
+                    requested_updates.insert(key.clone(), Some(Duration::from_secs_f64(seconds)))
+                }
                 Some(_) => {
                     return Err(tonic::Status::invalid_argument("Misformated lock update."));
-                },
+                }
             };
         }
 
         let mut state = self.shared_state.lock().unwrap();
         match state.atomic_lock_updates(token, requested_updates) {
             Ok(()) => success_response,
-            Err(()) => Ok(Response::new(UpdateLocksResponse {success: false})),
+            Err(()) => Ok(Response::new(UpdateLocksResponse { success: false })),
         }
     }
 }
