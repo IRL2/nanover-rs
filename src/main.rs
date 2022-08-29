@@ -32,7 +32,6 @@ struct Cli {
     simulation_fps: usize,
 }
 
-
 fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDInteraction, ()> {
     // Extract the interaction content that is under several layers of enums.
     // Fail already if we cannot: it means the input does not have the expected format.

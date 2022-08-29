@@ -23,7 +23,6 @@ pub use crate::proto::protocol::state::state_server::StateServer;
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<StateUpdate, tonic::Status>> + Send + Sync>>;
 
 struct StateUpdateIterator {
-    //frame_source: Arc<Mutex<FrameData>>
     update_source: Arc<Mutex<BroadcastReceiver<StateUpdate>>>,
 }
 
