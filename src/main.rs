@@ -1,3 +1,5 @@
+extern crate clap;
+
 use narupa_rs::broadcaster::Broadcaster;
 use narupa_rs::frame::FrameData;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
@@ -16,6 +18,20 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{thread, time};
 use tonic::transport::Server;
+
+use clap::Parser;
+
+#[derive(Parser)]
+#[clap(author, version, about, long_about = None)]
+struct Cli {
+    #[clap(value_parser, default_value = "17-ala.xml")]
+    input_xml_path: String,
+    #[clap(short, long, value_parser, default_value_t = 38801)]
+    port: usize,
+    #[clap(short, long, value_parser, default_value_t = 30)]
+    simulation_fps: usize,
+}
+
 
 fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDInteraction, ()> {
     // Extract the interaction content that is under several layers of enums.
@@ -110,10 +126,14 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+    let xml_path = cli.input_xml_path;
+    let port = cli.port;
+    let simulation_interval = ((1.0 / (cli.simulation_fps) as f64) * 1000.0) as u64;
+
     // We have 2 separate threads: one runs the simulation, and the other one
     // runs the GRPC server. Here, we setup how the two threads talk
     // to each other.
-    // TODO: actually implement the state service
     // TODO: actually implement the command service
     let empty_frame = FrameData::empty();
     //let frame_source = Arc::new(Mutex::new(empty_frame));
@@ -122,18 +142,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shared_state = Arc::new(Mutex::new(StateBroadcaster::new()));
 
     // Run the simulation thread.
-    // TODO: build the simulation from an input file and
-    // provide the file as a CLI argument
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
     tokio::task::spawn_blocking(move || {
         // TODO: check if there isn't a throttled iterator, otherwise write one.
-        // TODO: make the throttling interval a CLI argument
-        //let mut simulation = TestSimulation::new();
-        let file = File::open("17-ala.xml").unwrap();
+        let file = File::open(xml_path).unwrap();
         let file_buffer = BufReader::new(file);
         let mut simulation = XMLSimulation::new(file_buffer);
-        let interval = Duration::from_millis(33);
+        let interval = Duration::from_millis(simulation_interval);
         {
             sim_clone
                 .lock()
@@ -142,6 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap();
         }
         println!("Platform: {}", simulation.get_platform_name());
+        println!("Simulation interval: {}", simulation_interval);
         println!("Start simulating");
         for _i in 0.. {
             let now = time::Instant::now();
@@ -182,8 +199,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Run the GRPC server on the main thread.
-    // TODO: make the address and port CLI arguments
     println!("Let's go!");
+    let address = format!("[::]:{port}");
     let server = Trajectory::new(Arc::clone(&frame_source));
     let command_service = CommandService {};
     let state_service = StateService::new(Arc::clone(&shared_state));
@@ -191,7 +208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(TrajectoryServiceServer::new(server))
         .add_service(CommandServer::new(command_service))
         .add_service(StateServer::new(state_service))
-        .serve("[::]:38801".to_socket_addrs().unwrap().next().unwrap())
+        .serve(address.to_socket_addrs().unwrap().next().unwrap())
         .await
         .unwrap();
     Ok(())
