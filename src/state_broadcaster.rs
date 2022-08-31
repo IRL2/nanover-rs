@@ -17,6 +17,70 @@ pub struct StateBroadcaster {
     receivers: ReceiverVec<StateUpdate>,
 }
 
+/// Broadcast state updates to multiple consumers.
+/// 
+/// The broadcaster maintains the accumulated state, accumulated updates
+/// each consumer, and the state locks.
+/// 
+/// # Example
+/// 
+/// ```
+/// use std::collections::BTreeMap;
+/// use prost_types::value::Kind;
+/// use narupa_rs::state_broadcaster::StateBroadcaster;
+/// use narupa_rs::broadcaster::Broadcaster;
+/// use narupa_rs::broadcaster::Mergeable;
+/// use narupa_rs::proto::protocol::state::StateUpdate;
+/// 
+/// // Create a state broadcaster with an empty state
+/// let mut broadcaster = StateBroadcaster::new();
+/// 
+/// // Create a consumer to receive state updates
+/// let mut receiver_A = broadcaster.get_rx();
+/// // At this point the receiver's state is the initial empty one
+/// // from the brand new broadcaster.
+/// assert!(receiver_A.lock().unwrap().recv() == Some(broadcaster.get_current()));
+/// // Because we poped the latest update, the receiver is now empty.
+/// assert!(receiver_A.lock().unwrap().recv() == None);
+/// 
+/// // Send an update.
+/// // An update is directly a `StateUpdate` from the narupa protobuf
+/// // protocol. Building one by hand is unpleasant, though these updates
+/// // are meant to be built by the clients.
+/// let mut raw_update = BTreeMap::new();
+/// let key = "hello".to_string();
+/// let value = prost_types::Value{kind: Some(Kind::StringValue("world".to_string()))};
+/// raw_update.insert(key, value);
+/// let update = StateUpdate {changed_keys: Some(prost_types::Struct {fields: raw_update})};
+/// // We send a copy so we can reuse the update
+/// broadcaster.send(update.clone());
+/// 
+/// // Now the receiver has received the update
+/// assert!(receiver_A.lock().unwrap().recv() == Some(update.clone()));
+/// 
+/// // We can create other receivers.
+/// // Each receiver maintains its own accumulated update.
+/// // A new receiver starts with the full accumulated update.
+/// let receiver_B = broadcaster.get_rx();
+/// 
+/// // Send another update.
+/// let mut raw_update = BTreeMap::new();
+/// let key = "foo".to_string();
+/// let value = prost_types::Value{kind: Some(Kind::StringValue("bar".to_string()))};
+/// raw_update.insert(key, value);
+/// let update_2 = StateUpdate {changed_keys: Some(prost_types::Struct {fields: raw_update})};
+/// // We send a copy so we can reuse the update
+/// broadcaster.send(update_2.clone());
+/// 
+/// // The first receiver only has the last update in memory.
+/// assert!(receiver_A.lock().unwrap().recv() == Some(update_2.clone()));
+/// 
+/// // The second receiver has a merge of both the first and the second
+/// // update since we did not pop the first update yet.
+/// let mut merged_updates = update.clone();
+/// merged_updates.merge(&update_2);
+/// assert!(receiver_B.lock().unwrap().recv() == Some(merged_updates));
+/// ```
 impl StateBroadcaster {
     pub fn new() -> Self {
         let state = BTreeMap::new();
@@ -29,10 +93,12 @@ impl StateBroadcaster {
         }
     }
 
+    /// Iterate over the keys and values of the accumulated state.
     pub fn iter(&self) -> btree_map::Iter<String, Value> {
         self.state.iter()
     }
 
+    /// Update one or more state locks.
     pub fn atomic_lock_updates(
         &mut self,
         token: String,
