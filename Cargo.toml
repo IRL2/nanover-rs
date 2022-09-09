@@ -24,4 +24,5 @@ tonic-build = "0.7.2"
 version = "*"
 #features = ["static-lib"]#, "cpu"]
 #path = "/home/jon/rust/openmm-rust/openmm-sys/"
-features = ["cpu"]
+#features = ["minimal", "static-lib"]
+features= ["minimal"]
