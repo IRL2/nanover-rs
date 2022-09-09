@@ -123,26 +123,12 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
     ))
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
-    let xml_path = cli.input_xml_path;
-    let port = cli.port;
-    let simulation_interval = ((1.0 / (cli.simulation_fps) as f64) * 1000.0) as u64;
-
-    // We have 2 separate threads: one runs the simulation, and the other one
-    // runs the GRPC server. Here, we setup how the two threads talk
-    // to each other.
-    // TODO: actually implement the command service
-    let empty_frame = FrameData::empty();
-    //let frame_source = Arc::new(Mutex::new(empty_frame));
-    let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame)));
-
-    let shared_state = Arc::new(Mutex::new(StateBroadcaster::new()));
-
-    // Run the simulation thread.
-    let sim_clone = Arc::clone(&frame_source);
-    let state_clone = Arc::clone(&shared_state);
+fn run_simulation_thread(
+        xml_path: String,
+        sim_clone: Arc<Mutex<FrameBroadcaster>>,
+        state_clone: Arc<Mutex<StateBroadcaster>>,
+        simulation_interval: u64,
+) {
     tokio::task::spawn_blocking(move || {
         // TODO: check if there isn't a throttled iterator, otherwise write one.
         let file = File::open(xml_path).unwrap();
@@ -196,6 +182,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             thread::sleep(time_left);
         }
     });
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+    let xml_path = cli.input_xml_path;
+    let port = cli.port;
+    let simulation_interval = ((1.0 / (cli.simulation_fps) as f64) * 1000.0) as u64;
+
+    // We have 2 separate threads: one runs the simulation, and the other one
+    // runs the GRPC server. Here, we setup how the two threads talk
+    // to each other.
+    // TODO: actually implement the command service
+    let empty_frame = FrameData::empty();
+    let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame)));
+    let shared_state = Arc::new(Mutex::new(StateBroadcaster::new()));
+
+    // Run the simulation thread.
+    let sim_clone = Arc::clone(&frame_source);
+    let state_clone = Arc::clone(&shared_state);
+    run_simulation_thread(xml_path, sim_clone, state_clone, simulation_interval);
 
     // Run the GRPC server on the main thread.
     println!("Let's go!");
