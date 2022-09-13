@@ -28,8 +28,11 @@ struct Cli {
     #[clap(short, long, value_parser, default_value_t = 30)]
     simulation_fps: usize,
     /// Sends a frame every STEPS dynamics steps.
-    #[clap(short, long, value_parser, default_value_t = 5)]
+    #[clap(short='f', long, value_parser, default_value_t = 5)]
     frame_interval: u32,
+    /// Update the interactions every STEPS dynamics steps.
+    #[clap(short='i', long, value_parser, default_value_t = 10)]
+    force_interval: u32,
     /// Display simulation advancement.
     #[clap(short, long, value_parser, default_value_t = false)]
     verbose: bool,
@@ -46,6 +49,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .frame_interval
         .try_into()
         .expect("Invalid frame interval value.");
+    let force_interval: i32 = cli
+        .force_interval
+        .try_into()
+        .expect("Invalid force interval value.");
     let verbose = cli.verbose;
 
     // We have 2 separate threads: one runs the simulation, and the other one
@@ -65,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         state_clone,
         simulation_interval,
         frame_interval,
+        force_interval,
         verbose,
     );
 
