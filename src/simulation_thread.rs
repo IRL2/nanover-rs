@@ -14,6 +14,8 @@ pub fn run_simulation_thread(
         sim_clone: Arc<Mutex<FrameBroadcaster>>,
         state_clone: Arc<Mutex<StateBroadcaster>>,
         simulation_interval: u64,
+        frame_interval: i32,
+        verbose: bool,
 ) {
     tokio::task::spawn_blocking(move || {
         // TODO: check if there isn't a throttled iterator, otherwise write one.
@@ -31,10 +33,9 @@ pub fn run_simulation_thread(
         println!("Platform: {}", simulation.get_platform_name());
         println!("Simulation interval: {}", simulation_interval);
         println!("Start simulating");
-        for _i in 0.. {
+        for i in 0.. {
             let now = time::Instant::now();
-            //println!("{i}");
-            simulation.step(10);
+            simulation.step(frame_interval);
             {
                 let frame = simulation.to_framedata();
                 let mut source = sim_clone.lock().unwrap();
@@ -51,9 +52,6 @@ pub fn run_simulation_thread(
                     })
                     .filter(|result| result.is_ok())
                     .filter_map(|interaction| interaction.ok())
-                    //.inspect(|interaction| {
-                    //    println!("{interaction:?}");
-                    //})
                     .collect()
             };
             let imd_interactions = simulation.compute_forces(&state_interactions);
@@ -64,7 +62,10 @@ pub fn run_simulation_thread(
                 Some(d) => d,
                 None => Duration::from_millis(0),
             };
-            //println!("Time to sleep {time_left:?}");
+            if verbose {
+                let sim_frame = i * frame_interval;
+                println!("Done frame {i}. Simulation frame {sim_frame}. Time to sleep {time_left:?}");
+            };
             thread::sleep(time_left);
         }
     });
