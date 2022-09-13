@@ -5,3 +5,5 @@ pub mod proto;
 pub mod services;
 pub mod simulation;
 pub mod state_broadcaster;
+pub mod state_interaction;
+pub mod simulation_thread;
