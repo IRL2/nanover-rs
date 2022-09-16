@@ -24,8 +24,6 @@ use quick_xml::Writer;
 use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::ffi::{CStr, CString};
-use std::fs::File;
-use std::io::prelude::*;
 use std::io::{BufReader, Cursor, Read};
 use std::str;
 
@@ -282,10 +280,6 @@ impl XMLSimulation {
             }
             println!("Coordinate array built");
 
-            {
-                let mut file = File::create("foo.xml").unwrap();
-                file.write_all(system_content.to_bytes()).unwrap();
-            }
             let system = OpenMM_XmlSerializer_deserializeSystem(system_content.as_ptr());
             println!("System read");
             let n_particles = OpenMM_System_getNumParticles(system);
