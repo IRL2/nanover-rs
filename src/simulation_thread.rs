@@ -5,10 +5,10 @@ use std::time::Duration;
 use std::{thread, time};
 use std::sync::{Arc, Mutex};
 use std::cmp::Ordering;
-use crate::simulation::{IMDInteraction, XMLSimulation, ToFrameData, Simulation, IMD};
+use crate::simulation::{XMLSimulation, ToFrameData, Simulation, IMD};
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::state_broadcaster::StateBroadcaster;
-use crate::state_interaction::read_state_interaction;
+use crate::state_interaction::read_forces;
 use crate::broadcaster::Broadcaster;
 
 fn next_stop(current_frame: u64, frame_interval: u64, force_interval: u64) -> (i32, bool, bool) {
@@ -19,6 +19,12 @@ fn next_stop(current_frame: u64, frame_interval: u64, force_interval: u64) -> (i
         Ordering::Greater => (next_force_stop.try_into().unwrap(), false, true),
         Ordering::Equal => (next_frame_stop.try_into().unwrap(), true, true),
     }
+}
+
+fn apply_forces(state_clone: &Arc<Mutex<StateBroadcaster>>, simulation: &mut XMLSimulation) {
+    let state_interactions = read_forces(state_clone);
+    let imd_interactions = simulation.compute_forces(&state_interactions);
+    simulation.update_imd_forces(imd_interactions).unwrap();
 }
 
 pub fn run_simulation_thread(
@@ -62,21 +68,7 @@ pub fn run_simulation_thread(
                 source.send(frame).unwrap();
             }
             if do_forces {
-                let state_interactions: Vec<IMDInteraction> = {
-                    let state = state_clone.lock().unwrap();
-                    let interaction_iter = state.iter();
-                    interaction_iter
-                        .filter(|kv| kv.0.starts_with("interaction."))
-                        .map(|kv| {
-                            let value = kv.1;
-                            read_state_interaction(value)
-                        })
-                        .filter(|result| result.is_ok())
-                        .filter_map(|interaction| interaction.ok())
-                        .collect()
-                };
-                let imd_interactions = simulation.compute_forces(&state_interactions);
-                simulation.update_imd_forces(imd_interactions).unwrap();
+                apply_forces(&state_clone, &mut simulation);
             }
 
             let elapsed = now.elapsed();

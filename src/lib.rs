@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate assert_float_eq;
+
 pub mod broadcaster;
 pub mod frame;
 pub mod frame_broadcaster;

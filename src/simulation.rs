@@ -31,6 +31,9 @@ use std::str;
 
 use crate::frame::FrameData;
 
+type Coordinate = [f64; 3];
+type CoordMap = BTreeMap<i32, Coordinate>;
+
 #[derive(Debug)]
 pub enum InteractionKind {
     GAUSSIAN,
@@ -66,7 +69,7 @@ impl IMDInteraction {
 
 pub struct InteractionForce {
     pub selection: usize,
-    pub force: [f64; 3],
+    pub force: Coordinate,
 }
 
 pub struct Interaction {
@@ -578,8 +581,8 @@ impl IMD for XMLSimulation {
     }
 }
 
-fn accumulate_forces(interactions: Vec<Interaction>) -> BTreeMap<i32, [f64; 3]> {
-    let mut btree: BTreeMap<i32, [f64; 3]> = BTreeMap::new();
+fn accumulate_forces(interactions: Vec<Interaction>) -> CoordMap {
+    let mut btree: CoordMap = BTreeMap::new();
     for interaction in interactions {
         for particle in interaction.forces {
             let index: i32 = particle
@@ -599,15 +602,16 @@ fn accumulate_forces(interactions: Vec<Interaction>) -> BTreeMap<i32, [f64; 3]> 
     btree
 }
 
-fn zeroed_out(indices: &HashSet<i32>) -> BTreeMap<i32, [f64; 3]> {
-    let mut btree: BTreeMap<i32, [f64; 3]> = BTreeMap::new();
+/// Create a map with the provided indices and arrays of zeros as values.
+fn zeroed_out(indices: &HashSet<i32>) -> CoordMap {
+    let mut btree: CoordMap = BTreeMap::new();
     indices.iter().for_each(|i| {
         btree.insert(*i, [0.0, 0.0, 0.0]);
     });
     btree
 }
 
-fn compute_gaussian_force(diff: [f64; 3], sigma: f64) -> [f64; 3] {
+fn compute_gaussian_force(diff: Coordinate, sigma: f64) -> Coordinate {
     let sigma_sqr = sigma * sigma;
     let distance_sqr = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
     let gauss = (-distance_sqr / (2.0 * sigma_sqr)).exp();
@@ -618,7 +622,113 @@ fn compute_gaussian_force(diff: [f64; 3], sigma: f64) -> [f64; 3] {
     ]
 }
 
-fn compute_harmonic_force(diff: [f64; 3], k: f64) -> [f64; 3] {
+fn compute_harmonic_force(diff: Coordinate, k: f64) -> Coordinate {
     let factor = -2.0 * k;
     [factor * diff[0], factor * diff[1], factor * diff[2]]
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+    use std::collections::HashSet;
+
+    const EXP_1: f64 = 0.6065306597126334;  // exp(-0.5)
+    const UNIT: Coordinate = [0.5773502691896258; 3]; // [1, 1, 1] / |[1, 1, 1]|
+
+    #[test]
+    fn test_zeroed_out() {
+        let request_indices: [i32; 4] = [2, 4, 7, 9];
+        let set_indices: HashSet<i32> = HashSet::from(request_indices);
+        let zeroed = zeroed_out(&set_indices);
+        let keys: Vec<_> = zeroed.keys().cloned().collect();
+        let values: Vec<_> = zeroed.values().cloned().collect();
+        assert_eq!(keys, request_indices);
+        assert_eq!(values, [[0.0; 3]; 4]);
+    }
+
+    #[rstest]
+    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-EXP_1, 0.0, 0.0])]
+    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ EXP_1, 0.0, 0.0])]
+    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -EXP_1, 0.0])]
+    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -EXP_1])]
+    #[case(UNIT, [0.0, 0.0, 0.0], [-EXP_1 * UNIT[0]; 3])]
+    fn test_gaussian_force(
+            #[case] position: Coordinate,
+            #[case] interaction_position: Coordinate, 
+            #[case] expected_force: Coordinate,
+        ) {
+        let sigma = 1.0;
+        let diff = [
+            position[0] - interaction_position[0],
+            position[1] - interaction_position[1],
+            position[2] - interaction_position[2],
+        ];
+        let force = compute_gaussian_force(diff, sigma);
+        assert_f64_near!(force[0], expected_force[0]);
+        assert_f64_near!(force[1], expected_force[1]);
+        assert_f64_near!(force[2], expected_force[2]);
+    }
+
+    #[rstest]
+    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-2.0, 0.0, 0.0])]
+    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ 2.0, 0.0, 0.0])]
+    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -2.0, 0.0])]
+    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -2.0])]
+    #[case(UNIT, [0.0, 0.0, 0.0], [-2.0 * UNIT[0]; 3])]
+    #[case([1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [-2.0, -2.0, -2.0])]
+    #[case([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [0.0, 0.0, 0.0])]
+    #[case([-1.0, -1.0, -1.0], [0.0, 0.0, 0.0], [2.0, 2.0, 2.0])]
+    fn test_harmonic_force(
+        #[case] position: Coordinate,
+        #[case] interaction_position: Coordinate,
+        #[case] expected_force: Coordinate,
+    ) {
+        let k = 1.0;
+        let diff = [
+            position[0] - interaction_position[0],
+            position[1] - interaction_position[1],
+            position[2] - interaction_position[2],
+        ];
+        let force = compute_harmonic_force(diff, k);
+        assert_f64_near!(force[0], expected_force[0]);
+        assert_f64_near!(force[1], expected_force[1]);
+        assert_f64_near!(force[2], expected_force[2]);
+    }
+
+    #[test]
+    fn test_accumulate_forces() {
+        let interactions: Vec<Interaction> = vec![
+            Interaction {forces: vec![
+                InteractionForce {
+                    selection: 43,
+                    force: [1.0, 2.0, 3.0],
+                },
+                InteractionForce {
+                    selection: 12,
+                    force: [2.1, 3.2, 4.3],
+                }
+            ]},
+            Interaction {forces: vec![
+                InteractionForce {
+                    selection: 2,
+                    force: [3.2, 4.3, 5.4],
+                }
+            ]},
+            Interaction {forces: vec![
+                InteractionForce {
+                    selection: 43,
+                    force: [4.3, 5.4, 6.5],
+                }
+            ]}
+        ];
+        let accumulated = accumulate_forces(interactions);
+        let mut expected = BTreeMap::new();
+        expected.insert(2, [3.2, 4.3, 5.4]);
+        expected.insert(12, [2.1, 3.2, 4.3]);
+        expected.insert(43, [5.3, 7.4, 9.5]);
+
+        assert_eq!(accumulated, expected);
+    }
 }
