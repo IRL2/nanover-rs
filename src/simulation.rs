@@ -361,70 +361,37 @@ impl XMLSimulation {
                 .iter()
                 .map(|imd| {
                     let max_force = imd.max_force.unwrap_or(f64::INFINITY);
-                    let selection: Vec<i32> = imd
-                        .particles
-                        .iter()
-                        // *Ignore* particle indices that are out of bound.
-                        .filter(|p| **p < self.n_particles)
-                        // Convert particle indices to i32 so we can use them
-                        // in OpenMM methods. *Ignore* indices that do not fit.
-                        .flat_map(|p| (*p).try_into())
-                        .collect();
+                    let selection = filter_selection(&imd.particles, self.n_particles);
+                    
                     let masses: Vec<f64> = selection
                         .iter()
                         .map(|p| OpenMM_System_getParticleMass(self.system, *p))
                         .collect();
-                    let (com_sum, total_mass) = selection
+                    let positions: Vec<[f64; 3]> = selection
                         .iter()
-                        // Retrieve the position the selected particles.
                         .map(|p| {
                             let position =
                                 OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *p), 1.0);
                             [position.x, position.y, position.z]
                         })
-                        .zip(&masses)
-                        .fold(([0.0, 0.0, 0.0], 0.0), |acc, x| {
-                            (
-                                [
-                                    acc.0[0] + x.0[0] * x.1,
-                                    acc.0[1] + x.0[1] * x.1,
-                                    acc.0[2] + x.0[2] * x.1,
-                                ],
-                                acc.1 + x.1,
-                            )
-                        });
-                    let com = [
-                        com_sum[0] / total_mass,
-                        com_sum[1] / total_mass,
-                        com_sum[2] / total_mass,
-                    ];
-                    let c = imd.position;
-                    let diff = [com[0] - c[0], com[1] - c[1], com[2] - c[2]];
+                        .collect();
+
+                    let com = compute_com(&positions, &masses);
+                    let pos = imd.position;
+                    let diff = [com[0] - pos[0], com[1] - pos[1], com[2] - pos[2]];
                     let sigma = 1.0; // For now we use this as a constant. It is in the python version.
                     let com_force = match imd.kind {
                         InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
                         InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
                     };
-
-                    let force_per_particle = [
-                        imd.scale * com_force[0] / self.n_particles as f64,
-                        imd.scale * com_force[1] / self.n_particles as f64,
-                        imd.scale * com_force[2] / self.n_particles as f64,
-                    ];
-                    Interaction {
-                        forces: selection
-                            .iter()
-                            .zip(&masses)
-                            .map(|pm| InteractionForce {
-                                selection: *pm.0 as usize,
-                                force: [
-                                    (force_per_particle[0] * pm.1).clamp(-max_force, max_force),
-                                    (force_per_particle[1] * pm.1).clamp(-max_force, max_force),
-                                    (force_per_particle[2] * pm.1).clamp(-max_force, max_force),
-                                ],
-                            })
-                            .collect(),
-                    }
+                    build_interaction(
+                        &com_force,
+                        self.n_particles,
+                        imd.scale,
+                        &selection,
+                        &masses,
+                        max_force,
+                    )
                 })
                 .collect();
 
@@ -575,6 +542,27 @@ impl IMD for XMLSimulation {
     }
 }
 
+fn compute_com(positions: &Vec<[f64; 3]>, masses: &Vec<f64>) -> [f64; 3] {
+    let (com_sum, total_mass) = positions
+        .iter()
+        .zip(masses)
+        .fold(([0.0, 0.0, 0.0], 0.0), |acc, x| {
+            (
+                [
+                    acc.0[0] + x.0[0] * x.1,
+                    acc.0[1] + x.0[1] * x.1,
+                    acc.0[2] + x.0[2] * x.1,
+                ],
+                acc.1 + x.1,
+            )
+        });
+    [
+        com_sum[0] / total_mass,
+        com_sum[1] / total_mass,
+        com_sum[2] / total_mass,
+    ]
+}
+
 fn accumulate_forces(interactions: Vec<Interaction>) -> CoordMap {
     let mut btree: CoordMap = BTreeMap::new();
     for interaction in interactions {
@@ -594,6 +582,47 @@ fn accumulate_forces(interactions: Vec<Interaction>) -> CoordMap {
         }
     }
     btree
+}
+
+fn build_interaction(
+    com_force: &[f64; 3],
+    n_particles: usize,
+    scale: f64,
+    selection: &Vec<i32>,
+    masses: &Vec<f64>,
+    max_force: f64,
+) -> Interaction {
+    let force_per_particle = [
+        scale * com_force[0] / n_particles as f64,
+        scale * com_force[1] / n_particles as f64,
+        scale * com_force[2] / n_particles as f64,
+    ];
+    Interaction {
+        forces: selection
+            .iter()
+            .zip(masses)
+            .map(|pm| InteractionForce {
+                selection: *pm.0 as usize,
+                force: [
+                    (force_per_particle[0] * pm.1).clamp(-max_force, max_force),
+                    (force_per_particle[1] * pm.1).clamp(-max_force, max_force),
+                    (force_per_particle[2] * pm.1).clamp(-max_force, max_force),
+                ],
+            })
+            .collect(),
+    }
+}
+
+fn filter_selection(particles: &Vec<usize>, n_particles: usize) -> Vec<i32> {
+    let selection: Vec<i32> = particles
+        .iter()
+        // *Ignore* particle indices that are out of bound.
+        .filter(|p| **p < n_particles)
+        // Convert particle indices to i32 so we can use them
+        // in OpenMM methods. *Ignore* indices that do not fit.
+        .flat_map(|p| (*p).try_into())
+        .collect();
+    selection
 }
 
 /// Create a map with the provided indices and arrays of zeros as values.
