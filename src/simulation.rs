@@ -362,23 +362,15 @@ impl XMLSimulation {
                 .map(|imd| {
                     let max_force = imd.max_force.unwrap_or(f64::INFINITY);
                     let selection = filter_selection(&imd.particles, self.n_particles);
-                    
-                    let masses: Vec<f64> = selection
-                        .iter()
-                        .map(|p| OpenMM_System_getParticleMass(self.system, *p))
-                        .collect();
-                    let positions: Vec<[f64; 3]> = selection
-                        .iter()
-                        .map(|p| {
-                            let position =
-                                OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *p), 1.0);
-                            [position.x, position.y, position.z]
-                        })
-                        .collect();
-
-                    let com = compute_com(&positions, &masses);
-                    let pos = imd.position;
-                    let diff = [com[0] - pos[0], com[1] - pos[1], com[2] - pos[2]];
+                    let masses = get_selection_masses_from_system(&selection, self.system);
+                    let particle_positions = get_selection_positions_from_state_positions(&selection, pos_state);
+                    let com = compute_com(&particle_positions, &masses);
+                    let interaction_position = imd.position;
+                    let diff = [
+                        com[0] - interaction_position[0],
+                        com[1] - interaction_position[1],
+                        com[2] - interaction_position[2],
+                    ];
                     let sigma = 1.0; // For now we use this as a constant. It is in the python version.
                     let com_force = match imd.kind {
                         InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
@@ -648,6 +640,30 @@ fn compute_gaussian_force(diff: Coordinate, sigma: f64) -> Coordinate {
 fn compute_harmonic_force(diff: Coordinate, k: f64) -> Coordinate {
     let factor = -2.0 * k;
     [factor * diff[0], factor * diff[1], factor * diff[2]]
+}
+
+unsafe fn get_selection_masses_from_system(
+        selection: &Vec<i32>,
+        system: *mut OpenMM_System,
+    ) -> Vec<f64> {
+    selection
+        .iter()
+        .map(|p| OpenMM_System_getParticleMass(system, *p))
+        .collect()
+}
+
+unsafe fn get_selection_positions_from_state_positions(
+        selection: &Vec<i32>,
+        pos_state: *const OpenMM_Vec3Array,
+    ) -> Vec<[f64; 3]> {
+    selection
+        .iter()
+        .map(|p| {
+            let position =
+                OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *p), 1.0);
+            [position.x, position.y, position.z]
+        })
+        .collect()
 }
 
 
