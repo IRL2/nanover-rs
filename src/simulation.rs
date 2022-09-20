@@ -534,7 +534,7 @@ impl IMD for XMLSimulation {
     }
 }
 
-fn compute_com(positions: &Vec<[f64; 3]>, masses: &Vec<f64>) -> [f64; 3] {
+fn compute_com(positions: &[[f64; 3]], masses: &[f64]) -> [f64; 3] {
     let (com_sum, total_mass) = positions
         .iter()
         .zip(masses)
@@ -580,8 +580,8 @@ fn build_interaction(
     com_force: &[f64; 3],
     n_particles: usize,
     scale: f64,
-    selection: &Vec<i32>,
-    masses: &Vec<f64>,
+    selection: &[i32],
+    masses: &[f64],
     max_force: f64,
 ) -> Interaction {
     let force_per_particle = [
@@ -605,7 +605,7 @@ fn build_interaction(
     }
 }
 
-fn filter_selection(particles: &Vec<usize>, n_particles: usize) -> Vec<i32> {
+fn filter_selection(particles: &[usize], n_particles: usize) -> Vec<i32> {
     let selection: HashSet<i32> = particles
         .iter()
         // *Ignore* particle indices that are out of bound.
@@ -644,7 +644,7 @@ fn compute_harmonic_force(diff: Coordinate, k: f64) -> Coordinate {
 }
 
 unsafe fn get_selection_masses_from_system(
-        selection: &Vec<i32>,
+        selection: &[i32],
         system: *mut OpenMM_System,
     ) -> Vec<f64> {
     selection
@@ -654,7 +654,7 @@ unsafe fn get_selection_masses_from_system(
 }
 
 unsafe fn get_selection_positions_from_state_positions(
-        selection: &Vec<i32>,
+        selection: &[i32],
         pos_state: *const OpenMM_Vec3Array,
     ) -> Vec<[f64; 3]> {
     selection
