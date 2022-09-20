@@ -1,0 +1,35 @@
+on: [push]
+
+name: CI
+
+jobs:
+  build_and_test:
+    name: Rust project
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Openmm
+        run: |
+          wget https://github.com/openmm/openmm/archive/refs/tags/7.7.0.tar.gz
+          tar -xf openmm-7.7.0.tar.gz
+      - name: install OpenMM
+        run: |
+          cd openmm-7.7.0
+          mkdir build
+          cd build
+          cmake .. \
+            -DCMAKE_INSTALL_PREFIX=$HOME/openmm/local \
+            -DOPENMM_BUILD_OPENCL_LIB=OFF \
+            -DOPENMM_BUILD_AMOEBA_PLUGIN=OFF \
+            -DOPENMM_BUILD_DRUDE_PLUGIN=OFF \
+            -DOPENMM_BUILD_PYTHON_WRAPPERS=OFF \
+            -DOPENMM_BUILD_RPMD_PLUGIN=OFF \
+          && make && make install
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+        env:
+          LD_LIBRARY_PATH: $HOME/openmm/local/lib
