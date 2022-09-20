@@ -9,7 +9,7 @@ jobs:
     steps:
       - name: Get Openmm
         run: |
-          wget https://github.com/openmm/openmm/archive/refs/tags/7.7.0.tar.gz
+          wget https://github.com/openmm/openmm/archive/refs/tags/7.7.0.tar.gz -O openmm-7.7.0.tar.gz
           tar -xf openmm-7.7.0.tar.gz
       - name: install OpenMM
         run: |
