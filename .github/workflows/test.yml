@@ -7,6 +7,10 @@ jobs:
     name: Rust project
     runs-on: ubuntu-latest
     steps:
+      - name: Build dependencies
+        run: |
+          apt update
+          apt install doxygen
       - name: Get Openmm
         run: |
           wget https://github.com/openmm/openmm/archive/refs/tags/7.7.0.tar.gz -O openmm-7.7.0.tar.gz
