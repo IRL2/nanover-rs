@@ -7,6 +7,16 @@ jobs:
     name: Rust project
     runs-on: ubuntu-latest
     steps:
+    - uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+          ~/local
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Build dependencies
         run: |
           sudo apt-get update
@@ -17,11 +27,12 @@ jobs:
           tar -xf openmm-7.7.0.tar.gz
       - name: install OpenMM
         run: |
+          echo $LD_LIBRARY_PATH
           cd openmm-7.7.0
           mkdir build
           cd build
           cmake .. \
-            -DCMAKE_INSTALL_PREFIX=$HOME/openmm/local \
+            -DCMAKE_INSTALL_PREFIX=$HOME/local \
             -DOPENMM_BUILD_OPENCL_LIB=OFF \
             -DOPENMM_BUILD_AMOEBA_PLUGIN=OFF \
             -DOPENMM_BUILD_DRUDE_PLUGIN=OFF \
@@ -36,4 +47,5 @@ jobs:
         with:
           command: test
         env:
-          LD_LIBRARY_PATH: $HOME/openmm/local/lib
+          LD_LIBRARY_PATH: /home/runner/local/lib/
+          OPENMM_HOME: /home/runner/local/lib/
