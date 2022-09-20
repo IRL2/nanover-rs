@@ -48,4 +48,4 @@ jobs:
           command: test
         env:
           LD_LIBRARY_PATH: /home/runner/local/lib/
-          OPENMM_HOME: /home/runner/local/lib/
+          OPENMM_HOME: /home/runner/local/
