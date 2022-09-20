@@ -9,8 +9,8 @@ jobs:
     steps:
       - name: Build dependencies
         run: |
-          apt update
-          apt install doxygen
+          sudo apt-get update
+          sudo apt-get install doxygen
       - name: Get Openmm
         run: |
           wget https://github.com/openmm/openmm/archive/refs/tags/7.7.0.tar.gz -O openmm-7.7.0.tar.gz
