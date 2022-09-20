@@ -606,15 +606,16 @@ fn build_interaction(
 }
 
 fn filter_selection(particles: &Vec<usize>, n_particles: usize) -> Vec<i32> {
-    let selection: Vec<i32> = particles
+    let selection: HashSet<i32> = particles
         .iter()
         // *Ignore* particle indices that are out of bound.
         .filter(|p| **p < n_particles)
         // Convert particle indices to i32 so we can use them
         // in OpenMM methods. *Ignore* indices that do not fit.
         .flat_map(|p| (*p).try_into())
+        // By collecting into a HashSet, we remove duplicate indices.
         .collect();
-    selection
+    selection.into_iter().collect()
 }
 
 /// Create a map with the provided indices and arrays of zeros as values.
@@ -769,5 +770,14 @@ mod tests {
         expected.insert(43, [5.3, 7.4, 9.5]);
 
         assert_eq!(accumulated, expected);
+    }
+
+    #[test]
+    fn test_filter_selection() {
+        let input: Vec<usize> = vec![4, 5, 6, 11, 10, 5, 9];
+        let n_particles = 10;
+        let mut result = filter_selection(&input, n_particles);
+        result.sort();
+        assert_eq!(result, vec![4, 5, 6, 9]);
     }
 }
