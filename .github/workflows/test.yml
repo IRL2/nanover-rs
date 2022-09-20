@@ -16,7 +16,7 @@ jobs:
             ~/.cargo/git/db/
             target/
             ~/local
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Build dependencies
         run: |
           sudo apt-get update
