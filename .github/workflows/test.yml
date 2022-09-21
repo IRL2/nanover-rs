@@ -23,7 +23,7 @@ jobs:
           key: ${{ runner.os }}-openmm-7.7.0
       - name: Install Openmm
         run: |
-          if [[ !-e "/home/runner/local/lib/libOpenMM.so"]]; then
+          if [[ ! -e "/home/runner/local/lib/libOpenMM.so" ]]; then
             sudo apt-get update
             sudo apt-get install doxygen
             wget https://github.com/openmm/openmm/archive/refs/tags/7.7.0.tar.gz -O openmm-7.7.0.tar.gz
