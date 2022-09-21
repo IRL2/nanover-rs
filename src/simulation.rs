@@ -266,7 +266,7 @@ impl XMLSimulation {
             }
 
             let n_platform = OpenMM_Platform_getNumPlatforms();
-            println!("Number of platforms regitered: {n_platform}");
+            println!("Number of platforms registered: {n_platform}");
 
             let init_pos = OpenMM_Vec3Array_create(n_atoms.try_into().unwrap());
             for (i, atom) in structure.atoms().enumerate() {
