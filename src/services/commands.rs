@@ -1,27 +1,21 @@
-use std::sync::{Arc, Mutex, mpsc::Sender};
 use crate::playback::PlaybackOrder;
 use crate::proto::protocol::command::command_server::Command;
 use crate::proto::protocol::command::{
     CommandMessage, CommandReply, GetCommandsReply, GetCommandsRequest,
 };
 use prost::alloc::vec::Vec;
+use tokio::sync::mpsc::Sender;
 
 pub use crate::proto::protocol::command::command_server::CommandServer;
 
 pub struct CommandService {
-    channel: Arc<Mutex<Sender<PlaybackOrder>>>,
-    //channel: tokio::sync::mpsc::Sender<PlaybackOrder>,
+    channel: Sender<PlaybackOrder>,
 }
 
 impl CommandService {
     pub fn new(channel: Sender<PlaybackOrder>) -> Self {
-        CommandService{ channel: Arc::new(Mutex::new(channel)) }
-    }
-    /*
-    pub fn new(channel: tokio::sync::mpsc::Sender<PlaybackOrder>) -> Self {
         CommandService { channel }
     }
-    */
 }
 
 #[tonic::async_trait]
@@ -48,27 +42,21 @@ impl Command for CommandService {
             "playback/play" => {
                 self
                     .channel
-                    .lock()
-                    .unwrap()
-                    .send(PlaybackOrder::Play)
+                    .try_send(PlaybackOrder::Play)
                     .unwrap();
                 Ok(tonic::Response::new(CommandReply { result: None }))
             },
             "playback/pause" => {
                 self
                     .channel
-                    .lock()
-                    .unwrap()
-                    .send(PlaybackOrder::Pause)
+                    .try_send(PlaybackOrder::Pause)
                     .unwrap();
                 Ok(tonic::Response::new(CommandReply { result: None }))
             },
             "playback/reset" => {
                 self
                     .channel
-                    .lock()
-                    .unwrap()
-                    .send(PlaybackOrder::Reset)
+                    .try_send(PlaybackOrder::Reset)
                     .unwrap();
                 Ok(tonic::Response::new(CommandReply { result: None }))
             },

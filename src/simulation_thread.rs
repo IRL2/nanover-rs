@@ -3,8 +3,8 @@ use std::fs::File;
 use std::io::BufReader;
 use std::time::Duration;
 use std::{thread, time};
-use std::sync::{Arc, Mutex, mpsc::Receiver};
-use std::sync::mpsc::TryRecvError;
+use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc::{Receiver, error::TryRecvError};
 use std::cmp::Ordering;
 
 use crate::playback::{PlaybackOrder, PlaybackState};
@@ -38,7 +38,7 @@ pub fn run_simulation_thread(
         frame_interval: i32,
         force_interval: i32,
         verbose: bool,
-        playback_rx: Receiver<PlaybackOrder>,
+        mut playback_rx: Receiver<PlaybackOrder>,
 ) {
     tokio::task::spawn_blocking(move || {
         // TODO: check if there isn't a throttled iterator, otherwise write one.
