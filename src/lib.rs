@@ -10,3 +10,4 @@ pub mod simulation;
 pub mod state_broadcaster;
 pub mod state_interaction;
 pub mod simulation_thread;
+pub mod playback;

@@ -76,6 +76,7 @@ pub struct Interaction {
 
 pub trait Simulation {
     fn step(&mut self, steps: i32);
+    fn reset(&mut self);
 }
 
 pub trait ToFrameData {
@@ -413,6 +414,8 @@ impl Simulation for XMLSimulation {
             OpenMM_Integrator_step(self.integrator, steps);
         }
     }
+
+    fn reset(&mut self) {}
 }
 
 impl ToFrameData for XMLSimulation {

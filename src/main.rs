@@ -7,9 +7,11 @@ use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::state_broadcaster::StateBroadcaster;
 use narupa_rs::simulation_thread::run_simulation_thread;
+use narupa_rs::playback::PlaybackOrder;
 use std::convert::TryInto;
 use std::net::ToSocketAddrs;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
+use std::sync::mpsc::{Sender, Receiver};
 use tonic::transport::Server;
 
 use clap::Parser;
@@ -63,6 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame)));
     let shared_state = Arc::new(Mutex::new(StateBroadcaster::new()));
 
+    let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) = mpsc::channel();
+
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
@@ -74,13 +78,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         frame_interval,
         force_interval,
         verbose,
+        playback_rx,
     );
 
     // Run the GRPC server on the main thread.
     println!("Let's go!");
     let address = format!("[::]:{port}");
     let server = Trajectory::new(Arc::clone(&frame_source));
-    let command_service = CommandService {};
+    let command_service = CommandService::new(playback_tx);
     let state_service = StateService::new(Arc::clone(&shared_state));
     Server::builder()
         .add_service(TrajectoryServiceServer::new(server))
