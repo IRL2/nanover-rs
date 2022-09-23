@@ -8,7 +8,6 @@ use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::state_broadcaster::StateBroadcaster;
 use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::playback::PlaybackOrder;
-use std::convert::TryInto;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{self, Sender, Receiver};
@@ -47,14 +46,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let xml_path = cli.input_xml_path;
     let port = cli.port;
     let simulation_interval = ((1.0 / (cli.simulation_fps) as f64) * 1000.0) as u64;
-    let frame_interval: i32 = cli
-        .frame_interval
-        .try_into()
-        .expect("Invalid frame interval value.");
-    let force_interval: i32 = cli
-        .force_interval
-        .try_into()
-        .expect("Invalid force interval value.");
+    let frame_interval = cli .frame_interval;
+    let force_interval = cli .force_interval;
     let verbose = cli.verbose;
 
     // We have 2 separate threads: one runs the simulation, and the other one

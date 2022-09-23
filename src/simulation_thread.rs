@@ -14,7 +14,9 @@ use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
 use crate::broadcaster::Broadcaster;
 
-fn next_stop(current_frame: u64, frame_interval: u64, force_interval: u64) -> (i32, bool, bool) {
+fn next_stop(current_frame: u64, frame_interval: u32, force_interval: u32) -> (i32, bool, bool) {
+    let frame_interval: u64 = frame_interval as u64;
+    let force_interval: u64 = force_interval as u64;
     let next_frame_stop = frame_interval - current_frame % frame_interval;
     let next_force_stop = force_interval - current_frame % force_interval;
     match next_frame_stop.cmp(&next_force_stop) {
@@ -35,8 +37,8 @@ pub fn run_simulation_thread(
         sim_clone: Arc<Mutex<FrameBroadcaster>>,
         state_clone: Arc<Mutex<StateBroadcaster>>,
         simulation_interval: u64,
-        frame_interval: i32,
-        force_interval: i32,
+        frame_interval: u32,
+        force_interval: u32,
         verbose: bool,
         mut playback_rx: Receiver<PlaybackOrder>,
 ) {
@@ -75,8 +77,8 @@ pub fn run_simulation_thread(
             if playback_state.is_playing() {
                 let (delta_frames, do_frames, do_forces) = next_stop(
                     current_simulation_frame,
-                    frame_interval as u64,
-                    force_interval as u64,
+                    frame_interval,
+                    force_interval,
                 );
                 simulation.step(delta_frames);
                 current_simulation_frame += delta_frames as u64;
