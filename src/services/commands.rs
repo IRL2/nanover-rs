@@ -60,6 +60,13 @@ impl Command for CommandService {
                     .unwrap();
                 Ok(tonic::Response::new(CommandReply { result: None }))
             },
+            "playback/step" => {
+                self
+                    .channel
+                    .try_send(PlaybackOrder::Step)
+                    .unwrap();
+                Ok(tonic::Response::new(CommandReply { result: None }))
+            }
             _ => {
                 Err(tonic::Status::invalid_argument("Not implemented yet"))
             }

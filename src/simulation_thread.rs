@@ -26,6 +26,11 @@ fn next_stop(current_frame: u64, frame_interval: u32, force_interval: u32) -> (i
     }
 }
 
+fn next_frame_stop(current_frame: u64, frame_interval: u32) -> i32 {
+    let frame_interval: u64 = frame_interval as u64;
+    (frame_interval - current_frame % frame_interval).try_into().unwrap()
+}
+
 fn apply_forces(state_clone: &Arc<Mutex<StateBroadcaster>>, simulation: &mut XMLSimulation) {
     let state_interactions = read_forces(state_clone);
     let imd_interactions = simulation.compute_forces(&state_interactions);
@@ -66,6 +71,14 @@ pub fn run_simulation_thread(
                 let order_result = playback_rx.try_recv();
                 match order_result {
                     Ok(PlaybackOrder::Reset) => simulation.reset(),
+                    Ok(PlaybackOrder::Step) => {
+                        let delta_frames = next_frame_stop(current_simulation_frame, frame_interval);
+                        simulation.step(delta_frames);
+                        current_simulation_frame += delta_frames as u64;
+                        let frame = simulation.to_framedata();
+                        sim_clone.lock().unwrap().send(frame).unwrap();
+                        playback_state.update(PlaybackOrder::Step);
+                    },
                     Ok(order) => playback_state.update(order),
                     // The queue of order is empty so we are done handling them.
                     Err(TryRecvError::Empty) => break,

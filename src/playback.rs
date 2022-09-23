@@ -3,6 +3,7 @@ pub enum PlaybackOrder {
     Play,
     Pause,
     Reset,
+    Step,
 }
 
 pub struct PlaybackState {
@@ -22,7 +23,10 @@ impl PlaybackState {
         match order {
             PlaybackOrder::Play => self.playing = true,
             PlaybackOrder::Pause => self.playing = false,
-            PlaybackOrder::Reset => {},  // Not our responsability here
+            // Stepping implies to pause the trajectory
+            PlaybackOrder::Step => self.playing = false,
+            // Not our responsability here
+            PlaybackOrder::Reset => {},
         }
     }
 }
@@ -47,6 +51,8 @@ mod tests {
     #[case(false, PlaybackOrder::Pause, false)]
     #[case(true, PlaybackOrder::Reset, true)]
     #[case(false, PlaybackOrder::Reset, false)]
+    #[case(true, PlaybackOrder::Step, false)]
+    #[case(false, PlaybackOrder::Step, false)]
     fn test_playback_update(
             #[case] previous_play: bool,
             #[case] order: PlaybackOrder,
