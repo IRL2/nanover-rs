@@ -16,7 +16,7 @@ use openmm_sys::{
     OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create,
     OpenMM_Vec3Array_destroy, OpenMM_Vec3Array_get, OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set,
     OpenMM_Vec3_scale, OpenMM_XmlSerializer_deserializeIntegrator,
-    OpenMM_XmlSerializer_deserializeSystem,
+    OpenMM_XmlSerializer_deserializeSystem, OpenMM_State, OpenMM_Context_setState,
 };
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Reader;
@@ -110,6 +110,7 @@ pub struct XMLSimulation {
     imd_force: *mut OpenMM_CustomExternalForce,
     n_particles: usize,
     previous_particle_touched: HashSet<i32>,
+    initial_state: *mut OpenMM_State,
 }
 
 impl XMLSimulation {
@@ -298,6 +299,9 @@ impl XMLSimulation {
             let context = OpenMM_Context_create(system, integrator);
             OpenMM_Context_setPositions(context, init_pos);
 
+            let initial_state = OpenMM_Context_getState(
+                context, OpenMM_State_DataType_OpenMM_State_Positions as i32, 0);
+
             let platform = OpenMM_Context_getPlatform(context);
             let platform_name = CStr::from_ptr(OpenMM_Platform_getName(platform))
                 .to_str()
@@ -316,6 +320,7 @@ impl XMLSimulation {
                 imd_force,
                 n_particles,
                 previous_particle_touched,
+                initial_state,
             }
         };
         sim
@@ -393,6 +398,12 @@ impl XMLSimulation {
             interactions
         }
     }
+
+    pub fn reset_state(&mut self) {
+        unsafe {
+            OpenMM_Context_setState(self.context, self.initial_state);
+        }
+    }
 }
 
 impl Drop for XMLSimulation {
@@ -404,6 +415,7 @@ impl Drop for XMLSimulation {
             OpenMM_Integrator_destroy(self.integrator);
             OpenMM_System_destroy(self.system);
             OpenMM_CustomExternalForce_destroy(self.imd_force);
+            OpenMM_State_destroy(self.initial_state);
         }
     }
 }
@@ -415,7 +427,9 @@ impl Simulation for XMLSimulation {
         }
     }
 
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        self.reset_state();
+    }
 }
 
 impl ToFrameData for XMLSimulation {
