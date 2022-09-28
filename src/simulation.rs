@@ -1,5 +1,4 @@
 extern crate openmm_sys;
-extern crate pdbtbx;
 
 use openmm_sys::{
     OpenMM_Context, OpenMM_Context_create, OpenMM_Context_destroy, OpenMM_Context_getPlatform,
@@ -25,7 +24,9 @@ use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::ffi::{CStr, CString};
 use std::io::{BufReader, Cursor, Read};
+use std::ops::Deref;
 use std::str;
+use chemfiles::{Trajectory, Topology, Frame};
 
 use crate::frame::FrameData;
 
@@ -105,7 +106,7 @@ pub struct XMLSimulation {
     init_pos: *mut OpenMM_Vec3Array,
     integrator: *mut OpenMM_Integrator,
     context: *mut OpenMM_Context,
-    topology: pdbtbx::PDB,
+    topology: Topology,
     platform_name: String,
     imd_force: *mut OpenMM_CustomExternalForce,
     n_particles: usize,
@@ -230,27 +231,24 @@ impl XMLSimulation {
             None => panic!("No integrator found in the file."),
             Some(content) => CString::new(str::from_utf8(&content).unwrap()).unwrap(),
         };
-        let structure = match structure_type {
-            StructureType::None => panic!("No structure found."),
-            StructureType::Pdb => {
-                let (structure, _) = pdbtbx::open_pdb_raw(
-                    BufReader::new(Cursor::new(structure_buffer)),
-                    pdbtbx::Context::None,
-                    pdbtbx::StrictnessLevel::Loose,
-                )
-                .unwrap();
-                structure
-            }
-            StructureType::Pdbx => {
-                let (structure, _) = pdbtbx::open_mmcif_raw(
-                    str::from_utf8(&structure_buffer).unwrap(),
-                    pdbtbx::StrictnessLevel::Loose,
-                )
-                .unwrap();
-                structure
-            }
+        
+        let structure = {
+            let format = match structure_type {
+                StructureType::None => panic!("No structure found."),
+                StructureType::Pdb => String::from("PDB"),
+                StructureType::Pdbx => String::from("mmCIF"),
+            };
+            println!("{:?}", structure_buffer);
+            println!("{format:?}");
+            let structure_string: String = structure_buffer.iter().map(|char| *char as char).collect();
+            println!("{}", structure_string.as_str());
+            let mut trajectory = Trajectory::memory_reader(structure_string.as_str(), format.as_str()).unwrap();
+            let mut frame = Frame::new();
+            trajectory.read(&mut frame).unwrap();
+            frame
         };
-        let n_atoms = structure.atom_count();
+        let topology = structure.topology();
+        let n_atoms = structure.size();
         println!("Particles in the structure: {n_atoms}");
 
         let sim = unsafe {
@@ -271,12 +269,13 @@ impl XMLSimulation {
             println!("Number of platforms registered: {n_platform}");
 
             let init_pos = OpenMM_Vec3Array_create(n_atoms.try_into().unwrap());
-            for (i, atom) in structure.atoms().enumerate() {
+            let positions = structure.positions();
+            for i in 0..n_atoms {
                 // The input structure is in angstsroms, but we need to provide nm.
                 let position = OpenMM_Vec3 {
-                    x: atom.x() / 10.0,
-                    y: atom.y() / 10.0,
-                    z: atom.z() / 10.0,
+                    x: positions[i][0] / 10.0,
+                    y: positions[i][1] / 10.0,
+                    z: positions[i][2] / 10.0,
                 };
                 OpenMM_Vec3Array_set(init_pos, i.try_into().unwrap(), position);
             }
@@ -315,7 +314,7 @@ impl XMLSimulation {
                 init_pos,
                 integrator,
                 context,
-                topology: structure,
+                topology: topology.deref().clone(),
                 platform_name,
                 imd_force,
                 n_particles,
@@ -497,15 +496,14 @@ impl ToFrameData for XMLSimulation {
     fn to_topology_framedata(&self) -> FrameData {
         let mut frame = FrameData::empty();
 
-        let n_particles = self.topology.atom_count();
+        let n_particles = self.topology.size();
         frame
             .insert_number_value("particle.count", (n_particles) as f64)
             .unwrap();
 
-        let elements: Vec<u32> = self
-            .topology
-            .atoms()
-            .map(|atom| atom.atomic_number().unwrap_or(0).try_into().unwrap())
+        // TODO: There may not be element symbols. (Issue #27)
+        let elements: Vec<u32> = (0..self.n_particles)
+            .map(|i| self.topology.atom(i).atomic_number() as u32)
             .collect();
         frame
             .insert_index_array("particle.elements", elements)
@@ -683,6 +681,7 @@ unsafe fn get_selection_positions_from_state_positions(
         })
         .collect()
 }
+
 
 
 #[cfg(test)]

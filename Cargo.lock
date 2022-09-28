@@ -188,6 +188,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "chemfiles"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad958b62ad4be48ff0ee9510e0aab2991ddbbd91210081d47276999650fab30f"
+dependencies = [
+ "chemfiles-sys",
+ "libc",
+]
+
+[[package]]
+name = "chemfiles-sys"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92229d3999f901ff8f91f6fd8739a91d19c728b6d665676212930530ef8aa16e"
+dependencies = [
+ "cmake",
+ "libc",
+]
+
+[[package]]
 name = "clap"
 version = "3.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -716,6 +736,7 @@ name = "narupa-rs"
 version = "0.1.0"
 dependencies = [
  "assert_float_eq",
+ "chemfiles",
  "clap",
  "futures",
  "openmm-sys",
