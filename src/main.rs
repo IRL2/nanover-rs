@@ -15,6 +15,9 @@ use std::time::Instant;
 use tokio::sync::mpsc::{self, Sender, Receiver};
 use tonic::transport::Server;
 
+use std::fs::File;
+use std::io::Write;
+
 use clap::Parser;
 
 /// A Narupa IMD server.
@@ -39,6 +42,8 @@ struct Cli {
     /// Display simulation advancement.
     #[clap(short, long, value_parser, default_value_t = false)]
     verbose: bool,
+    #[clap(long, value_parser)]
+    statistics: Option<String>,
 }
 
 #[tokio::main]
@@ -51,6 +56,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frame_interval = cli .frame_interval;
     let force_interval = cli .force_interval;
     let verbose = cli.verbose;
+    let statistics_file = cli
+        .statistics
+        .map_or(
+            None,
+            |path| Some(
+                File::create(path)
+                    .expect("Cannot open statistics file.")
+                )
+            );
 
     // We have 2 separate threads: one runs the simulation, and the other one
     // runs the GRPC server. Here, we setup how the two threads talk
@@ -63,18 +77,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) = mpsc::channel(100);
 
-    tokio::task::spawn_blocking(move || {
-        let start = Instant::now();
-        loop {
-            let frame_signal = frame_rx.try_recv();
-            match frame_signal {
-                Ok(BroadcasterSignal::Send(instant)) => println!("{:?}", instant.duration_since(start)),
-                Err(std::sync::mpsc::TryRecvError::Empty) => (),
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
-                Ok(_) => (), 
+    if let Some(mut output) = statistics_file {
+        tokio::task::spawn_blocking(move || {
+            let start = Instant::now();
+            loop {
+                let frame_signal = frame_rx.try_recv();
+                match frame_signal {
+                    Ok(BroadcasterSignal::Send(instant)) => {
+                        write!(output, "{:?}\n", instant.duration_since(start)).unwrap();
+                    },
+                    Err(std::sync::mpsc::TryRecvError::Empty) => (),
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+                    Ok(_) => (), 
+                };
             };
-        };
-    });
+        });
+    };
 
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
