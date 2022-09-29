@@ -1,19 +1,22 @@
-use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec};
+use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec, BroadcasterSignal};
 use crate::frame::FrameData;
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 pub struct FrameBroadcaster {
     receivers: ReceiverVec<FrameData>,
     current: Mutex<FrameData>,
+    signal_tx: Sender<BroadcasterSignal>,
 }
 
 impl FrameBroadcaster {}
 
 impl FrameBroadcaster {
-    pub fn new(base_frame: FrameData) -> Self {
+    pub fn new(base_frame: FrameData, signal_tx: Sender<BroadcasterSignal>) -> Self {
         Self {
             receivers: Arc::new(Mutex::new(Vec::new())),
             current: Mutex::new(base_frame),
+            signal_tx,
         }
     }
 }
@@ -31,5 +34,9 @@ impl Broadcaster for FrameBroadcaster {
 
     fn update_current(&mut self, other: &Self::Content) {
         self.current.lock().unwrap().merge(other);
+    }
+
+    fn get_signal_tx(&self) -> Sender<BroadcasterSignal> {
+        self.signal_tx.clone()
     }
 }

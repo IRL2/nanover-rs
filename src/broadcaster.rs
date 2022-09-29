@@ -1,5 +1,6 @@
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc::Sender};
+use std::time::Instant;
 
 pub type ReceiverVec<T> = Arc<Mutex<Vec<Arc<Mutex<BroadcastReceiver<T>>>>>>;
 
@@ -29,6 +30,7 @@ pub trait Broadcaster {
     /// The consumer is a `BroadcastReceiver` that holds its
     /// accumulated update.
     fn get_rx(&mut self) -> Arc<Mutex<BroadcastReceiver<Self::Content>>> {
+        self.send_broadaster_signal(BroadcasterSignal::NewReceiver(Instant::now()));
         let current = self.get_current();
         let receiver = Arc::new(Mutex::new(BroadcastReceiver::new(current)));
         let clone = Arc::clone(&receiver);
@@ -38,6 +40,7 @@ pub trait Broadcaster {
 
     /// Send an update to all the receivers.
     fn send(&mut self, item: Self::Content) -> Result<(), ()> {
+        self.send_broadaster_signal(BroadcasterSignal::Send(Instant::now()));
         self.update_current(&item);
         let receivers = self.get_receivers();
         let receivers_locked = receivers.lock().unwrap();
@@ -53,12 +56,18 @@ pub trait Broadcaster {
         Ok(())
     }
 
+    fn send_broadaster_signal(&self, signal: BroadcasterSignal) {
+        self.get_signal_tx().send(signal).unwrap();
+    }
+
     /// List the receivers.
     fn get_receivers(&self) -> ReceiverVec<Self::Content>;
     /// Get a copy of the full accumulated state.
     fn get_current(&self) -> Self::Content;
     /// Update the full accumulated state.
     fn update_current(&mut self, other: &Self::Content);
+
+    fn get_signal_tx(&self) -> Sender<BroadcasterSignal>;
 }
 
 /// A consumer of a broadcast.
@@ -88,4 +97,9 @@ impl<T: Debug> BroadcastReceiver<T> {
 pub trait Mergeable {
     /// Combine another instance with the current instance, in place.
     fn merge(&mut self, other: &Self);
+}
+
+pub enum BroadcasterSignal {
+    Send(Instant),
+    NewReceiver(Instant),
 }
