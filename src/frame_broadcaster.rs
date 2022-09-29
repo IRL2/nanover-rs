@@ -6,13 +6,13 @@ use std::sync::{Arc, Mutex};
 pub struct FrameBroadcaster {
     receivers: ReceiverVec<FrameData>,
     current: Mutex<FrameData>,
-    signal_tx: Sender<BroadcasterSignal>,
+    signal_tx: Option<Sender<BroadcasterSignal>>,
 }
 
 impl FrameBroadcaster {}
 
 impl FrameBroadcaster {
-    pub fn new(base_frame: FrameData, signal_tx: Sender<BroadcasterSignal>) -> Self {
+    pub fn new(base_frame: FrameData, signal_tx: Option<Sender<BroadcasterSignal>>) -> Self {
         Self {
             receivers: Arc::new(Mutex::new(Vec::new())),
             current: Mutex::new(base_frame),
@@ -36,7 +36,7 @@ impl Broadcaster for FrameBroadcaster {
         self.current.lock().unwrap().merge(other);
     }
 
-    fn get_signal_tx(&self) -> Sender<BroadcasterSignal> {
-        self.signal_tx.clone()
+    fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>> {
+        if let Some(tx) = &self.signal_tx {Some(tx.clone())} else {None}
     }
 }

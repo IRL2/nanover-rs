@@ -63,8 +63,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             |path| Some(
                 File::create(path)
                     .expect("Cannot open statistics file.")
-                )
-            );
+            )
+        );
 
     // We have 2 separate threads: one runs the simulation, and the other one
     // runs the GRPC server. Here, we setup how the two threads talk
@@ -72,8 +72,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (frame_tx, frame_rx) = std::sync::mpsc::channel();
     let (state_tx, _state_rx) = std::sync::mpsc::channel();
     let empty_frame = FrameData::empty();
-    let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame, frame_tx)));
-    let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(state_tx)));
+    let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame, Some(frame_tx))));
+    let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(Some(state_tx))));
 
     let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) = mpsc::channel(100);
 

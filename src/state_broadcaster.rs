@@ -16,7 +16,7 @@ pub struct StateBroadcaster {
     state: BTreeMap<String, Value>,
     locks: BTreeMap<String, StateLock>,
     receivers: ReceiverVec<StateUpdate>,
-    signal_tx: Sender<BroadcasterSignal>,
+    signal_tx: Option<Sender<BroadcasterSignal>>,
 }
 
 /// Broadcast state updates to multiple consumers.
@@ -35,7 +35,7 @@ pub struct StateBroadcaster {
 /// use narupa_rs::proto::protocol::state::StateUpdate;
 /// 
 /// // Create a state broadcaster with an empty state
-/// let mut broadcaster = StateBroadcaster::new();
+/// let mut broadcaster = StateBroadcaster::new(None);
 /// 
 /// // Create a consumer to receive state updates
 /// let mut receiver_A = broadcaster.get_rx();
@@ -84,7 +84,7 @@ pub struct StateBroadcaster {
 /// assert!(receiver_B.lock().unwrap().recv() == Some(merged_updates));
 /// ```
 impl StateBroadcaster {
-    pub fn new(signal_tx: Sender<BroadcasterSignal>) -> Self {
+    pub fn new(signal_tx: Option<Sender<BroadcasterSignal>>) -> Self {
         let state = BTreeMap::new();
         let locks = BTreeMap::new();
         let receivers = Arc::new(Mutex::new(Vec::new()));
@@ -204,8 +204,8 @@ impl Broadcaster for StateBroadcaster {
         }
     }
 
-    fn get_signal_tx(&self) -> Sender<BroadcasterSignal> {
-        self.signal_tx.clone()
+    fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>> {
+        if let Some(tx) = &self.signal_tx {Some(tx.clone())} else {None}
     }
 }
 

@@ -57,7 +57,7 @@ pub trait Broadcaster {
     }
 
     fn send_broadaster_signal(&self, signal: BroadcasterSignal) {
-        self.get_signal_tx().send(signal).unwrap();
+        self.get_signal_tx().map(|tx| tx.send(signal).unwrap());
     }
 
     /// List the receivers.
@@ -67,7 +67,7 @@ pub trait Broadcaster {
     /// Update the full accumulated state.
     fn update_current(&mut self, other: &Self::Content);
 
-    fn get_signal_tx(&self) -> Sender<BroadcasterSignal>;
+    fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>>;
 }
 
 /// A consumer of a broadcast.
