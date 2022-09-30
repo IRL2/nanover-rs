@@ -67,17 +67,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;
 
-    // We have 2 separate threads: one runs the simulation, and the other one
-    // runs the GRPC server. Here, we setup how the two threads talk
+    // We have 3 separate threads: one runs the simulation, one
+    // runs the GRPC server, and one observes what is happening
+    // to provide some statistics. Here, we setup how the threads talk
     // to each other.
     let (frame_tx, frame_rx) = std::sync::mpsc::channel();
     let (state_tx, state_rx) = std::sync::mpsc::channel();
     let empty_frame = FrameData::empty();
     let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame, Some(frame_tx))));
     let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(Some(state_tx))));
-
     let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) = mpsc::channel(100);
 
+    // Observe what is happening for statistics.
     if let Some(output) = statistics_file {
         run_observer_thread(output, statistics_interval, frame_rx, state_rx);
     };
