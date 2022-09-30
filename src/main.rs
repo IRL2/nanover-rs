@@ -1,6 +1,5 @@
 extern crate clap;
 
-use narupa_rs::broadcaster::BroadcasterSignal;
 use narupa_rs::frame::FrameData;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
 use narupa_rs::services::commands::{CommandServer, CommandService};
@@ -8,16 +7,14 @@ use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::state_broadcaster::StateBroadcaster;
 use narupa_rs::simulation_thread::run_simulation_thread;
+use narupa_rs::observer_thread::run_observer_thread;
 use narupa_rs::playback::PlaybackOrder;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
-use std::time::{Instant, Duration};
-use std::thread;
+use std::fs::File;
 use tokio::sync::mpsc::{self, Sender, Receiver};
 use tonic::transport::Server;
 
-use std::fs::File;
-use std::io::Write;
 
 use clap::Parser;
 
@@ -74,39 +71,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // runs the GRPC server. Here, we setup how the two threads talk
     // to each other.
     let (frame_tx, frame_rx) = std::sync::mpsc::channel();
-    let (state_tx, _state_rx) = std::sync::mpsc::channel();
+    let (state_tx, state_rx) = std::sync::mpsc::channel();
     let empty_frame = FrameData::empty();
     let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame, Some(frame_tx))));
     let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(Some(state_tx))));
 
     let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) = mpsc::channel(100);
 
-    if let Some(mut output) = statistics_file {
-        tokio::task::spawn_blocking(move || {
-            let interval = Duration::from_millis(statistics_interval);
-            let start = Instant::now();
-            let mut keep_running = true;
-            while keep_running {
-                let now = Instant::now();
-                loop {
-                    let frame_signal = frame_rx.try_recv();
-                    match frame_signal {
-                        Ok(BroadcasterSignal::Send(instant)) => {
-                            write!(output, "{:?}\t{:?}\n", now, instant.duration_since(start)).unwrap();
-                        },
-                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => keep_running = false,
-                        Ok(_) => (),
-                    };
-                };
-                let elapsed = now.elapsed();
-                let time_left = match interval.checked_sub(elapsed) {
-                    Some(d) => d,
-                    None => Duration::from_millis(0),
-                };
-                thread::sleep(time_left);
-            };
-        });
+    if let Some(output) = statistics_file {
+        run_observer_thread(output, statistics_interval, frame_rx, state_rx);
     };
 
     // Run the simulation thread.
