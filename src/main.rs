@@ -11,7 +11,8 @@ use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::playback::PlaybackOrder;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, Duration};
+use std::thread;
 use tokio::sync::mpsc::{self, Sender, Receiver};
 use tonic::transport::Server;
 
@@ -44,6 +45,8 @@ struct Cli {
     verbose: bool,
     #[clap(long, value_parser)]
     statistics: Option<String>,
+    #[clap(long, value_parser, default_value_t = 4.0)]
+    statistics_fps: f64,
 }
 
 #[tokio::main]
@@ -65,6 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("Cannot open statistics file.")
             )
         );
+    let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;
 
     // We have 2 separate threads: one runs the simulation, and the other one
     // runs the GRPC server. Here, we setup how the two threads talk
@@ -79,17 +83,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(mut output) = statistics_file {
         tokio::task::spawn_blocking(move || {
+            let interval = Duration::from_millis(statistics_interval);
             let start = Instant::now();
-            loop {
-                let frame_signal = frame_rx.try_recv();
-                match frame_signal {
-                    Ok(BroadcasterSignal::Send(instant)) => {
-                        write!(output, "{:?}\n", instant.duration_since(start)).unwrap();
-                    },
-                    Err(std::sync::mpsc::TryRecvError::Empty) => (),
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
-                    Ok(_) => (), 
+            let mut keep_running = true;
+            while keep_running {
+                let now = Instant::now();
+                loop {
+                    let frame_signal = frame_rx.try_recv();
+                    match frame_signal {
+                        Ok(BroadcasterSignal::Send(instant)) => {
+                            write!(output, "{:?}\t{:?}\n", now, instant.duration_since(start)).unwrap();
+                        },
+                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => keep_running = false,
+                        Ok(_) => (),
+                    };
                 };
+                let elapsed = now.elapsed();
+                let time_left = match interval.checked_sub(elapsed) {
+                    Some(d) => d,
+                    None => Duration::from_millis(0),
+                };
+                thread::sleep(time_left);
             };
         });
     };
