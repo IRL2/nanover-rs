@@ -14,21 +14,26 @@ pub fn run_observer_thread(
     ) {
     tokio::task::spawn_blocking(move || {
         let interval = Duration::from_millis(interval_microseconds);
-        let start = Instant::now();
+        let mut previous = Instant::now();
         let mut keep_running = true;
         while keep_running {
             let now = Instant::now();
+            let mut mean_fps = AverageAccumulator::new();
             loop {
                 let frame_signal = frame_rx.try_recv();
                 match frame_signal {
                     Ok(BroadcasterSignal::Send(instant)) => {
-                        write!(output_file, "{:?}\t{:?}\n", now, instant.duration_since(start)).unwrap();
+                        let frame_interval_in_seconds = instant.duration_since(previous).as_secs_f64();
+                        let fps = 1.0 / frame_interval_in_seconds;
+                        mean_fps.push(fps);
+                        previous = instant;
                     },
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => keep_running = false,
                     Ok(_) => (),
                 };
             };
+            write!(output_file, "{:?}\t{:?}\n", now, mean_fps.average()).unwrap();
             let elapsed = now.elapsed();
             let time_left = match interval.checked_sub(elapsed) {
                 Some(d) => d,
@@ -37,4 +42,31 @@ pub fn run_observer_thread(
             thread::sleep(time_left);
         };
     });
+}
+
+struct AverageAccumulator {
+    avg: f64,
+    count: usize,
+}
+
+impl AverageAccumulator {
+    pub fn new() -> Self {
+        Self {avg: 0.0, count: 0}
+    }
+
+    pub fn push(&mut self, value: f64) {
+        let n = self.count as f64;
+        self.avg = (value + n * self.avg) / (n  + 1.0);
+        self.count += 1;
+    }
+
+    pub fn average(&self) -> f64 {
+        if self.count > 0 {self.avg} else {f64::NAN}
+    }
+}
+
+impl Default for AverageAccumulator {
+    fn default() -> Self {
+        Self::new()    
+    }
 }
