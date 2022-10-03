@@ -10,7 +10,6 @@ pub fn run_observer_thread(
         mut output_file: File,
         interval_microseconds: u64,
         frame_rx: Receiver<BroadcasterSignal>,
-        _state_rx: Receiver<BroadcasterSignal>,
         simulation_rx: Receiver<usize>,
     ) {
     tokio::task::spawn_blocking(move || {

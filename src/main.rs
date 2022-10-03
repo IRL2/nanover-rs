@@ -72,16 +72,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // to provide some statistics. Here, we setup how the threads talk
     // to each other.
     let (frame_tx, frame_rx) = std::sync::mpsc::channel();
-    let (state_tx, state_rx) = std::sync::mpsc::channel();
+    //let (state_tx, state_rx) = std::sync::mpsc::channel();
     let (simulation_tx, simulation_rx) = std::sync::mpsc::channel();
     let empty_frame = FrameData::empty();
     let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame, Some(frame_tx))));
-    let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(Some(state_tx))));
+    let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(None)));
     let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) = mpsc::channel(100);
 
     // Observe what is happening for statistics.
     if let Some(output) = statistics_file {
-        run_observer_thread(output, statistics_interval, frame_rx, state_rx, simulation_rx);
+        run_observer_thread(output, statistics_interval, frame_rx, simulation_rx);
     };
 
     // Run the simulation thread.
