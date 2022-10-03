@@ -14,6 +14,7 @@ pub fn run_observer_thread(
     ) {
     tokio::task::spawn_blocking(move || {
         let interval = Duration::from_millis(interval_microseconds);
+        let start = Instant::now();
         let mut previous = Instant::now();
         let mut keep_running = true;
         while keep_running {
@@ -42,7 +43,13 @@ pub fn run_observer_thread(
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => keep_running = false,
                 }
             }
-            write!(output_file, "{:?}\t{:?}\t{}\n", now, mean_fps.average(), max_interactions).unwrap();
+            write!(
+                output_file,
+                "{:.6}\t{:.3}\t{}\n",
+                now.saturating_duration_since(start).as_secs_f64(),
+                mean_fps.average(),
+                max_interactions
+            ).unwrap();
             let elapsed = now.elapsed();
             let time_left = match interval.checked_sub(elapsed) {
                 Some(d) => d,
