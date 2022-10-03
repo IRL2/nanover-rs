@@ -11,6 +11,7 @@ pub fn run_observer_thread(
         interval_microseconds: u64,
         frame_rx: Receiver<BroadcasterSignal>,
         _state_rx: Receiver<BroadcasterSignal>,
+        simulation_rx: Receiver<usize>,
     ) {
     tokio::task::spawn_blocking(move || {
         let interval = Duration::from_millis(interval_microseconds);
@@ -33,7 +34,16 @@ pub fn run_observer_thread(
                     Ok(_) => (),
                 };
             };
-            write!(output_file, "{:?}\t{:?}\n", now, mean_fps.average()).unwrap();
+            let mut max_interactions = 0;
+            loop {
+                let num_interactions = simulation_rx.try_recv();
+                match num_interactions {
+                    Ok(num) => if num > max_interactions {max_interactions = num},
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => keep_running = false,
+                }
+            }
+            write!(output_file, "{:?}\t{:?}\t{}\n", now, mean_fps.average(), max_interactions).unwrap();
             let elapsed = now.elapsed();
             let time_left = match interval.checked_sub(elapsed) {
                 Some(d) => d,

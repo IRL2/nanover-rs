@@ -29,8 +29,8 @@ struct Cli {
     #[clap(short, long, value_parser, default_value_t = 38801)]
     port: usize,
     /// Throtle the simulation at this rate.
-    #[clap(short, long, value_parser, default_value_t = 30)]
-    simulation_fps: usize,
+    #[clap(short, long, value_parser, default_value_t = 30.0)]
+    simulation_fps: f64,
     /// Sends a frame every STEPS dynamics steps.
     #[clap(short='f', long, value_parser, default_value_t = 5)]
     frame_interval: u32,
@@ -73,6 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // to each other.
     let (frame_tx, frame_rx) = std::sync::mpsc::channel();
     let (state_tx, state_rx) = std::sync::mpsc::channel();
+    let (simulation_tx, simulation_rx) = std::sync::mpsc::channel();
     let empty_frame = FrameData::empty();
     let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame, Some(frame_tx))));
     let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(Some(state_tx))));
@@ -80,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Observe what is happening for statistics.
     if let Some(output) = statistics_file {
-        run_observer_thread(output, statistics_interval, frame_rx, state_rx);
+        run_observer_thread(output, statistics_interval, frame_rx, state_rx, simulation_rx);
     };
 
     // Run the simulation thread.
@@ -95,6 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         force_interval,
         verbose,
         playback_rx,
+        simulation_tx,
     );
 
     // Run the GRPC server on the main thread.
