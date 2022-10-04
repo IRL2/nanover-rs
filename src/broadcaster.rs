@@ -1,7 +1,8 @@
 use std::fmt::Debug;
+use std::sync::Weak;
 use std::sync::{Arc, Mutex};
 
-pub type ReceiverVec<T> = Arc<Mutex<Vec<Arc<Mutex<BroadcastReceiver<T>>>>>>;
+pub type ReceiverVec<T> = Arc<Mutex<Vec<Weak<Mutex<BroadcastReceiver<T>>>>>>;
 
 /// Broadcast data to several consumers at various rates.
 ///
@@ -31,24 +32,34 @@ pub trait Broadcaster {
     fn get_rx(&mut self) -> Arc<Mutex<BroadcastReceiver<Self::Content>>> {
         let current = self.get_current();
         let receiver = Arc::new(Mutex::new(BroadcastReceiver::new(current)));
-        let clone = Arc::clone(&receiver);
-        self.get_receivers().lock().unwrap().push(receiver);
-        clone
+        let clone = Arc::downgrade(&receiver);
+        self.get_receivers().lock().unwrap().push(clone);
+        receiver
     }
 
     /// Send an update to all the receivers.
     fn send(&mut self, item: Self::Content) -> Result<(), ()> {
+        let mut to_remove: Vec<usize> = Vec::new();
         self.update_current(&item);
         let receivers = self.get_receivers();
-        let receivers_locked = receivers.lock().unwrap();
-        for receiver in &*receivers_locked {
-            let cloned_receiver = Arc::clone(receiver);
-            let mut cloned_locked = cloned_receiver.lock().unwrap();
-            let mut content = &mut cloned_locked.content;
-            match &mut content {
-                None => *content = Some(item.clone()),
-                Some(c) => c.merge(&item),
-            }
+        let mut receivers_locked = receivers.lock().unwrap();
+        for (index, receiver) in receivers_locked.iter().enumerate() {
+            match receiver.upgrade() {
+                Some(cloned_receiver) => {
+                    let mut cloned_locked = cloned_receiver.lock().unwrap();
+                    let mut content = &mut cloned_locked.content;
+                    match &mut content {
+                        None => *content = Some(item.clone()),
+                        Some(c) => c.merge(&item),
+                    }
+                },
+                None => {
+                    to_remove.push(index);
+                },
+            };
+        }
+        for index in to_remove.into_iter().rev() {
+            receivers_locked.remove(index);
         }
         Ok(())
     }
@@ -88,4 +99,73 @@ impl<T: Debug> BroadcastReceiver<T> {
 pub trait Mergeable {
     /// Combine another instance with the current instance, in place.
     fn merge(&mut self, other: &Self);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct DummyBroadcaster {
+        receivers: ReceiverVec<usize>,
+        current: usize,
+    }
+
+    impl DummyBroadcaster {
+        pub fn new() -> Self {
+            DummyBroadcaster { receivers: Arc::new(Mutex::new(Vec::new())), current: 0 }
+        }
+    }
+
+    impl Broadcaster for DummyBroadcaster {
+        type Content = usize;
+
+        fn get_current(&self) -> Self::Content {
+            self.current
+        }
+
+        fn get_receivers(&self) -> ReceiverVec<Self::Content> {
+            Arc::clone(&self.receivers)
+        }
+
+        fn update_current(&mut self, other: &Self::Content) {
+            self.current.merge(other);
+        }
+    }
+
+    impl Mergeable for usize {
+        fn merge(&mut self, other: &Self) {
+            *self += *other;
+        }
+    }
+
+    fn assert_num_receivers<T>(broadcaster: &T, expected: usize) where T: Broadcaster {
+        assert_eq!(broadcaster.get_receivers().lock().unwrap().len(), expected);
+    }
+
+    #[test]
+    fn test_adding_receivers() {
+        let mut broadcaster = DummyBroadcaster::new();
+
+        // Initially there is no receiver in the broadcaster.
+        assert_num_receivers(&broadcaster, 0);
+
+        // We add some receivers.
+        let rx0 = broadcaster.get_rx();
+        let rx1 = broadcaster.get_rx();
+        let rx2 = broadcaster.get_rx();
+        assert_num_receivers(&broadcaster, 3);
+
+        // We remove the receivers. This is only reflected after a send.
+        // We first remove one receiver, then the 2 others. This makes sure
+        // that the behaviour is correct regardless of the number of receivers
+        // dropped in between two sends.
+        drop(rx0);
+        assert_num_receivers(&broadcaster, 3);
+        broadcaster.send(1).unwrap();
+        assert_num_receivers(&broadcaster, 2);
+        drop(rx1);
+        drop(rx2);
+        broadcaster.send(2).unwrap();
+        assert_num_receivers(&broadcaster, 0);
+    }
 }
