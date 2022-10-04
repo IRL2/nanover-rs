@@ -119,6 +119,7 @@ pub enum BroadcasterSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
 
     struct DummyBroadcaster {
         receivers: ReceiverVec<usize>,
@@ -187,5 +188,40 @@ mod tests {
         drop(rx2);
         broadcaster.send(2).unwrap();
         assert_num_receivers(&broadcaster, 0);
+    }
+
+    /// When sending an update, the `Send` broadcaster signal is sent.
+    #[test]
+    fn test_sending_send_signal() {
+        let (signal_tx, signal_rx) = mpsc::channel();
+        let mut broadcaster = DummyBroadcaster::new(Some(signal_tx));
+
+        // Before we do anything, the channel is empty.
+        assert!(signal_rx.try_recv().is_err());
+
+        broadcaster.send(0).unwrap();
+        broadcaster.send(1).unwrap();
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
+        assert!(signal_rx.try_recv().is_err());
+    }
+
+    /// Adding and removing receivers send the appropriate broadcaster signals.
+    #[test]
+    fn test_sending_receivers_signal() {
+        let (signal_tx, signal_rx) = mpsc::channel();
+        let mut broadcaster = DummyBroadcaster::new(Some(signal_tx));
+
+        // Before we do anything, the channel is empty.
+        assert!(signal_rx.try_recv().is_err());
+
+        let rx = broadcaster.get_rx();
+        drop(rx);
+        broadcaster.send(0).unwrap();
+
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::NewReceiver(_)});
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::RemoveReceiver(_)});
+
     }
 }
