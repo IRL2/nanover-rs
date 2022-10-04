@@ -19,9 +19,14 @@ pub type ReceiverVec<T> = Arc<Mutex<Vec<Weak<Mutex<BroadcastReceiver<T>>>>>>;
 /// Creating a new consumer with `get_rx` returns a `BroadcarstReveiver`.
 /// Its `recv` method pops the accumulated updates for that consumer.
 ///
-/// Implementors need to implement `get_receivers`, `get_current`, and
-/// `update_current`. They also need to specify the type of the data with
-/// the `Content` attribute.
+/// When a broadcaster executes some actions, it sends signals over a
+/// channel. These signals are of type `BroadcasterSignal`. The broadcaster
+/// gives access to the channel's sender with the `get_signal_tx` method
+/// that returns an option. Signals are only sent if there is a channel.
+///
+/// Implementors need to implement `get_receivers`, `get_current`,
+/// `update_current`, and `get_signal_tx`. They also need to specify the type
+/// of the data with the `Content` attribute.
 pub trait Broadcaster {
     type Content: Mergeable + Clone + Debug;
 
@@ -29,6 +34,8 @@ pub trait Broadcaster {
     ///
     /// The consumer is a `BroadcastReceiver` that holds its
     /// accumulated update.
+    ///
+    /// Send the `BroacasterSignal::NewReceiver` signal.
     fn get_rx(&mut self) -> Arc<Mutex<BroadcastReceiver<Self::Content>>> {
         self.send_broadaster_signal(BroadcasterSignal::NewReceiver(Instant::now()));
         let current = self.get_current();
@@ -39,6 +46,9 @@ pub trait Broadcaster {
     }
 
     /// Send an update to all the receivers.
+    ///
+    /// Sends the `BroadcasterSignal::Send` signal every time. Sends also the
+    /// `BroadcasterSignal::RemoveReceiver` for each receiver that gets removed.
     fn send(&mut self, item: Self::Content) -> Result<(), ()> {
         self.send_broadaster_signal(BroadcasterSignal::Send(Instant::now()));
         let mut to_remove: Vec<usize> = Vec::new();
@@ -110,9 +120,13 @@ pub trait Mergeable {
     fn merge(&mut self, other: &Self);
 }
 
+/// Signal sent for some actions of a broadcaster.
 pub enum BroadcasterSignal {
+    /// Sent when an update is sent to the broadcaster.
     Send(Instant),
+    /// Sent when a receiver is created.
     NewReceiver(Instant),
+    /// Sent when a receiver is removed from the broadcaster.
     RemoveReceiver(Instant),
 }
 
