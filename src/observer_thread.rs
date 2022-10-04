@@ -17,6 +17,7 @@ pub fn run_observer_thread(
         let start = Instant::now();
         let mut previous = Instant::now();
         let mut keep_running = true;
+        let mut frame_receivers = 0;
         while keep_running {
             let now = Instant::now();
             let mut mean_fps = AverageAccumulator::new();
@@ -29,9 +30,10 @@ pub fn run_observer_thread(
                         mean_fps.push(fps);
                         previous = instant;
                     },
+                    Ok(BroadcasterSignal::NewReceiver(_)) => frame_receivers += 1,
+                    Ok(BroadcasterSignal::RemoveReceiver(_)) => frame_receivers -= 1,
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => keep_running = false,
-                    Ok(_) => (),
                 };
             };
             let mut max_interactions = 0;
@@ -45,10 +47,11 @@ pub fn run_observer_thread(
             }
             write!(
                 output_file,
-                "{:.6}\t{:.3}\t{}\n",
+                "{:.6}\t{:.3}\t{}\t{}\n",
                 now.saturating_duration_since(start).as_secs_f64(),
                 mean_fps.average(),
-                max_interactions
+                max_interactions,
+                frame_receivers,
             ).unwrap();
             let elapsed = now.elapsed();
             let time_left = match interval.checked_sub(elapsed) {
