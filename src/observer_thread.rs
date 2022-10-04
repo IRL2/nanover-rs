@@ -18,6 +18,10 @@ pub fn run_observer_thread(
         let mut previous = Instant::now();
         let mut keep_running = true;
         let mut frame_receivers = 0;
+        write!(
+            output_file,
+            "#\"Time (s)\"\t\"Average FPS\"\t\"Max interactions\"\t\"Frame clients\"\n"
+        ).unwrap();
         while keep_running {
             let now = Instant::now();
             let mut mean_fps = AverageAccumulator::new();
