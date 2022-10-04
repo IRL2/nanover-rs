@@ -121,11 +121,12 @@ mod tests {
     struct DummyBroadcaster {
         receivers: ReceiverVec<usize>,
         current: usize,
+        signal_tx: Option<Sender<BroadcasterSignal>>,
     }
 
     impl DummyBroadcaster {
-        pub fn new() -> Self {
-            DummyBroadcaster { receivers: Arc::new(Mutex::new(Vec::new())), current: 0 }
+        pub fn new(signal_tx: Option<Sender<BroadcasterSignal>>) -> Self {
+            DummyBroadcaster { receivers: Arc::new(Mutex::new(Vec::new())), current: 0, signal_tx }
         }
     }
 
@@ -143,6 +144,10 @@ mod tests {
         fn update_current(&mut self, other: &Self::Content) {
             self.current.merge(other);
         }
+    
+        fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>> {
+            if let Some(tx) = &self.signal_tx {Some(tx.clone())} else {None}
+        }
     }
 
     impl Mergeable for usize {
@@ -157,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_adding_receivers() {
-        let mut broadcaster = DummyBroadcaster::new();
+        let mut broadcaster = DummyBroadcaster::new(None);
 
         // Initially there is no receiver in the broadcaster.
         assert_num_receivers(&broadcaster, 0);
