@@ -71,7 +71,7 @@ pub trait Broadcaster {
             };
         }
         for index in to_remove.into_iter().rev() {
-        self.send_broadaster_signal(BroadcasterSignal::RemoveReceiver(Instant::now()));
+            self.send_broadaster_signal(BroadcasterSignal::RemoveReceiver(Instant::now()));
             receivers_locked.remove(index);
         }
         Ok(())
