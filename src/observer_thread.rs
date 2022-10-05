@@ -10,6 +10,7 @@ pub fn run_observer_thread(
         mut output_file: File,
         interval_microseconds: u64,
         frame_rx: Receiver<BroadcasterSignal>,
+        state_tx: Receiver<BroadcasterSignal>,
         simulation_rx: Receiver<usize>,
     ) {
     tokio::task::spawn_blocking(move || {
@@ -18,9 +19,10 @@ pub fn run_observer_thread(
         let mut previous = Instant::now();
         let mut keep_running = true;
         let mut frame_receivers = 0;
+        let mut state_receivers = 0;
         write!(
             output_file,
-            "#\"Time (s)\"\t\"Average FPS\"\t\"Max interactions\"\t\"Frame clients\"\n"
+            "#\"Time (s)\"\t\"Average FPS\"\t\"Max interactions\"\t\"Frame clients\"\t\"State clients\"\n"
         ).unwrap();
         while keep_running {
             let now = Instant::now();
@@ -40,6 +42,16 @@ pub fn run_observer_thread(
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => keep_running = false,
                 };
             };
+            loop {
+                let state_signal = state_tx.try_recv();
+                match state_signal {
+                    Ok(BroadcasterSignal::NewReceiver(_)) => state_receivers += 1,
+                    Ok(BroadcasterSignal::RemoveReceiver(_)) => state_receivers -= 1,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => keep_running = false,
+                    Ok(BroadcasterSignal::Send(_)) => (),
+                }
+            }
             let mut max_interactions = 0;
             loop {
                 let num_interactions = simulation_rx.try_recv();
@@ -51,11 +63,12 @@ pub fn run_observer_thread(
             }
             write!(
                 output_file,
-                "{:.6}\t{:.3}\t{}\t{}\n",
+                "{:.6}\t{:.3}\t{}\t{}\t{}\n",
                 now.saturating_duration_since(start).as_secs_f64(),
                 mean_fps.average(),
                 max_interactions,
                 frame_receivers,
+                state_receivers,
             ).unwrap();
             let elapsed = now.elapsed();
             let time_left = match interval.checked_sub(elapsed) {
