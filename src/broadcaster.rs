@@ -1,6 +1,6 @@
 use std::fmt::Debug;
-use std::sync::Weak;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak, mpsc::Sender};
+use std::time::Instant;
 
 pub type ReceiverVec<T> = Arc<Mutex<Vec<Weak<Mutex<BroadcastReceiver<T>>>>>>;
 
@@ -19,9 +19,14 @@ pub type ReceiverVec<T> = Arc<Mutex<Vec<Weak<Mutex<BroadcastReceiver<T>>>>>>;
 /// Creating a new consumer with `get_rx` returns a `BroadcarstReveiver`.
 /// Its `recv` method pops the accumulated updates for that consumer.
 ///
-/// Implementors need to implement `get_receivers`, `get_current`, and
-/// `update_current`. They also need to specify the type of the data with
-/// the `Content` attribute.
+/// When a broadcaster executes some actions, it sends signals over a
+/// channel. These signals are of type `BroadcasterSignal`. The broadcaster
+/// gives access to the channel's sender with the `get_signal_tx` method
+/// that returns an option. Signals are only sent if there is a channel.
+///
+/// Implementors need to implement `get_receivers`, `get_current`,
+/// `update_current`, and `get_signal_tx`. They also need to specify the type
+/// of the data with the `Content` attribute.
 pub trait Broadcaster {
     type Content: Mergeable + Clone + Debug;
 
@@ -29,7 +34,10 @@ pub trait Broadcaster {
     ///
     /// The consumer is a `BroadcastReceiver` that holds its
     /// accumulated update.
+    ///
+    /// Send the `BroacasterSignal::NewReceiver` signal.
     fn get_rx(&mut self) -> Arc<Mutex<BroadcastReceiver<Self::Content>>> {
+        self.send_broadaster_signal(BroadcasterSignal::NewReceiver(Instant::now()));
         let current = self.get_current();
         let receiver = Arc::new(Mutex::new(BroadcastReceiver::new(current)));
         let clone = Arc::downgrade(&receiver);
@@ -38,7 +46,11 @@ pub trait Broadcaster {
     }
 
     /// Send an update to all the receivers.
+    ///
+    /// Sends the `BroadcasterSignal::Send` signal every time. Sends also the
+    /// `BroadcasterSignal::RemoveReceiver` for each receiver that gets removed.
     fn send(&mut self, item: Self::Content) -> Result<(), ()> {
+        self.send_broadaster_signal(BroadcasterSignal::Send(Instant::now()));
         let mut to_remove: Vec<usize> = Vec::new();
         self.update_current(&item);
         let receivers = self.get_receivers();
@@ -59,9 +71,14 @@ pub trait Broadcaster {
             };
         }
         for index in to_remove.into_iter().rev() {
+            self.send_broadaster_signal(BroadcasterSignal::RemoveReceiver(Instant::now()));
             receivers_locked.remove(index);
         }
         Ok(())
+    }
+
+    fn send_broadaster_signal(&self, signal: BroadcasterSignal) {
+        self.get_signal_tx().map(|tx| tx.send(signal).unwrap());
     }
 
     /// List the receivers.
@@ -70,6 +87,8 @@ pub trait Broadcaster {
     fn get_current(&self) -> Self::Content;
     /// Update the full accumulated state.
     fn update_current(&mut self, other: &Self::Content);
+
+    fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>>;
 }
 
 /// A consumer of a broadcast.
@@ -101,18 +120,30 @@ pub trait Mergeable {
     fn merge(&mut self, other: &Self);
 }
 
+/// Signal sent for some actions of a broadcaster.
+pub enum BroadcasterSignal {
+    /// Sent when an update is sent to the broadcaster.
+    Send(Instant),
+    /// Sent when a receiver is created.
+    NewReceiver(Instant),
+    /// Sent when a receiver is removed from the broadcaster.
+    RemoveReceiver(Instant),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
 
     struct DummyBroadcaster {
         receivers: ReceiverVec<usize>,
         current: usize,
+        signal_tx: Option<Sender<BroadcasterSignal>>,
     }
 
     impl DummyBroadcaster {
-        pub fn new() -> Self {
-            DummyBroadcaster { receivers: Arc::new(Mutex::new(Vec::new())), current: 0 }
+        pub fn new(signal_tx: Option<Sender<BroadcasterSignal>>) -> Self {
+            DummyBroadcaster { receivers: Arc::new(Mutex::new(Vec::new())), current: 0, signal_tx }
         }
     }
 
@@ -130,6 +161,10 @@ mod tests {
         fn update_current(&mut self, other: &Self::Content) {
             self.current.merge(other);
         }
+    
+        fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>> {
+            if let Some(tx) = &self.signal_tx {Some(tx.clone())} else {None}
+        }
     }
 
     impl Mergeable for usize {
@@ -144,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_adding_receivers() {
-        let mut broadcaster = DummyBroadcaster::new();
+        let mut broadcaster = DummyBroadcaster::new(None);
 
         // Initially there is no receiver in the broadcaster.
         assert_num_receivers(&broadcaster, 0);
@@ -167,5 +202,40 @@ mod tests {
         drop(rx2);
         broadcaster.send(2).unwrap();
         assert_num_receivers(&broadcaster, 0);
+    }
+
+    /// When sending an update, the `Send` broadcaster signal is sent.
+    #[test]
+    fn test_sending_send_signal() {
+        let (signal_tx, signal_rx) = mpsc::channel();
+        let mut broadcaster = DummyBroadcaster::new(Some(signal_tx));
+
+        // Before we do anything, the channel is empty.
+        assert!(signal_rx.try_recv().is_err());
+
+        broadcaster.send(0).unwrap();
+        broadcaster.send(1).unwrap();
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
+        assert!(signal_rx.try_recv().is_err());
+    }
+
+    /// Adding and removing receivers send the appropriate broadcaster signals.
+    #[test]
+    fn test_sending_receivers_signal() {
+        let (signal_tx, signal_rx) = mpsc::channel();
+        let mut broadcaster = DummyBroadcaster::new(Some(signal_tx));
+
+        // Before we do anything, the channel is empty.
+        assert!(signal_rx.try_recv().is_err());
+
+        let rx = broadcaster.get_rx();
+        drop(rx);
+        broadcaster.send(0).unwrap();
+
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::NewReceiver(_)});
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
+        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::RemoveReceiver(_)});
+
     }
 }

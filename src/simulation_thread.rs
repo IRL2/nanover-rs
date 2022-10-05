@@ -31,9 +31,14 @@ fn next_frame_stop(current_frame: u64, frame_interval: u32) -> i32 {
     (frame_interval - current_frame % frame_interval).try_into().unwrap()
 }
 
-fn apply_forces(state_clone: &Arc<Mutex<StateBroadcaster>>, simulation: &mut XMLSimulation) {
+fn apply_forces(
+        state_clone: &Arc<Mutex<StateBroadcaster>>,
+        simulation: &mut XMLSimulation,
+        simulation_tx: std::sync::mpsc::Sender<usize>,
+) {
     let state_interactions = read_forces(state_clone);
     let imd_interactions = simulation.compute_forces(&state_interactions);
+    simulation_tx.send(imd_interactions.len()).unwrap();
     simulation.update_imd_forces(imd_interactions).unwrap();
 }
 
@@ -46,6 +51,7 @@ pub fn run_simulation_thread(
         force_interval: u32,
         verbose: bool,
         mut playback_rx: Receiver<PlaybackOrder>,
+        simulation_tx: std::sync::mpsc::Sender<usize>,
 ) {
     tokio::task::spawn_blocking(move || {
         // TODO: check if there isn't a throttled iterator, otherwise write one.
@@ -101,7 +107,7 @@ pub fn run_simulation_thread(
                     source.send(frame).unwrap();
                 }
                 if do_forces {
-                    apply_forces(&state_clone, &mut simulation);
+                    apply_forces(&state_clone, &mut simulation, simulation_tx.clone());
                 }
 
                 let elapsed = now.elapsed();

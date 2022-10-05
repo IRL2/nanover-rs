@@ -1,9 +1,10 @@
 use prost_types::{value::Kind, Struct, Value};
 use std::collections::{btree_map, BTreeMap};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec};
+use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec, BroadcasterSignal};
 use crate::proto::protocol::state::StateUpdate;
 
 pub struct StateLock {
@@ -15,6 +16,7 @@ pub struct StateBroadcaster {
     state: BTreeMap<String, Value>,
     locks: BTreeMap<String, StateLock>,
     receivers: ReceiverVec<StateUpdate>,
+    signal_tx: Option<Sender<BroadcasterSignal>>,
 }
 
 /// Broadcast state updates to multiple consumers.
@@ -33,7 +35,7 @@ pub struct StateBroadcaster {
 /// use narupa_rs::proto::protocol::state::StateUpdate;
 /// 
 /// // Create a state broadcaster with an empty state
-/// let mut broadcaster = StateBroadcaster::new();
+/// let mut broadcaster = StateBroadcaster::new(None);
 /// 
 /// // Create a consumer to receive state updates
 /// let mut receiver_A = broadcaster.get_rx();
@@ -82,7 +84,7 @@ pub struct StateBroadcaster {
 /// assert!(receiver_B.lock().unwrap().recv() == Some(merged_updates));
 /// ```
 impl StateBroadcaster {
-    pub fn new() -> Self {
+    pub fn new(signal_tx: Option<Sender<BroadcasterSignal>>) -> Self {
         let state = BTreeMap::new();
         let locks = BTreeMap::new();
         let receivers = Arc::new(Mutex::new(Vec::new()));
@@ -90,6 +92,7 @@ impl StateBroadcaster {
             state,
             receivers,
             locks,
+            signal_tx,
         }
     }
 
@@ -168,11 +171,6 @@ fn can_write(lock: &StateLock, now: &Instant, token: &String) -> bool {
     &lock.token == token || has_lock_expired(lock, now)
 }
 
-impl Default for StateBroadcaster {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl Broadcaster for StateBroadcaster {
     type Content = StateUpdate;
@@ -204,6 +202,10 @@ impl Broadcaster for StateBroadcaster {
                 });
             }
         }
+    }
+
+    fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>> {
+        if let Some(tx) = &self.signal_tx {Some(tx.clone())} else {None}
     }
 }
 
