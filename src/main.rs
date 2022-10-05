@@ -25,6 +25,9 @@ struct Cli {
     /// The path to the Narupa XML file describing the simulation to run.
     #[clap(value_parser, default_value = "17-ala.xml")]
     input_xml_path: String,
+    /// IP address to bind.
+    #[clap(short, long, value_parser, default_value = "0.0.0.0")]
+    address: String,
     /// Port the server will listen.
     #[clap(short, long, value_parser, default_value_t = 38801)]
     port: usize,
@@ -51,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Read the user arguments.
     let cli = Cli::parse();
     let xml_path = cli.input_xml_path;
-    let port = cli.port;
+    let address = format!("{}:{}", cli.address, cli.port);
     let simulation_interval = ((1.0 / (cli.simulation_fps) as f64) * 1000.0) as u64;
     let frame_interval = cli .frame_interval;
     let force_interval = cli .force_interval;
@@ -101,7 +104,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run the GRPC server on the main thread.
     println!("Let's go!");
-    let address = format!("[::]:{port}");
+    let socket_address = address.to_socket_addrs().unwrap().next().unwrap();
+    println!("Listening to {socket_address}");
     let server = Trajectory::new(Arc::clone(&frame_source));
     let command_service = CommandService::new(playback_tx);
     let state_service = StateService::new(Arc::clone(&shared_state));
@@ -109,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(TrajectoryServiceServer::new(server))
         .add_service(CommandServer::new(command_service))
         .add_service(StateServer::new(state_service))
-        .serve(address.to_socket_addrs().unwrap().next().unwrap())
+        .serve(socket_address)
         .await
         .unwrap();
     Ok(())
