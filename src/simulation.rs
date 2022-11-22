@@ -28,6 +28,7 @@ use std::io::{BufReader, Cursor, Read};
 use std::str;
 
 use crate::frame::FrameData;
+use crate::pdbparser::{MolecularSystem, read_pdb};
 
 type Coordinate = [f64; 3];
 type CoordMap = BTreeMap<i32, Coordinate>;
@@ -105,7 +106,7 @@ pub struct XMLSimulation {
     init_pos: *mut OpenMM_Vec3Array,
     integrator: *mut OpenMM_Integrator,
     context: *mut OpenMM_Context,
-    topology: pdbtbx::PDB,
+    topology: MolecularSystem,
     platform_name: String,
     imd_force: *mut OpenMM_CustomExternalForce,
     n_particles: usize,
@@ -233,21 +234,12 @@ impl XMLSimulation {
         let structure = match structure_type {
             StructureType::None => panic!("No structure found."),
             StructureType::Pdb => {
-                let (structure, _) = pdbtbx::open_pdb_raw(
-                    BufReader::new(Cursor::new(structure_buffer)),
-                    pdbtbx::Context::None,
-                    pdbtbx::StrictnessLevel::Loose,
-                )
-                .unwrap();
+                let input = BufReader::new(Cursor::new(structure_buffer));
+                let structure = read_pdb(input).expect("Could not read the PDB.");
                 structure
             }
             StructureType::Pdbx => {
-                let (structure, _) = pdbtbx::open_mmcif_raw(
-                    str::from_utf8(&structure_buffer).unwrap(),
-                    pdbtbx::StrictnessLevel::Loose,
-                )
-                .unwrap();
-                structure
+                panic!("PDBx not yet implementes.");
             }
         };
         let n_atoms = structure.atom_count();
@@ -271,12 +263,12 @@ impl XMLSimulation {
             println!("Number of platforms registered: {n_platform}");
 
             let init_pos = OpenMM_Vec3Array_create(n_atoms.try_into().unwrap());
-            for (i, atom) in structure.atoms().enumerate() {
+            for (i, atom) in structure.positions.iter().enumerate() {
                 // The input structure is in angstsroms, but we need to provide nm.
                 let position = OpenMM_Vec3 {
-                    x: atom.x() / 10.0,
-                    y: atom.y() / 10.0,
-                    z: atom.z() / 10.0,
+                    x: atom[0],
+                    y: atom[1],
+                    z: atom[2],
                 };
                 OpenMM_Vec3Array_set(init_pos, i.try_into().unwrap(), position);
             }
@@ -504,8 +496,9 @@ impl ToFrameData for XMLSimulation {
 
         let elements: Vec<u32> = self
             .topology
-            .atoms()
-            .map(|atom| atom.atomic_number().unwrap_or(0).try_into().unwrap())
+            .elements
+            .iter()
+            .map(|e| e.unwrap_or(0) as u32)
             .collect();
         frame
             .insert_index_array("particle.elements", elements)
