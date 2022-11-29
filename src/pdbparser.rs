@@ -1,4 +1,6 @@
-use std::io::{BufRead, self};
+use std::{io::{BufRead, self}, collections::HashMap};
+
+use prost_types::Field;
 
 pub type Position = [f64; 3];
 pub type Bond = [isize; 2];
@@ -17,6 +19,9 @@ pub enum FieldError {
 pub enum FormatError {
     FieldFormat(FieldError),
     LineTooShort,
+    Unexpected,
+    UnexpectedFieldNumber,
+    MissingField,
 }
 
 #[derive(Debug)]
@@ -203,6 +208,120 @@ fn lookup_element_symbol(symbol: &str) -> Option<usize> {
     if element_number == 0 {None} else {Some(element_number)}
 }
 
+enum PDBXContext {
+    /// We are out of any particular context
+    /// (e.g. beginning of the file or after a loop)
+    Idle,
+    /// We just read loop_ or a a loop key.
+    /// Next line can be a loop key.
+    /// The argument is the name of the loop, it is optional as
+    /// the name is unknown until we read the first key.
+    LoopKey(Option<String>),
+    /// We read a loop record, we cannot accept anything but new records.
+    /// The argument is the name of the loop.
+    Loop(String),
+}
+
+enum Field {
+    Single(String),
+    Multiple(Vec<HashMap<String, String>>),
+}
+
+pub fn read_cif<F>(input: F) -> Result<MolecularSystem, ReadError> where F: BufRead {
+    let mut content: HashMap<String, Field> = HashMap::new();
+    let mut context = PDBXContext::Idle;
+    let mut loop_keys: Option<Vec<String>> = None;
+    for line in input.lines() {
+        let line = line.or_else(|e| Err(ReadError::IOError(e)))?;
+        let tokens = line.split_ascii_whitespace();
+        context = match context {
+            PDBXContext::Idle => {
+                match tokens.next() {
+                    None => PDBXContext::Idle,  // We ignore empty lines
+                    Some(first) if first == "loop_" => PDBXContext::LoopKey(None),
+                    Some(first) if first.startswith("_") => {
+                        let value = String::from(tokens.as_str());
+                        content.insert(String::from(first), Field::Single(value));
+                        PDBXContext::Idle
+                    },
+                    Some(first) if first.startswith("#") => PDBXContext::Idle,
+                    _ => return Err(ReadError::FormatError(FormatError::Unexpected)),
+                }
+            },
+            PDBXContext::LoopKey(perhaps_name) => {
+                match (tokens.next(), perhaps_name) {
+                    (None, _) => PDBXContext::LoopKey(perhaps_name),  // We ignore empty lines
+                    (Some(first), _) if !first.startswith('#') => {
+                        PDBXContext::Idle
+                    },
+                    (Some(first), Some(name)) if !name.startswith(first) => {
+                        if first.startwith('_') {
+                            return Err(ReadError::FormatError(FormatError::Unexpected));
+                        }
+                        let line_tokens = vec![first].iter().chain(tokens).collect();
+                        do_loop_line(&mut content, name, line_tokens, loop_keys)?;
+                        PDBXContext::Loop(String::from(first))
+                    },
+                    (Some(first), _) => {
+                        let name_parts = first.split('.');
+                        let base_key = name_parts.next();
+                        let sub_key = String::from(name_parts.as_str());
+                        if let Some(keys) = loop_keys {
+                            keys.push(sub_key);
+                        } else {
+                            loop_keys = Some(vec![sub_key]);
+                        };
+                        PDBXContext::LoopKey(Some(base_key))
+                    }
+                    _ => return Err(ReadError::FormatError(FormatError::Unexpected)),
+                }
+            },
+            PDBXContext::Loop(name) => {
+                let fields: Vec<String> = tokens.collect();
+                do_loop_line(&mut content, name, &fields, loop_keys)?;
+                PDBXContext::Loop(name)
+            },
+        };
+    };
+
+    cif_content_to_molecular_system(&content)
+}
+
+fn do_loop_line(content: &mut HashMap<String, Field>, key: String, fields: &Vec<String>, loop_keys: &Vec<String>) -> Result<(), FormatError> {
+    let value = HashMap::from(loop_keys.iter().zip(fields).collect());
+    let loop_content = content.entry(key).or_insert(Field::Multiple(vec![]));
+    match loop_content {
+        Field::Single(_) => return Err(FormatError::Unexpected),
+        Field::Multiple(field_vector) => field_vector.push(value),
+    }
+    Ok(())
+}
+
+fn cif_content_to_molecular_system(content: &HashMap<String, Field>) -> Result<MolecularSystem, ReadError> {
+    // Does the content have the section for the atoms?
+    let lines = content
+        .get(String::fom("_atom_site"))
+        .unwrap_or(vec![])
+        .iter()
+        .map(|line| {
+            let serial = line
+                .get(String::from("id"))
+                .unwrap_or_else(|f| return Err(FormatError::MissingField))?
+                .parse()
+                .or_else(|_| Err(FormatError::FieldFormat(FieldError::Serial)))?;
+            let atom_name = line
+                .get(String::from("auth_atom_id"))
+                .unwrap_or_else(|f| return Err(FomatError::MissingField))?;
+            let alternate = line
+                .get(String::from("label_alt_id"))
+                .or(" ")
+                .chars()
+                .nth(0)
+                .unwrap_or(" ");
+        });
+    // Convert the cif atoms to a vector of PDBLine
+    // Convert the PDBLine to a MolecularStructure
+}
 
 #[cfg(test)]
 mod tests {
