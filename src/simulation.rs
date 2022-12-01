@@ -28,7 +28,7 @@ use std::io::{BufReader, Cursor, Read};
 use std::str;
 
 use crate::frame::FrameData;
-use crate::pdbparser::{MolecularSystem, read_pdb};
+use crate::pdbparser::{MolecularSystem, read_pdb, read_cif};
 
 type Coordinate = [f64; 3];
 type CoordMap = BTreeMap<i32, Coordinate>;
@@ -239,7 +239,9 @@ impl XMLSimulation {
                 structure
             }
             StructureType::Pdbx => {
-                panic!("PDBx not yet implementes.");
+                let input = BufReader::new(Cursor::new(structure_buffer));
+                let structure = read_cif(input).expect("Could not read the PDBx.");
+                structure
             }
         };
         let n_atoms = structure.atom_count();
