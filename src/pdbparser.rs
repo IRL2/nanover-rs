@@ -522,7 +522,7 @@ mod tests {
             chain_identifier: 'A',
             residue_identifier: 3,
             insertion_code: ' ',
-            position: [17.119, 0.186, 36.320],
+            position: [1.7119, 0.0186, 3.6320],
             element_symbol: Some(7),
         };
         let atom = parse_pdb_atom_line(line).unwrap();
