@@ -288,7 +288,10 @@ where
                         };
                         // We only store what we need.
                         if name == "_atom_site" {
-                            atoms.push(parse_cif_atom_line(&line, &loop_keys).or_else(|e| Err(ReadError::FormatError(e, lineno)))?);
+                            atoms.push(
+                                parse_cif_atom_line(&line, &loop_keys)
+                                    .or_else(|e| Err(ReadError::FormatError(e, lineno)))?,
+                            );
                         }
                         PDBXContext::Loop(String::from(name))
                     }
@@ -313,27 +316,38 @@ where
                     .ok_or(ReadError::FormatError(FormatError::MissingLoopKeys, lineno))?;
                 // We only store what we need.
                 if name == "_atom_site" {
-                    atoms.push(parse_cif_atom_line(&line, loop_keys).or_else(|e| Err(ReadError::FormatError(e, lineno)))?);
+                    atoms.push(
+                        parse_cif_atom_line(&line, loop_keys)
+                            .or_else(|e| Err(ReadError::FormatError(e, lineno)))?,
+                    );
                 }
                 PDBXContext::Loop(name)
             }
         };
     }
 
-    cif_content_to_molecular_system(atoms)
+    Ok(flatten_atoms(atoms))
 }
 
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
-    let fields: Vec<String> = line.split_ascii_whitespace().map(|f| String::from(f)).collect();
-    if fields.len() != loop_keys.len() {return Err(FormatError::UnexpectedFieldNumber)};
-    let line: HashMap<String, String> = HashMap::from_iter(loop_keys.iter().zip(fields).map(|(k, v)| (k.clone(), v.clone())));
+    let fields: Vec<String> = line
+        .split_ascii_whitespace()
+        .map(|f| String::from(f))
+        .collect();
+    if fields.len() != loop_keys.len() {
+        return Err(FormatError::UnexpectedFieldNumber);
+    };
+    let line: HashMap<String, String> = HashMap::from_iter(
+        loop_keys
+            .iter()
+            .zip(fields)
+            .map(|(k, v)| (k.clone(), v.clone())),
+    );
     let serial = line
         .get("id")
         .ok_or(FormatError::MissingField("id"))?
         .parse()
-        .or_else(|_| {
-            Err(FormatError::FieldFormat(FieldError::Serial))
-        })?;
+        .or_else(|_| Err(FormatError::FieldFormat(FieldError::Serial)))?;
     let atom_name = line
         .get("auth_atom_id")
         .ok_or(FormatError::MissingField("auth_atom_id"))?
@@ -358,9 +372,7 @@ fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, F
         .get("auth_seq_id")
         .ok_or(FormatError::MissingField("auth_seq_id"))?
         .parse()
-        .or_else(|_| {
-            Err(FormatError::FieldFormat(FieldError::ResidueIdentifier))
-        })?;
+        .or_else(|_| Err(FormatError::FieldFormat(FieldError::ResidueIdentifier)))?;
     let insertion_code = line
         .get("pdbx_PDB_ins_code")
         .unwrap_or(&String::from(" "))
@@ -371,24 +383,18 @@ fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, F
         .get("Cartn_x")
         .ok_or(FormatError::MissingField("Cartn_x"))?
         .parse()
-        .or_else(|_| {
-            Err(FormatError::FieldFormat(FieldError::Position))
-        })?;
+        .or_else(|_| Err(FormatError::FieldFormat(FieldError::Position)))?;
     let y: f64 = line
         .get("Cartn_y")
         .ok_or(FormatError::MissingField("Cartn_y"))?
         .parse()
-        .or_else(|_| {
-            Err(FormatError::FieldFormat(FieldError::Position))
-        })?;
+        .or_else(|_| Err(FormatError::FieldFormat(FieldError::Position)))?;
     let z: f64 = line
         .get("Cartn_z")
         .ok_or(FormatError::MissingField("Cartn_z"))?
         .parse()
-        .or_else(|_| {
-            Err(FormatError::FieldFormat(FieldError::Position))
-        })?;
-    let position = [x / 10.0, y / 10.0, z / 10.0];  // We use nanometers
+        .or_else(|_| Err(FormatError::FieldFormat(FieldError::Position)))?;
+    let position = [x / 10.0, y / 10.0, z / 10.0]; // We use nanometers
     let element_symbol =
         lookup_element_symbol(line.get("type_symbol").unwrap_or(&String::from(" ")));
     Ok(PDBLine {
@@ -402,10 +408,6 @@ fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, F
         position,
         element_symbol,
     })
-}
-
-fn cif_content_to_molecular_system(atoms: Vec<PDBLine>) -> Result<MolecularSystem, ReadError> {
-    Ok(flatten_atoms(atoms))
 }
 
 #[cfg(test)]
