@@ -432,7 +432,7 @@ fn cif_content_to_molecular_system(
                 .chars()
                 .nth(0)
                 .unwrap_or(' ');
-            let x = line
+            let x: f64 = line
                 .get("Cartn_x")
                 .ok_or(ReadError::FormatError(
                     FormatError::MissingField("Cartn_x"),
@@ -445,7 +445,7 @@ fn cif_content_to_molecular_system(
                         0,
                     ))
                 })?;
-            let y = line
+            let y: f64 = line
                 .get("Cartn_y")
                 .ok_or(ReadError::FormatError(
                     FormatError::MissingField("Cartn_y"),
@@ -458,7 +458,7 @@ fn cif_content_to_molecular_system(
                         0,
                     ))
                 })?;
-            let z = line
+            let z: f64 = line
                 .get("Cartn_z")
                 .ok_or(ReadError::FormatError(
                     FormatError::MissingField("Cartn_z"),
@@ -471,7 +471,7 @@ fn cif_content_to_molecular_system(
                         0,
                     ))
                 })?;
-            let position = [x, y, z];
+            let position = [x / 10.0, y / 10.0, z / 10.0];  // We use nanometers
             let element_symbol =
                 lookup_element_symbol(line.get("type_symbol").unwrap_or(&String::from(" ")));
             Ok(PDBLine {
