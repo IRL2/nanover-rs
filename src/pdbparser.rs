@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
-    io::{self, BufRead}, str::FromStr,
+    io::{self, BufRead},
+    str::FromStr,
 };
 
 pub type Position = [f64; 3];
@@ -348,11 +349,27 @@ fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, F
     let alternate = extract_char_with_default(&line, "label_alt_id", ' ');
     let residue_name = extract_string(&line, "auth_comp_id")?;
     let chain_identifier = extract_char_with_default(&line, "auth_asym_id", ' ');
-    let residue_identifier: isize = extract_number(&line, "auth_seq_id", FormatError::FieldFormat(FieldError::ResidueIdentifier))?;
+    let residue_identifier: isize = extract_number(
+        &line,
+        "auth_seq_id",
+        FormatError::FieldFormat(FieldError::ResidueIdentifier),
+    )?;
     let insertion_code = extract_char_with_default(&line, "pdbx_PDB_ins_code", ' ');
-    let x: f64 = extract_number(&line, "Cartn_x", FormatError::FieldFormat(FieldError::Position))?;
-    let y: f64 = extract_number(&line, "Cartn_y", FormatError::FieldFormat(FieldError::Position))?;
-    let z: f64 = extract_number(&line, "Cartn_z", FormatError::FieldFormat(FieldError::Position))?;
+    let x: f64 = extract_number(
+        &line,
+        "Cartn_x",
+        FormatError::FieldFormat(FieldError::Position),
+    )?;
+    let y: f64 = extract_number(
+        &line,
+        "Cartn_y",
+        FormatError::FieldFormat(FieldError::Position),
+    )?;
+    let z: f64 = extract_number(
+        &line,
+        "Cartn_z",
+        FormatError::FieldFormat(FieldError::Position),
+    )?;
     let position = [x / 10.0, y / 10.0, z / 10.0]; // We use nanometers
     let element_symbol =
         lookup_element_symbol(line.get("type_symbol").unwrap_or(&String::from(" ")));
@@ -369,7 +386,14 @@ fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, F
     })
 }
 
-fn extract_number<N>(line: &HashMap<String, String>, key: &str, error: FormatError) -> Result<N, FormatError>  where N: FromStr{
+fn extract_number<N>(
+    line: &HashMap<String, String>,
+    key: &str,
+    error: FormatError,
+) -> Result<N, FormatError>
+where
+    N: FromStr,
+{
     line.get(key)
         .ok_or(FormatError::MissingField(String::from(key)))?
         .parse::<N>()
@@ -377,8 +401,7 @@ fn extract_number<N>(line: &HashMap<String, String>, key: &str, error: FormatErr
 }
 
 fn extract_char_with_default(line: &HashMap<String, String>, key: &str, default: char) -> char {
-    line
-        .get(key)
+    line.get(key)
         .unwrap_or(&String::from(""))
         .chars()
         .nth(0)
@@ -389,8 +412,7 @@ fn extract_string(line: &HashMap<String, String>, key: &str) -> Result<String, F
     Ok(line
         .get(key)
         .ok_or(FormatError::MissingField(String::from(key)))?
-        .clone()
-    )
+        .clone())
 }
 
 #[cfg(test)]
