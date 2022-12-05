@@ -1,5 +1,4 @@
 extern crate openmm_sys;
-extern crate pdbtbx;
 
 use openmm_sys::{
     OpenMM_Context, OpenMM_Context_create, OpenMM_Context_destroy, OpenMM_Context_getPlatform,
