@@ -260,16 +260,17 @@ where
         context = match context {
             PDBXContext::Idle => {
                 match tokens.next() {
-                    None => PDBXContext::Idle, // We ignore empty lines
+                    // We ignore empty lines.
+                    None => PDBXContext::Idle,
                     // We do not read data blocks. If we encounter one, it
                     // means the rest of the file will be only data blocks
                     // until EOF. Therefore, there is no point to keep reading.
                     Some(first) if first.starts_with("data_") => break,
                     Some(first) if first == "loop_" => PDBXContext::LoopKey(None),
-                    Some(first) if first.starts_with('_') => {
-                        // If we do not need the field we do not store it.
-                        PDBXContext::Idle
-                    }
+                    // Data items have a first token starting with '_' and the rest of the
+                    // tokens are the value. We do not read any at the moment so we ignore
+                    // these lines.
+                    Some(first) if first.starts_with('_') => PDBXContext::Idle,
                     Some(first) if first.starts_with('#') => PDBXContext::Idle,
                     _ => {
                         return Err(ReadError::FormatError(FormatError::Unexpected, lineno));
@@ -340,65 +341,37 @@ where
 }
 
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
-    let fields: Vec<String> = line
-        .split_ascii_whitespace()
-        .map(String::from)
-        .collect();
+    let fields: Vec<String> = line.split_ascii_whitespace().map(String::from).collect();
     if fields.len() != loop_keys.len() {
         return Err(FormatError::UnexpectedFieldNumber);
     };
-    let line: HashMap<String, String> = HashMap::from_iter(
-        loop_keys
-            .iter()
-            .zip(fields)
-            .map(|(k, v)| (k.clone(), v)),
-    );
-    let serial: isize = extract_number(&line, "id", FormatError::FieldFormat(FieldError::Serial))?;
-    let atom_name = extract_string(&line, "auth_atom_id")?;
-    let alternate = extract_char_with_default(&line, "label_alt_id", ' ');
-    let residue_name = extract_string(&line, "auth_comp_id")?;
-    let chain_identifier = extract_char_with_default(&line, "auth_asym_id", ' ');
-    let residue_identifier: isize = extract_number(
-        &line,
-        "auth_seq_id",
-        FormatError::FieldFormat(FieldError::ResidueIdentifier),
-    )?;
-    let insertion_code = extract_char_with_default(&line, "pdbx_PDB_ins_code", ' ');
-    let x: f64 = extract_number(
-        &line,
-        "Cartn_x",
-        FormatError::FieldFormat(FieldError::Position),
-    )?;
-    let y: f64 = extract_number(
-        &line,
-        "Cartn_y",
-        FormatError::FieldFormat(FieldError::Position),
-    )?;
-    let z: f64 = extract_number(
-        &line,
-        "Cartn_z",
-        FormatError::FieldFormat(FieldError::Position),
-    )?;
+    let line: HashMap<String, String> =
+        HashMap::from_iter(loop_keys.iter().zip(fields).map(|(k, v)| (k.clone(), v)));
+
+    let x: f64 = extract_number(&line, "Cartn_x", FieldError::Position)?;
+    let y: f64 = extract_number(&line, "Cartn_y", FieldError::Position)?;
+    let z: f64 = extract_number(&line, "Cartn_z", FieldError::Position)?;
     let position = [x / 10.0, y / 10.0, z / 10.0]; // We use nanometers
-    let element_symbol =
-        lookup_element_symbol(line.get("type_symbol").unwrap_or(&String::from(" ")));
+
     Ok(PDBLine {
-        serial,
-        atom_name,
-        alternate,
-        residue_name,
-        chain_identifier,
-        residue_identifier,
-        insertion_code,
+        serial: extract_number(&line, "id", FieldError::Serial)?,
+        atom_name: extract_string(&line, "auth_atom_id")?,
+        alternate: extract_char_with_default(&line, "label_alt_id", ' '),
+        residue_name: extract_string(&line, "auth_comp_id")?,
+        chain_identifier: extract_char_with_default(&line, "auth_asym_id", ' '),
+        residue_identifier: extract_number(&line, "auth_seq_id", FieldError::ResidueIdentifier)?,
+        insertion_code: extract_char_with_default(&line, "pdbx_PDB_ins_code", ' '),
         position,
-        element_symbol,
+        element_symbol: lookup_element_symbol(
+            line.get("type_symbol").unwrap_or(&String::from(" ")),
+        ),
     })
 }
 
 fn extract_number<N>(
     line: &HashMap<String, String>,
     key: &str,
-    error: FormatError,
+    error: FieldError,
 ) -> Result<N, FormatError>
 where
     N: FromStr,
@@ -406,7 +379,7 @@ where
     line.get(key)
         .ok_or(FormatError::MissingField(String::from(key)))?
         .parse::<N>()
-        .or(Err(error))
+        .or(Err(FormatError::FieldFormat(error)))
 }
 
 fn extract_char_with_default(line: &HashMap<String, String>, key: &str, default: char) -> char {
