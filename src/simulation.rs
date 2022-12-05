@@ -234,13 +234,11 @@ impl XMLSimulation {
             StructureType::None => panic!("No structure found."),
             StructureType::Pdb => {
                 let input = BufReader::new(Cursor::new(structure_buffer));
-                let structure = read_pdb(input).expect("Could not read the PDB.");
-                structure
+                read_pdb(input).expect("Could not read the PDB.")
             }
             StructureType::Pdbx => {
                 let input = BufReader::new(Cursor::new(structure_buffer));
-                let structure = read_cif(input).expect("Could not read the PDBx.");
-                structure
+                read_cif(input).expect("Could not read the PDBx.")
             }
         };
         let n_atoms = structure.atom_count();

@@ -76,10 +76,10 @@ where
 {
     let mut output = Vec::new();
     for (lineno, line) in input.lines().enumerate() {
-        let line = line.or_else(|e| Err(ReadError::IOError(e)))?;
+        let line = line.map_err(ReadError::IOError)?;
         if line.starts_with("ATOM") || line.starts_with("HETATM") {
             let parsed_line =
-                parse_pdb_atom_line(&line).or_else(|e| Err(ReadError::FormatError(e, lineno)))?;
+                parse_pdb_atom_line(&line).map_err(|e| ReadError::FormatError(e, lineno))?;
             output.push(parsed_line);
         }
     }
@@ -135,9 +135,9 @@ fn flatten_atoms(atoms: Vec<PDBLine>) -> MolecularSystem {
         let ((resid, resname), insertion_code) = &residue;
         if residue != previous {
             current_residue_index += 1;
-            resids.push(resid.clone().clone());
+            resids.push(**resid);
             resnames.push(resname.clone());
-            insertion_codes.push(insertion_code.clone());
+            insertion_codes.push(*insertion_code);
         }
         atom_resindex.push(current_residue_index);
         previous = ((resid, resname.to_string()), *insertion_code);
@@ -178,11 +178,11 @@ fn parse_pdb_atom_line(line: &str) -> Result<PDBLine, FormatError> {
     let serial = line[6..11]
         .trim()
         .parse()
-        .or_else(|_| Err(FormatError::FieldFormat(FieldError::Serial)))?;
+        .map_err(|_| FormatError::FieldFormat(FieldError::Serial))?;
     let residue_identifier = line[22..26]
         .trim()
         .parse()
-        .or_else(|_| Err(FormatError::FieldFormat(FieldError::ResidueIdentifier)))?;
+        .map_err(|_| FormatError::FieldFormat(FieldError::ResidueIdentifier))?;
 
     let x: Result<f64, _> = line[30..38].trim().parse();
     let y: Result<f64, _> = line[38..46].trim().parse();
@@ -255,7 +255,7 @@ where
     let mut loop_keys: Option<Vec<String>> = None;
     let mut atoms: Vec<PDBLine> = Vec::new();
     for (lineno, line) in input.lines().enumerate() {
-        let line = line.or_else(|e| Err(ReadError::IOError(e)))?;
+        let line = line.map_err(ReadError::IOError)?;
         let mut tokens = line.split_ascii_whitespace();
         context = match context {
             PDBXContext::Idle => {
@@ -266,11 +266,11 @@ where
                     // until EOF. Therefore, there is no point to keep reading.
                     Some(first) if first.starts_with("data_") => break,
                     Some(first) if first == "loop_" => PDBXContext::LoopKey(None),
-                    Some(first) if first.starts_with("_") => {
+                    Some(first) if first.starts_with('_') => {
                         // If we do not need the field we do not store it.
                         PDBXContext::Idle
                     }
-                    Some(first) if first.starts_with("#") => PDBXContext::Idle,
+                    Some(first) if first.starts_with('#') => PDBXContext::Idle,
                     _ => {
                         return Err(ReadError::FormatError(FormatError::Unexpected, lineno));
                     }
@@ -299,11 +299,11 @@ where
                         // We only store what we need.
                         if name == "_atom_site" {
                             atoms.push(
-                                parse_cif_atom_line(&line, &loop_keys)
-                                    .or_else(|e| Err(ReadError::FormatError(e, lineno)))?,
+                                parse_cif_atom_line(&line, loop_keys)
+                                    .map_err(|e| ReadError::FormatError(e, lineno))?,
                             );
                         }
-                        PDBXContext::Loop(String::from(name))
+                        PDBXContext::Loop(name)
                     }
                     (Some(first), _) => {
                         let mut name_parts = first.split('.');
@@ -328,7 +328,7 @@ where
                 if name == "_atom_site" {
                     atoms.push(
                         parse_cif_atom_line(&line, loop_keys)
-                            .or_else(|e| Err(ReadError::FormatError(e, lineno)))?,
+                            .map_err(|e| ReadError::FormatError(e, lineno))?,
                     );
                 }
                 PDBXContext::Loop(name)
@@ -342,7 +342,7 @@ where
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
     let fields: Vec<String> = line
         .split_ascii_whitespace()
-        .map(|f| String::from(f))
+        .map(String::from)
         .collect();
     if fields.len() != loop_keys.len() {
         return Err(FormatError::UnexpectedFieldNumber);
@@ -351,7 +351,7 @@ fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, F
         loop_keys
             .iter()
             .zip(fields)
-            .map(|(k, v)| (k.clone(), v.clone())),
+            .map(|(k, v)| (k.clone(), v)),
     );
     let serial: isize = extract_number(&line, "id", FormatError::FieldFormat(FieldError::Serial))?;
     let atom_name = extract_string(&line, "auth_atom_id")?;
@@ -413,7 +413,7 @@ fn extract_char_with_default(line: &HashMap<String, String>, key: &str, default:
     line.get(key)
         .unwrap_or(&String::from(""))
         .chars()
-        .nth(0)
+        .next()
         .unwrap_or(default)
 }
 
