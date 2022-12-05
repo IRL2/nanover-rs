@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{self, BufRead},
+    io::{self, BufRead}, str::FromStr,
 };
 
 pub type Position = [f64; 3];
@@ -22,7 +22,7 @@ pub enum FormatError {
     Unexpected,
     InconsistentKey,
     UnexpectedFieldNumber,
-    MissingField(&'static str),
+    MissingField(String),
     MissingLoopKeys,
 }
 
@@ -343,57 +343,16 @@ fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, F
             .zip(fields)
             .map(|(k, v)| (k.clone(), v.clone())),
     );
-    let serial = line
-        .get("id")
-        .ok_or(FormatError::MissingField("id"))?
-        .parse()
-        .or_else(|_| Err(FormatError::FieldFormat(FieldError::Serial)))?;
-    let atom_name = line
-        .get("auth_atom_id")
-        .ok_or(FormatError::MissingField("auth_atom_id"))?
-        .clone();
-    let alternate = line
-        .get("label_alt_id")
-        .unwrap_or(&String::from(" "))
-        .chars()
-        .nth(0)
-        .unwrap_or(' ');
-    let residue_name = line
-        .get("auth_comp_id")
-        .ok_or(FormatError::MissingField("auth_comp_id"))?
-        .clone();
-    let chain_identifier = line
-        .get("auth_asym_id")
-        .unwrap_or(&String::from(" "))
-        .chars()
-        .nth(0)
-        .unwrap_or(' ');
-    let residue_identifier = line
-        .get("auth_seq_id")
-        .ok_or(FormatError::MissingField("auth_seq_id"))?
-        .parse()
-        .or_else(|_| Err(FormatError::FieldFormat(FieldError::ResidueIdentifier)))?;
-    let insertion_code = line
-        .get("pdbx_PDB_ins_code")
-        .unwrap_or(&String::from(" "))
-        .chars()
-        .nth(0)
-        .unwrap_or(' ');
-    let x: f64 = line
-        .get("Cartn_x")
-        .ok_or(FormatError::MissingField("Cartn_x"))?
-        .parse()
-        .or_else(|_| Err(FormatError::FieldFormat(FieldError::Position)))?;
-    let y: f64 = line
-        .get("Cartn_y")
-        .ok_or(FormatError::MissingField("Cartn_y"))?
-        .parse()
-        .or_else(|_| Err(FormatError::FieldFormat(FieldError::Position)))?;
-    let z: f64 = line
-        .get("Cartn_z")
-        .ok_or(FormatError::MissingField("Cartn_z"))?
-        .parse()
-        .or_else(|_| Err(FormatError::FieldFormat(FieldError::Position)))?;
+    let serial: isize = extract_number(&line, "id", FormatError::FieldFormat(FieldError::Serial))?;
+    let atom_name = extract_string(&line, "auth_atom_id")?;
+    let alternate = extract_char_with_default(&line, "label_alt_id", ' ');
+    let residue_name = extract_string(&line, "auth_comp_id")?;
+    let chain_identifier = extract_char_with_default(&line, "auth_asym_id", ' ');
+    let residue_identifier: isize = extract_number(&line, "auth_seq_id", FormatError::FieldFormat(FieldError::ResidueIdentifier))?;
+    let insertion_code = extract_char_with_default(&line, "pdbx_PDB_ins_code", ' ');
+    let x: f64 = extract_number(&line, "Cartn_x", FormatError::FieldFormat(FieldError::Position))?;
+    let y: f64 = extract_number(&line, "Cartn_y", FormatError::FieldFormat(FieldError::Position))?;
+    let z: f64 = extract_number(&line, "Cartn_z", FormatError::FieldFormat(FieldError::Position))?;
     let position = [x / 10.0, y / 10.0, z / 10.0]; // We use nanometers
     let element_symbol =
         lookup_element_symbol(line.get("type_symbol").unwrap_or(&String::from(" ")));
@@ -408,6 +367,30 @@ fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, F
         position,
         element_symbol,
     })
+}
+
+fn extract_number<N>(line: &HashMap<String, String>, key: &str, error: FormatError) -> Result<N, FormatError>  where N: FromStr{
+    line.get(key)
+        .ok_or(FormatError::MissingField(String::from(key)))?
+        .parse::<N>()
+        .or(Err(error))
+}
+
+fn extract_char_with_default(line: &HashMap<String, String>, key: &str, default: char) -> char {
+    line
+        .get(key)
+        .unwrap_or(&String::from(""))
+        .chars()
+        .nth(0)
+        .unwrap_or(default)
+}
+
+fn extract_string(line: &HashMap<String, String>, key: &str) -> Result<String, FormatError> {
+    Ok(line
+        .get(key)
+        .ok_or(FormatError::MissingField(String::from(key)))?
+        .clone()
+    )
 }
 
 #[cfg(test)]
