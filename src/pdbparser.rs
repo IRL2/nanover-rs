@@ -240,9 +240,11 @@ enum PDBXContext {
     /// We read a loop record, we cannot accept anything but new records.
     /// The argument is the name of the loop.
     Loop(String),
-    // TODO: Implement data blocks.
+    // TODO: Implement data and save blocks.
     // We read a data block with the name in argument.
     // Data(String)
+    // We read a save block with the name in argument.
+    // Save(String)
 }
 
 pub fn read_cif<F>(input: F) -> Result<MolecularSystem, ReadError>
@@ -260,7 +262,7 @@ where
                 match tokens.next() {
                     None => PDBXContext::Idle, // We ignore empty lines
                     // We do not read data blocks. If we encounter one, it
-                    //  means the rest of the file will be only data blocks
+                    // means the rest of the file will be only data blocks
                     // until EOF. Therefore, there is no point to keep reading.
                     Some(first) if first.starts_with("data_") => break,
                     Some(first) if first == "loop_" => PDBXContext::LoopKey(None),
