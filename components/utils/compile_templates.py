@@ -99,14 +99,17 @@ def write_rust_module(data_block: list[Template]):
     header = """use phf::phf_map;
 
 pub struct BondTemplate<'a> {
-    pub from: &'a str,
-    pub to: &'a str,
-    pub order: f32,
+    pub f: &'a str,
+    pub t: &'a str,
+    pub o: f32,
 }
+
+pub type BT<'a> = BondTemplate<'a>;
+
 pub static BOND_TEMPLATES: phf::Map<&str, &'static [BondTemplate]> = phf_map! {"""
     footer = "};"
     item = '    "{name}" => &[\n{templates}\n   ],'
-    bond = '        BondTemplate{{from: "{}", to: "{}", order: {}}}'
+    bond = '        BT{{f: "{}", t: "{}", o: {}}}'
 
     print(header)
     for block in data_block:
