@@ -3,7 +3,7 @@ use std::{
     io::{self, BufRead},
     str::FromStr,
 };
-use components::BOND_TEMPLATES;
+use components::get_bond_templates;
 
 pub type Position = [f64; 3];
 pub type Bond = [isize; 2];
@@ -337,6 +337,9 @@ where
             }
         };
     }
+
+    let templates = get_bond_templates();
+    println!("{:?}", templates["ALA"]);
 
     Ok(flatten_atoms(atoms))
 }

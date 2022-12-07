@@ -92,42 +92,38 @@ def parse_components(lines: Iterable[str]) -> list[BondTemplate]:
     return data_blocks
 
 
-def escape_name(name: str) -> str:
-    return name.replace('"', '\\"')
-
-def write_rust_module(data_block: list[Template]):
-    header = """use phf::phf_map;
-
-pub struct BondTemplate<'a> {
-    pub f: &'a str,
-    pub t: &'a str,
-    pub o: f32,
-}
-
-pub type BT<'a> = BondTemplate<'a>;
-
-pub static BOND_TEMPLATES: phf::Map<&str, &'static [BondTemplate]> = phf_map! {"""
-    footer = "};"
-    item = '    "{name}" => &[\n{templates}\n   ],'
-    bond = '        BT{{f: "{}", t: "{}", o: {}}}'
-
-    print(header)
-    for block in data_block:
-        if block.name is None or len(block.name) != 3:
+def write_components_as_bytes(outfile, data_blocks):
+    for block in data_blocks:
+        if len(block.name) != 3:
             continue
-        bonds = ",\n".join([
-            bond.format(escape_name(b.from_atom), escape_name(b.to_atom), b.order)
-            for b in block.bonds
-        ])
-        print(item.format(name=block.name, templates=bonds))
-    print(footer)
+        froms = (len(bond.from_atom) <= 3 for bond in block.bonds)
+        tos = (len(bond.to_atom) <= 3 for bond in block.bonds)
+        if not all(froms) or not all(tos):
+            continue
+        if not block.bonds:
+            continue
+
+        chunk = b""
+        chunk += block.name.encode()
+        chunk += len(block.bonds).to_bytes(2, 'little')
+        outfile.write(chunk)
+        for bond in block.bonds:
+            chunk = b""
+            chunk += "{:3s}".format(bond.from_atom).encode('ascii')
+            chunk += "{:3s}".format(bond.to_atom).encode('ascii')
+            chunk += int(bond.order).to_bytes(1, 'little')
+            if len(chunk) != 7:
+                raise RuntimeError(f"Wrong size for this block {block}. {len(chunk)} bytes instead of 7 bytes.")
+            outfile.write(chunk)
 
 
 def main():
     path = sys.argv[1]
+    outpath = sys.argv[2]
     with open(path) as infile:
         templates = parse_components(infile)
-    write_rust_module(templates)
+    with open(outpath, 'wb') as outfile:
+        write_components_as_bytes(outfile, templates)
 
 
 if __name__ == '__main__':
