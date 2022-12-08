@@ -431,7 +431,7 @@ where
         };
     }
 
-    Ok(flatten_atoms(atoms))
+    Ok(add_intra_residue_bonds(flatten_atoms(atoms)))
 }
 
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
