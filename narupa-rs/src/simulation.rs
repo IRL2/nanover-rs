@@ -502,6 +502,16 @@ impl ToFrameData for XMLSimulation {
         frame
             .insert_index_array("particle.elements", elements)
             .unwrap();
+        
+        let bonds: Vec<u32> = self.topology
+                        .bonds
+                        .iter()
+                        .map(|bond| [bond.0 as u32, bond.1 as u32])
+                        .flatten()
+                        .collect();
+        frame
+            .insert_index_array("bond.pairs", bonds)
+            .unwrap();
 
         frame
     }

@@ -55,11 +55,75 @@ pub struct MolecularSystem {
     pub atom_resindex: Vec<usize>,
     pub resnames: Vec<String>,
     pub resids: Vec<isize>,
+    pub bonds: Vec<(usize, usize)>,
 }
 
 impl MolecularSystem {
     pub fn atom_count(&self) -> usize {
         self.positions.len()
+    }
+
+    pub fn iter_residues(&self) -> ResidueIterator {
+        ResidueIterator::new(&self)
+    }
+}
+
+pub struct ResidueIterator<'a> {
+    system: &'a MolecularSystem,
+    particle_index: usize,
+}
+
+impl<'a> ResidueIterator<'a> {
+    pub fn new(system: &'a MolecularSystem) -> Self {
+        ResidueIterator { system, particle_index: 0 }
+    }
+}
+
+impl<'a> Iterator for ResidueIterator<'a> {
+    type Item = ResidueView<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let number_of_atoms = self.system.atom_resindex.len();
+        let max_index = number_of_atoms - 1;
+        if self.particle_index >= max_index {
+            return None;
+        }
+        let start = self.particle_index;
+        let mut index = start;
+        let residue_index = self.system.atom_resindex[start];
+        let mut current_residue_index = residue_index;
+        while index < max_index && current_residue_index == residue_index {
+            index += 1;
+            current_residue_index = self.system.atom_resindex[index];
+        }
+        self.particle_index = index;
+        Some(ResidueView {
+            system: self.system,
+            start_index: start,
+            next_index: index,
+        })
+    }
+}
+
+pub struct ResidueView<'a> {
+    system: &'a MolecularSystem,
+    start_index: usize,
+    next_index: usize,
+}
+
+impl<'a> ResidueView<'a> {
+    pub fn find_atom_position(&self, name: &str) -> Option<usize> {
+        println!("{:?}", &self.system.names[self.start_index..self.next_index]);
+        self.system
+            .names[self.start_index..self.next_index]
+            .iter()
+            .position(|n| name.trim() == n.trim())
+            .map(|position| self.start_index + position)
+    }
+
+    pub fn name(&self) -> &String {
+        let residue_index = self.system.atom_resindex[self.start_index];
+        &self.system.resnames[residue_index]
     }
 }
 
@@ -68,7 +132,7 @@ where
     F: BufRead,
 {
     let atoms = read_pdb_atoms(input)?;
-    Ok(flatten_atoms(atoms))
+    Ok(add_intra_residue_bonds(flatten_atoms(atoms)))
 }
 
 fn read_pdb_atoms<F>(input: F) -> Result<Vec<PDBLine>, ReadError>
@@ -99,6 +163,7 @@ fn flatten_atoms(atoms: Vec<PDBLine>) -> MolecularSystem {
             atom_resindex: vec![],
             resnames: vec![],
             resids: vec![],
+            bonds: vec![],
         };
     }
     let mut names = Vec::new();
@@ -118,9 +183,9 @@ fn flatten_atoms(atoms: Vec<PDBLine>) -> MolecularSystem {
         alternates.push(atom.alternate);
     });
 
-    let mut resnames = Vec::new();
-    let mut resids = Vec::new();
-    let mut insertion_codes = Vec::new();
+    let mut resnames = vec![atom_resnames[0].clone()];
+    let mut resids = vec![atom_resids[0]];
+    let mut insertion_codes = vec![atom_insertion_codes[0]];
     let mut current_residue_index = 0;
     let mut atom_resindex = vec![current_residue_index];
     let mut previous = (
@@ -151,6 +216,34 @@ fn flatten_atoms(atoms: Vec<PDBLine>) -> MolecularSystem {
         atom_resindex,
         resnames,
         resids,
+        bonds: vec![],
+    }
+}
+
+fn add_intra_residue_bonds(input: MolecularSystem) -> MolecularSystem {
+    let components = get_bond_templates();
+    let mut bonds: Vec<(usize, usize)> = Vec::new();
+    for residue in input.iter_residues() {
+        let residue_name: &str = &residue.name();
+        if let Some(templates) = components.get(residue_name) {
+            for bond_template in templates {
+                let from = residue.find_atom_position(bond_template.from.trim());
+                let to = residue.find_atom_position(bond_template.to.trim());
+                println!("Bond between {}{from:?} and {}{to:?}", bond_template.from, bond_template.to);
+                if let (Some(from), Some(to)) = (from, to) {
+                    bonds.push((from, to));
+                }
+            }
+        }
+    }
+    MolecularSystem {
+        names: input.names,
+        elements: input.elements,
+        positions: input.positions,
+        atom_resindex: input.atom_resindex,
+        resnames: input.resnames,
+        resids: input.resids,
+        bonds
     }
 }
 
@@ -337,9 +430,6 @@ where
             }
         };
     }
-
-    let templates = get_bond_templates();
-    println!("{:?}", templates["ALA"]);
 
     Ok(flatten_atoms(atoms))
 }
