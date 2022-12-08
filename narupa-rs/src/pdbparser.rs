@@ -113,7 +113,6 @@ pub struct ResidueView<'a> {
 
 impl<'a> ResidueView<'a> {
     pub fn find_atom_position(&self, name: &str) -> Option<usize> {
-        println!("{:?}", &self.system.names[self.start_index..self.next_index]);
         self.system
             .names[self.start_index..self.next_index]
             .iter()
@@ -229,7 +228,6 @@ fn add_intra_residue_bonds(input: MolecularSystem) -> MolecularSystem {
             for bond_template in templates {
                 let from = residue.find_atom_position(bond_template.from.trim());
                 let to = residue.find_atom_position(bond_template.to.trim());
-                println!("Bond between {}{from:?} and {}{to:?}", bond_template.from, bond_template.to);
                 if let (Some(from), Some(to)) = (from, to) {
                     bonds.push((from, to));
                 }
