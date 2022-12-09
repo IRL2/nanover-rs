@@ -1,10 +1,7 @@
 use std::io::BufRead;
 use crate::parsers::chemistry::lookup_element_symbol;
 use crate::parsers::errors::*;
-use crate::parsers::molecular_system::{
-    MolecularSystem,
-    flatten_atoms,
-};
+use crate::parsers::molecular_system::MolecularSystem;
 use crate::parsers::line::PDBLine;
 
 
@@ -13,7 +10,7 @@ where
     F: BufRead,
 {
     let atoms = read_pdb_atoms(input)?;
-    Ok(flatten_atoms(atoms).add_intra_residue_bonds())
+    Ok(MolecularSystem::from(atoms).add_intra_residue_bonds())
 }
 
 fn read_pdb_atoms<F>(input: F) -> Result<Vec<PDBLine>, ReadError>

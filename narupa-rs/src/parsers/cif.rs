@@ -5,10 +5,7 @@ use std::{
 };
 use crate::parsers::chemistry::lookup_element_symbol;
 use crate::parsers::errors::*;
-use crate::parsers::molecular_system::{
-    MolecularSystem,
-    flatten_atoms,
-};
+use crate::parsers::molecular_system::MolecularSystem;
 use crate::parsers::line::PDBLine;
 
 #[derive(Debug)]
@@ -121,7 +118,7 @@ where
         };
     }
 
-    Ok(flatten_atoms(atoms).add_intra_residue_bonds())
+    Ok(MolecularSystem::from(atoms).add_intra_residue_bonds())
 }
 
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {

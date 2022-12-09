@@ -106,70 +106,72 @@ impl<'a> ResidueView<'a> {
     }
 }
 
-pub fn flatten_atoms(atoms: Vec<PDBLine>) -> MolecularSystem {
-    // TODO: Filter alternates
-    // TODO: Filter insertions
-    if atoms.is_empty() {
-        return MolecularSystem {
-            names: vec![],
-            elements: vec![],
-            positions: vec![],
-            atom_resindex: vec![],
-            resnames: vec![],
-            resids: vec![],
-            bonds: vec![],
-        };
-    }
-    let mut names = Vec::new();
-    let mut elements = Vec::new();
-    let mut positions = Vec::new();
-    let mut atom_resnames = Vec::new();
-    let mut atom_resids = Vec::new();
-    let mut atom_insertion_codes = Vec::new();
-    let mut alternates = Vec::new();
-    atoms.iter().for_each(|atom| {
-        names.push(atom.atom_name.clone());
-        elements.push(atom.element_symbol);
-        positions.push(atom.position);
-        atom_resnames.push(atom.residue_name.clone());
-        atom_resids.push(atom.residue_identifier);
-        atom_insertion_codes.push(atom.insertion_code);
-        alternates.push(atom.alternate);
-    });
-
-    let mut resnames = vec![atom_resnames[0].clone()];
-    let mut resids = vec![atom_resids[0]];
-    let mut insertion_codes = vec![atom_insertion_codes[0]];
-    let mut current_residue_index = 0;
-    let mut atom_resindex = vec![current_residue_index];
-    let mut previous = (
-        (&atom_resids[0], atom_resnames[0].clone()),
-        atom_insertion_codes[0],
-    );
-    let mut residue_iter = atom_resids
-        .iter()
-        .zip(atom_resnames)
-        .zip(atom_insertion_codes);
-    residue_iter.next(); // We already looked at the first residue.
-    for residue in residue_iter {
-        let ((resid, resname), insertion_code) = &residue;
-        if residue != previous {
-            current_residue_index += 1;
-            resids.push(**resid);
-            resnames.push(resname.clone());
-            insertion_codes.push(*insertion_code);
+impl From<Vec<PDBLine>> for MolecularSystem {
+    fn from(atoms: Vec<PDBLine>) -> Self {
+        // TODO: Filter alternates
+        // TODO: Filter insertions
+        if atoms.is_empty() {
+            return MolecularSystem {
+                names: vec![],
+                elements: vec![],
+                positions: vec![],
+                atom_resindex: vec![],
+                resnames: vec![],
+                resids: vec![],
+                bonds: vec![],
+            };
         }
-        atom_resindex.push(current_residue_index);
-        previous = ((resid, resname.to_string()), *insertion_code);
-    }
+        let mut names = Vec::new();
+        let mut elements = Vec::new();
+        let mut positions = Vec::new();
+        let mut atom_resnames = Vec::new();
+        let mut atom_resids = Vec::new();
+        let mut atom_insertion_codes = Vec::new();
+        let mut alternates = Vec::new();
+        atoms.iter().for_each(|atom| {
+            names.push(atom.atom_name.clone());
+            elements.push(atom.element_symbol);
+            positions.push(atom.position);
+            atom_resnames.push(atom.residue_name.clone());
+            atom_resids.push(atom.residue_identifier);
+            atom_insertion_codes.push(atom.insertion_code);
+            alternates.push(atom.alternate);
+        });
 
-    MolecularSystem {
-        names,
-        elements,
-        positions,
-        atom_resindex,
-        resnames,
-        resids,
-        bonds: vec![],
+        let mut resnames = vec![atom_resnames[0].clone()];
+        let mut resids = vec![atom_resids[0]];
+        let mut insertion_codes = vec![atom_insertion_codes[0]];
+        let mut current_residue_index = 0;
+        let mut atom_resindex = vec![current_residue_index];
+        let mut previous = (
+            (&atom_resids[0], atom_resnames[0].clone()),
+            atom_insertion_codes[0],
+        );
+        let mut residue_iter = atom_resids
+            .iter()
+            .zip(atom_resnames)
+            .zip(atom_insertion_codes);
+        residue_iter.next(); // We already looked at the first residue.
+        for residue in residue_iter {
+            let ((resid, resname), insertion_code) = &residue;
+            if residue != previous {
+                current_residue_index += 1;
+                resids.push(**resid);
+                resnames.push(resname.clone());
+                insertion_codes.push(*insertion_code);
+            }
+            atom_resindex.push(current_residue_index);
+            previous = ((resid, resname.to_string()), *insertion_code);
+        }
+
+        MolecularSystem {
+            names,
+            elements,
+            positions,
+            atom_resindex,
+            resnames,
+            resids,
+            bonds: vec![],
+        }
     }
 }
