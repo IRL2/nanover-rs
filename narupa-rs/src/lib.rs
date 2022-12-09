@@ -15,5 +15,4 @@ pub mod state_interaction;
 pub mod simulation_thread;
 pub mod playback;
 pub mod observer_thread;
-pub mod pdbparser;
 pub mod parsers;

@@ -27,7 +27,7 @@ use std::io::{BufReader, Cursor, Read};
 use std::str;
 
 use crate::frame::FrameData;
-use crate::pdbparser::{MolecularSystem, read_pdb, read_cif};
+use crate::parsers::{read_pdb, read_cif, MolecularSystem};
 
 type Coordinate = [f64; 3];
 type CoordMap = BTreeMap<i32, Coordinate>;
