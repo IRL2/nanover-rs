@@ -226,7 +226,7 @@ fn add_intra_residue_bonds(input: MolecularSystem) -> MolecularSystem {
     for residue in input.iter_residues() {
         let residue_name: &str = &residue.name();
         if let Some(templates) = components.get(residue_name) {
-            for bond_template in templates {
+            for bond_template in &templates.bonds {
                 let from = residue.find_atom_position(bond_template.from.trim());
                 let to = residue.find_atom_position(bond_template.to.trim());
                 if let (Some(from), Some(to)) = (from, to) {

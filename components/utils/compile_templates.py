@@ -4,7 +4,7 @@ Read components.cif and write a rust module describing bond templates.
 """
 
 from typing import Iterable, NamedTuple, Optional
-from enum import Enum
+from enum import Enum, IntEnum
 from dataclasses import dataclass, field
 import sys
 
@@ -17,6 +17,14 @@ class Context(Enum):
     LOOP = 3
 
 
+class ResidueType(IntEnum):
+    NON_POLYMER = 0
+    PEPTIDE = 1
+    DNA = 2
+    RNA = 3
+    UNSUPPORTED = 4
+
+
 class BondTemplate(NamedTuple):
     from_atom: str
     to_atom: str
@@ -25,6 +33,7 @@ class BondTemplate(NamedTuple):
 @dataclass
 class Template:
     name: Optional[str] = None
+    residue_type: ResidueType = ResidueType.UNSUPPORTED
     bonds: list = field(default_factory=lambda: list())
 
 
@@ -65,6 +74,19 @@ def parse_components(lines: Iterable[str]) -> list[BondTemplate]:
                     raise RuntimeError('Unexpected number of tokens.')
                 template = data_blocks[-1]
                 template.name = tokens[1]
+            elif first == '_chem_comp.type':
+                value = tokens[1].upper()
+                if 'PEPTIDE' in value:
+                    residue_type = ResidueType.PEPTIDE
+                elif 'DNA' in value:
+                    residue_type = ResidueType.DNA
+                elif 'RNA' in value:
+                    residue_type = ResidueType.RNA
+                elif value == 'NON-POLYMER':
+                    residue_type = ResidueType.NON_POLYMER
+                else:
+                    residue_type = ResidueType.UNSUPPORTED
+                template.residue_type = residue_type
         elif context == context.LOOP_KEY:
             if first.startswith('_'):
                 name, key = first.split('.', maxsplit=1)
@@ -105,6 +127,7 @@ def write_components_as_bytes(outfile, data_blocks):
 
         chunk = b""
         chunk += block.name.encode()
+        chunk += int(block.residue_type).to_bytes(1, 'little')
         chunk += len(block.bonds).to_bytes(2, 'little')
         outfile.write(chunk)
         for bond in block.bonds:
