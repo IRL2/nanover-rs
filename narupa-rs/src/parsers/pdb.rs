@@ -4,7 +4,6 @@ use crate::parsers::errors::*;
 use crate::parsers::molecular_system::{
     MolecularSystem,
     flatten_atoms,
-    add_intra_residue_bonds,
 };
 use crate::parsers::line::PDBLine;
 
@@ -14,7 +13,7 @@ where
     F: BufRead,
 {
     let atoms = read_pdb_atoms(input)?;
-    Ok(add_intra_residue_bonds(flatten_atoms(atoms)))
+    Ok(flatten_atoms(atoms).add_intra_residue_bonds())
 }
 
 fn read_pdb_atoms<F>(input: F) -> Result<Vec<PDBLine>, ReadError>

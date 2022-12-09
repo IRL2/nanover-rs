@@ -8,7 +8,6 @@ use crate::parsers::errors::*;
 use crate::parsers::molecular_system::{
     MolecularSystem,
     flatten_atoms,
-    add_intra_residue_bonds,
 };
 use crate::parsers::line::PDBLine;
 
@@ -122,7 +121,7 @@ where
         };
     }
 
-    Ok(add_intra_residue_bonds(flatten_atoms(atoms)))
+    Ok(flatten_atoms(atoms).add_intra_residue_bonds())
 }
 
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {

@@ -20,6 +20,32 @@ impl MolecularSystem {
     pub fn iter_residues(&self) -> ResidueIterator {
         ResidueIterator::new(&self)
     }
+
+    pub fn add_intra_residue_bonds(self) -> MolecularSystem {
+        let components = get_bond_templates();
+        let mut bonds: Vec<(usize, usize)> = Vec::new();
+        for residue in self.iter_residues() {
+            let residue_name: &str = &residue.name();
+            if let Some(templates) = components.get(residue_name) {
+                for bond_template in &templates.bonds {
+                    let from = residue.find_atom_position(bond_template.from.trim());
+                    let to = residue.find_atom_position(bond_template.to.trim());
+                    if let (Some(from), Some(to)) = (from, to) {
+                        bonds.push((from, to));
+                    }
+                }
+            }
+        }
+        MolecularSystem {
+            names: self.names,
+            elements: self.elements,
+            positions: self.positions,
+            atom_resindex: self.atom_resindex,
+            resnames: self.resnames,
+            resids: self.resids,
+            bonds
+        }
+    }
 }
 
 pub struct ResidueIterator<'a> {
@@ -145,31 +171,5 @@ pub fn flatten_atoms(atoms: Vec<PDBLine>) -> MolecularSystem {
         resnames,
         resids,
         bonds: vec![],
-    }
-}
-
-pub fn add_intra_residue_bonds(input: MolecularSystem) -> MolecularSystem {
-    let components = get_bond_templates();
-    let mut bonds: Vec<(usize, usize)> = Vec::new();
-    for residue in input.iter_residues() {
-        let residue_name: &str = &residue.name();
-        if let Some(templates) = components.get(residue_name) {
-            for bond_template in &templates.bonds {
-                let from = residue.find_atom_position(bond_template.from.trim());
-                let to = residue.find_atom_position(bond_template.to.trim());
-                if let (Some(from), Some(to)) = (from, to) {
-                    bonds.push((from, to));
-                }
-            }
-        }
-    }
-    MolecularSystem {
-        names: input.names,
-        elements: input.elements,
-        positions: input.positions,
-        atom_resindex: input.atom_resindex,
-        resnames: input.resnames,
-        resids: input.resids,
-        bonds
     }
 }
