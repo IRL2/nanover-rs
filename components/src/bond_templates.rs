@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str;
 
+#[derive(PartialEq, Debug)]
 pub enum ResidueType {
     NonPolymer,
     Peptide,
@@ -9,6 +10,7 @@ pub enum ResidueType {
     Unsupported,
 }
 
+#[derive(Debug)]
 pub struct ResidueTemplate<'a> {
     pub residue_type: ResidueType,
     pub bonds: Vec<BondTemplate<'a>>,
@@ -30,7 +32,7 @@ pub fn get_bond_templates<'a>() -> HashMap<&'a str, ResidueTemplate<'a>> {
     let mut index = 0;
     while index < bytes.len() {
         let name = str::from_utf8(&bytes[index..(index + 3)]).unwrap();
-        let residue_type = match bytes[index + 4] {
+        let residue_type = match bytes[index + 3] {
             0 => ResidueType::NonPolymer,
             1 => ResidueType::Peptide,
             2 => ResidueType::DNA,
