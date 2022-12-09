@@ -9,6 +9,8 @@ pub struct MolecularSystem {
     pub atom_resindex: Vec<usize>,
     pub resnames: Vec<String>,
     pub resids: Vec<isize>,
+    pub residue_chain_index: Vec<usize>,
+    pub chain_identifiers: Vec<String>,
     pub bonds: Vec<(usize, usize)>,
 }
 
@@ -21,7 +23,7 @@ impl MolecularSystem {
         ResidueIterator::new(&self)
     }
 
-    pub fn add_intra_residue_bonds(self) -> MolecularSystem {
+    pub fn add_intra_residue_bonds(mut self) -> MolecularSystem {
         let components = get_bond_templates();
         let mut bonds: Vec<(usize, usize)> = Vec::new();
         for residue in self.iter_residues() {
@@ -36,15 +38,8 @@ impl MolecularSystem {
                 }
             }
         }
-        MolecularSystem {
-            names: self.names,
-            elements: self.elements,
-            positions: self.positions,
-            atom_resindex: self.atom_resindex,
-            resnames: self.resnames,
-            resids: self.resids,
-            bonds
-        }
+        self.bonds.append(&mut bonds);
+        self
     }
 }
 
@@ -118,6 +113,8 @@ impl From<Vec<PDBLine>> for MolecularSystem {
                 atom_resindex: vec![],
                 resnames: vec![],
                 resids: vec![],
+                residue_chain_index: vec![],
+                chain_identifiers: vec![],
                 bonds: vec![],
             };
         }
@@ -128,6 +125,7 @@ impl From<Vec<PDBLine>> for MolecularSystem {
         let mut atom_resids = Vec::new();
         let mut atom_insertion_codes = Vec::new();
         let mut alternates = Vec::new();
+        let mut atom_chain_identifiers = Vec::new();
         atoms.iter().for_each(|atom| {
             names.push(atom.atom_name.clone());
             elements.push(atom.element_symbol);
@@ -136,32 +134,48 @@ impl From<Vec<PDBLine>> for MolecularSystem {
             atom_resids.push(atom.residue_identifier);
             atom_insertion_codes.push(atom.insertion_code);
             alternates.push(atom.alternate);
+            atom_chain_identifiers.push(atom.chain_identifier);
         });
 
+        let mut current_residue_index = 0;
+        let mut atom_resindex = vec![current_residue_index];
         let mut resnames = vec![atom_resnames[0].clone()];
         let mut resids = vec![atom_resids[0]];
         let mut insertion_codes = vec![atom_insertion_codes[0]];
-        let mut current_residue_index = 0;
-        let mut atom_resindex = vec![current_residue_index];
+
+        let mut current_chain_index = 0;
+        let mut residue_chain_index = vec![current_chain_index];
+        let mut current_chain_identifier = atom_chain_identifiers[0];
+        let mut chain_identifiers = vec![String::from(atom_chain_identifiers[0])];
         let mut previous = (
-            (&atom_resids[0], atom_resnames[0].clone()),
-            atom_insertion_codes[0],
+            (
+                (&atom_resids[0], atom_resnames[0].clone()),
+                atom_insertion_codes[0],
+            ),
+            atom_chain_identifiers[0],            
         );
         let mut residue_iter = atom_resids
             .iter()
             .zip(atom_resnames)
-            .zip(atom_insertion_codes);
+            .zip(atom_insertion_codes)
+            .zip(atom_chain_identifiers);
         residue_iter.next(); // We already looked at the first residue.
         for residue in residue_iter {
-            let ((resid, resname), insertion_code) = &residue;
+            let (((resid, resname), insertion_code), chain_identifier) = &residue;
             if residue != previous {
                 current_residue_index += 1;
                 resids.push(**resid);
                 resnames.push(resname.clone());
                 insertion_codes.push(*insertion_code);
+                if chain_identifier != &current_chain_identifier {
+                    current_chain_identifier = *chain_identifier;
+                    current_chain_index += 1;
+                    chain_identifiers.push(String::from(current_chain_identifier));
+                }
+                residue_chain_index.push(current_chain_index);
             }
             atom_resindex.push(current_residue_index);
-            previous = ((resid, resname.to_string()), *insertion_code);
+            previous = (((resid, resname.to_string()), *insertion_code), *chain_identifier);
         }
 
         MolecularSystem {
@@ -171,6 +185,8 @@ impl From<Vec<PDBLine>> for MolecularSystem {
             atom_resindex,
             resnames,
             resids,
+            residue_chain_index,
+            chain_identifiers,
             bonds: vec![],
         }
     }
