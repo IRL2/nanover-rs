@@ -5,35 +5,10 @@ use std::{
 };
 use components::get_bond_templates;
 use crate::parsers::chemistry::lookup_element_symbol;
+use crate::parsers::errors::*;
 
 pub type Position = [f64; 3];
 pub type Bond = [isize; 2];
-
-/// When a PDB field is ill-formatted, this enum tells what field has the issue.
-#[derive(Debug)]
-pub enum FieldError {
-    Serial,
-    ResidueIdentifier,
-    Position,
-}
-
-/// What when wrong when reading an ATOM line in a PDB file?
-#[derive(Debug)]
-pub enum FormatError {
-    FieldFormat(FieldError),
-    LineTooShort,
-    Unexpected,
-    InconsistentKey,
-    UnexpectedFieldNumber,
-    MissingField(String),
-    MissingLoopKeys,
-}
-
-#[derive(Debug)]
-pub enum ReadError {
-    FormatError(FormatError, usize),
-    IOError(io::Error),
-}
 
 /// The parsed fields from an ATOM line in a PDB file.
 #[derive(Debug, PartialEq)]
