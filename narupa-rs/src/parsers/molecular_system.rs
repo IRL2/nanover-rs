@@ -1,4 +1,4 @@
-use components::get_bond_templates;
+use components::{get_bond_templates, ResidueType};
 use crate::parsers::Position;
 use crate::parsers::line::PDBLine;
 
@@ -37,6 +37,32 @@ impl MolecularSystem {
                     }
                 }
             }
+        }
+        self.bonds.append(&mut bonds);
+        self
+    }
+
+    pub fn add_inter_residue_bonds(mut self) -> MolecularSystem {
+        let components = get_bond_templates();
+        let mut bonds: Vec<(usize, usize)> = Vec::new();
+
+        let previous_residues = self.iter_residues();
+        let current_residues = self.iter_residues().skip(1);
+        for (previous, current) in previous_residues.zip(current_residues) {
+            let template_previous = components.get(previous.name());
+            let template_current = components.get(current.name());
+            let (Some(template_previous), Some(template_current)) = (template_previous, template_current) else {
+                continue;
+            };
+            let type_previous = &template_previous.residue_type;
+            let type_current = &template_current.residue_type;
+            if type_previous != type_current {
+                continue;
+            }
+            match type_previous {
+                ResidueType::Peptide => bonds.append(&mut make_peptide_bond(&previous, &current)),
+                _ => {},
+            } 
         }
         self.bonds.append(&mut bonds);
         self
@@ -95,7 +121,7 @@ impl<'a> ResidueView<'a> {
             .map(|position| self.start_index + position)
     }
 
-    pub fn name(&self) -> &String {
+    pub fn name(&self) -> &str {
         let residue_index = self.system.atom_resindex[self.start_index];
         &self.system.resnames[residue_index]
     }
@@ -189,5 +215,18 @@ impl From<Vec<PDBLine>> for MolecularSystem {
             chain_identifiers,
             bonds: vec![],
         }
+    }
+}
+
+
+fn make_peptide_bond(nter: &ResidueView, cter: &ResidueView) -> Vec<(usize, usize)> {
+    let maybe_c_on_nter = nter.find_atom_position("C");
+    let maybe_n_on_cter = cter.find_atom_position("N");
+    match (maybe_c_on_nter, maybe_n_on_cter) {
+        (Some(c_on_nter), Some(n_on_cter)) => {
+            println!("{} -> {}", c_on_nter + 1, n_on_cter + 1);
+            vec![(c_on_nter, n_on_cter)]
+        }
+        _ => vec![],
     }
 }

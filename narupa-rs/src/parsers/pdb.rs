@@ -10,7 +10,10 @@ where
     F: BufRead,
 {
     let atoms = read_pdb_atoms(input)?;
-    Ok(MolecularSystem::from(atoms).add_intra_residue_bonds())
+    Ok(MolecularSystem::from(atoms)
+        .add_intra_residue_bonds()
+        .add_inter_residue_bonds()
+    )
 }
 
 fn read_pdb_atoms<F>(input: F) -> Result<Vec<PDBLine>, ReadError>

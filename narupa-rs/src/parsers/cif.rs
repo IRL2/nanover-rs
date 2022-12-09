@@ -118,7 +118,10 @@ where
         };
     }
 
-    Ok(MolecularSystem::from(atoms).add_intra_residue_bonds())
+    Ok(MolecularSystem::from(atoms)
+        .add_intra_residue_bonds()
+        .add_inter_residue_bonds()
+    )
 }
 
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
