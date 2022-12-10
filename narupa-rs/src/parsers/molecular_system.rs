@@ -20,7 +20,11 @@ impl MolecularSystem {
     }
 
     pub fn iter_residues(&self) -> ResidueIterator {
-        ResidueIterator::new(&self)
+        ResidueIterator::new(&self, 0, self.atom_count())
+    }
+
+    pub fn iter_chains(&self) -> ChainIterator {
+        ChainIterator::new(&self)
     }
 
     pub fn add_intra_residue_bonds(mut self) -> MolecularSystem {
@@ -46,23 +50,25 @@ impl MolecularSystem {
         let components = get_bond_templates();
         let mut bonds: Vec<(usize, usize)> = Vec::new();
 
-        let previous_residues = self.iter_residues();
-        let current_residues = self.iter_residues().skip(1);
-        for (previous, current) in previous_residues.zip(current_residues) {
-            let template_previous = components.get(previous.name());
-            let template_current = components.get(current.name());
-            let (Some(template_previous), Some(template_current)) = (template_previous, template_current) else {
-                continue;
-            };
-            let type_previous = &template_previous.residue_type;
-            let type_current = &template_current.residue_type;
-            if type_previous != type_current {
-                continue;
+        for chain in self.iter_chains() {
+            let previous_residues = chain.iter_residues();
+            let current_residues = chain.iter_residues().skip(1);
+            for (previous, current) in previous_residues.zip(current_residues) {
+                let template_previous = components.get(previous.name());
+                let template_current = components.get(current.name());
+                let (Some(template_previous), Some(template_current)) = (template_previous, template_current) else {
+                    continue;
+                };
+                let type_previous = &template_previous.residue_type;
+                let type_current = &template_current.residue_type;
+                if type_previous != type_current {
+                    continue;
+                }
+                match type_previous {
+                    ResidueType::Peptide => bonds.append(&mut make_peptide_bond(&previous, &current)),
+                    _ => {},
+                } 
             }
-            match type_previous {
-                ResidueType::Peptide => bonds.append(&mut make_peptide_bond(&previous, &current)),
-                _ => {},
-            } 
         }
         self.bonds.append(&mut bonds);
         self
@@ -72,11 +78,12 @@ impl MolecularSystem {
 pub struct ResidueIterator<'a> {
     system: &'a MolecularSystem,
     particle_index: usize,
+    end: usize,
 }
 
 impl<'a> ResidueIterator<'a> {
-    pub fn new(system: &'a MolecularSystem) -> Self {
-        ResidueIterator { system, particle_index: 0 }
+    pub fn new(system: &'a MolecularSystem, start: usize, end: usize) -> Self {
+        ResidueIterator { system, particle_index: start, end: end}
     }
 }
 
@@ -93,7 +100,7 @@ impl<'a> Iterator for ResidueIterator<'a> {
         let mut index = start;
         let residue_index = self.system.atom_resindex[start];
         let mut current_residue_index = residue_index;
-        while index < max_index && current_residue_index == residue_index {
+        while index < max_index && index < self.end && current_residue_index == residue_index {
             index += 1;
             current_residue_index = self.system.atom_resindex[index];
         }
@@ -103,6 +110,56 @@ impl<'a> Iterator for ResidueIterator<'a> {
             start_index: start,
             next_index: index,
         })
+    }
+}
+
+pub struct ChainView<'a> {
+    system: &'a MolecularSystem,
+    start_index: usize,
+    next_index: usize,
+}
+
+impl<'a> ChainView<'a> {
+    pub fn iter_residues (&self) -> ResidueIterator {
+        ResidueIterator::new(&self.system, self.start_index, self.next_index)
+    }
+}
+
+pub struct ChainIterator<'a> {
+    system: &'a MolecularSystem,
+    particle_index: usize,
+}
+
+impl<'a> ChainIterator<'a> {
+    pub fn new(system: &'a MolecularSystem) -> Self {
+        Self {system, particle_index: 0}
+    }
+}
+
+impl<'a> Iterator for ChainIterator<'a> {
+    type Item = ChainView<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.particle_index >= self.system.atom_count() {
+            return None;
+        }
+
+        let start = self.particle_index;
+        let current_residue = self.system.atom_resindex[start];
+        let current_chain = self.system.residue_chain_index[current_residue];
+        let mut i = 0;
+        for atom in self.particle_index..self.system.atom_count() {
+            i = atom;
+            let residue = self.system.atom_resindex[atom];
+            let chain = self.system.residue_chain_index[residue];
+            if residue != current_residue && chain != current_chain {
+                break;
+            }
+        }
+        self.particle_index = i + 1;
+
+
+        Some(ChainView{ system: self.system, start_index: start, next_index: self.particle_index})
     }
 }
 
@@ -224,7 +281,6 @@ fn make_peptide_bond(nter: &ResidueView, cter: &ResidueView) -> Vec<(usize, usiz
     let maybe_n_on_cter = cter.find_atom_position("N");
     match (maybe_c_on_nter, maybe_n_on_cter) {
         (Some(c_on_nter), Some(n_on_cter)) => {
-            println!("{} -> {}", c_on_nter + 1, n_on_cter + 1);
             vec![(c_on_nter, n_on_cter)]
         }
         _ => vec![],
