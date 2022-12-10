@@ -8,7 +8,11 @@ pub struct ResidueIterator<'a> {
 
 impl<'a> ResidueIterator<'a> {
     pub fn new(system: &'a MolecularSystem, start: usize, end: usize) -> Self {
-        ResidueIterator { system, particle_index: start, end: end}
+        ResidueIterator {
+            system,
+            particle_index: start,
+            end: end,
+        }
     }
 }
 
@@ -46,8 +50,7 @@ pub struct ResidueView<'a> {
 
 impl<'a> ResidueView<'a> {
     pub fn find_atom_position(&self, name: &str) -> Option<usize> {
-        self.system
-            .names[self.start_index..self.next_index]
+        self.system.names[self.start_index..self.next_index]
             .iter()
             .position(|n| name.trim() == n.trim())
             .map(|position| self.start_index + position)

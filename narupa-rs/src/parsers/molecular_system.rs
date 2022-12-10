@@ -1,8 +1,8 @@
-use components::{get_bond_templates, ResidueType};
-use crate::parsers::Position;
+use crate::parsers::chains::ChainIterator;
 use crate::parsers::line::PDBLine;
 use crate::parsers::residues::{ResidueIterator, ResidueView};
-use crate::parsers::chains::ChainIterator;
+use crate::parsers::Position;
+use components::{get_bond_templates, ResidueType};
 
 pub struct MolecularSystem {
     pub names: Vec<String>,
@@ -84,9 +84,11 @@ impl MolecularSystem {
                     continue;
                 }
                 match type_previous {
-                    ResidueType::Peptide => bonds.append(&mut make_peptide_bond(&previous, &current)),
-                    _ => {},
-                } 
+                    ResidueType::Peptide => {
+                        bonds.append(&mut make_peptide_bond(&previous, &current))
+                    }
+                    _ => {}
+                }
             }
         }
         self.bonds.append(&mut bonds);
@@ -168,7 +170,6 @@ impl From<Vec<PDBLine>> for MolecularSystem {
         }
     }
 }
-
 
 fn make_peptide_bond(nter: &ResidueView, cter: &ResidueView) -> Vec<(usize, usize)> {
     let maybe_c_on_nter = nter.find_atom_position("C");

@@ -1,5 +1,5 @@
-use crate::parsers::MolecularSystem;
 use crate::parsers::residues::ResidueIterator;
+use crate::parsers::MolecularSystem;
 
 pub struct ChainView<'a> {
     system: &'a MolecularSystem,
@@ -8,7 +8,7 @@ pub struct ChainView<'a> {
 }
 
 impl<'a> ChainView<'a> {
-    pub fn iter_residues (&self) -> ResidueIterator {
+    pub fn iter_residues(&self) -> ResidueIterator {
         ResidueIterator::new(&self.system, self.start_index, self.next_index)
     }
 }
@@ -20,7 +20,10 @@ pub struct ChainIterator<'a> {
 
 impl<'a> ChainIterator<'a> {
     pub fn new(system: &'a MolecularSystem) -> Self {
-        Self {system, particle_index: 0}
+        Self {
+            system,
+            particle_index: 0,
+        }
     }
 }
 
@@ -46,7 +49,10 @@ impl<'a> Iterator for ChainIterator<'a> {
         }
         self.particle_index = i + 1;
 
-
-        Some(ChainView{ system: self.system, start_index: start, next_index: self.particle_index})
+        Some(ChainView {
+            system: self.system,
+            start_index: start,
+            next_index: self.particle_index,
+        })
     }
 }
