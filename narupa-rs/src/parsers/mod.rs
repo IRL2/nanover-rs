@@ -7,6 +7,8 @@ pub mod molecular_system;
 pub mod line;
 pub mod pdb;
 pub mod cif;
+pub mod residues;
+pub mod chains;
 
 pub use molecular_system::MolecularSystem;
 pub use pdb::read_pdb;

@@ -1,6 +1,8 @@
 use components::{get_bond_templates, ResidueType};
 use crate::parsers::Position;
 use crate::parsers::line::PDBLine;
+use crate::parsers::residues::{ResidueIterator, ResidueView};
+use crate::parsers::chains::ChainIterator;
 
 pub struct MolecularSystem {
     pub names: Vec<String>,
@@ -12,6 +14,22 @@ pub struct MolecularSystem {
     pub residue_chain_index: Vec<usize>,
     pub chain_identifiers: Vec<String>,
     pub bonds: Vec<(usize, usize)>,
+}
+
+impl Default for MolecularSystem {
+    fn default() -> Self {
+        MolecularSystem {
+            names: vec![],
+            elements: vec![],
+            positions: vec![],
+            atom_resindex: vec![],
+            resnames: vec![],
+            resids: vec![],
+            residue_chain_index: vec![],
+            chain_identifiers: vec![],
+            bonds: vec![],
+        }
+    }
 }
 
 impl MolecularSystem {
@@ -32,13 +50,14 @@ impl MolecularSystem {
         let mut bonds: Vec<(usize, usize)> = Vec::new();
         for residue in self.iter_residues() {
             let residue_name: &str = &residue.name();
-            if let Some(templates) = components.get(residue_name) {
-                for bond_template in &templates.bonds {
-                    let from = residue.find_atom_position(bond_template.from.trim());
-                    let to = residue.find_atom_position(bond_template.to.trim());
-                    if let (Some(from), Some(to)) = (from, to) {
-                        bonds.push((from, to));
-                    }
+            let Some(templates) = components.get(residue_name) else {
+                continue;
+            };
+            for bond_template in &templates.bonds {
+                let from = residue.find_atom_position(bond_template.from.trim());
+                let to = residue.find_atom_position(bond_template.to.trim());
+                if let (Some(from), Some(to)) = (from, to) {
+                    bonds.push((from, to));
                 }
             }
         }
@@ -75,132 +94,14 @@ impl MolecularSystem {
     }
 }
 
-pub struct ResidueIterator<'a> {
-    system: &'a MolecularSystem,
-    particle_index: usize,
-    end: usize,
-}
-
-impl<'a> ResidueIterator<'a> {
-    pub fn new(system: &'a MolecularSystem, start: usize, end: usize) -> Self {
-        ResidueIterator { system, particle_index: start, end: end}
-    }
-}
-
-impl<'a> Iterator for ResidueIterator<'a> {
-    type Item = ResidueView<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let number_of_atoms = self.system.atom_resindex.len();
-        let max_index = number_of_atoms - 1;
-        if self.particle_index >= max_index {
-            return None;
-        }
-        let start = self.particle_index;
-        let mut index = start;
-        let residue_index = self.system.atom_resindex[start];
-        let mut current_residue_index = residue_index;
-        while index < max_index && index < self.end && current_residue_index == residue_index {
-            index += 1;
-            current_residue_index = self.system.atom_resindex[index];
-        }
-        self.particle_index = index;
-        Some(ResidueView {
-            system: self.system,
-            start_index: start,
-            next_index: index,
-        })
-    }
-}
-
-pub struct ChainView<'a> {
-    system: &'a MolecularSystem,
-    start_index: usize,
-    next_index: usize,
-}
-
-impl<'a> ChainView<'a> {
-    pub fn iter_residues (&self) -> ResidueIterator {
-        ResidueIterator::new(&self.system, self.start_index, self.next_index)
-    }
-}
-
-pub struct ChainIterator<'a> {
-    system: &'a MolecularSystem,
-    particle_index: usize,
-}
-
-impl<'a> ChainIterator<'a> {
-    pub fn new(system: &'a MolecularSystem) -> Self {
-        Self {system, particle_index: 0}
-    }
-}
-
-impl<'a> Iterator for ChainIterator<'a> {
-    type Item = ChainView<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.particle_index >= self.system.atom_count() {
-            return None;
-        }
-
-        let start = self.particle_index;
-        let current_residue = self.system.atom_resindex[start];
-        let current_chain = self.system.residue_chain_index[current_residue];
-        let mut i = 0;
-        for atom in self.particle_index..self.system.atom_count() {
-            i = atom;
-            let residue = self.system.atom_resindex[atom];
-            let chain = self.system.residue_chain_index[residue];
-            if residue != current_residue && chain != current_chain {
-                break;
-            }
-        }
-        self.particle_index = i + 1;
-
-
-        Some(ChainView{ system: self.system, start_index: start, next_index: self.particle_index})
-    }
-}
-
-pub struct ResidueView<'a> {
-    system: &'a MolecularSystem,
-    start_index: usize,
-    next_index: usize,
-}
-
-impl<'a> ResidueView<'a> {
-    pub fn find_atom_position(&self, name: &str) -> Option<usize> {
-        self.system
-            .names[self.start_index..self.next_index]
-            .iter()
-            .position(|n| name.trim() == n.trim())
-            .map(|position| self.start_index + position)
-    }
-
-    pub fn name(&self) -> &str {
-        let residue_index = self.system.atom_resindex[self.start_index];
-        &self.system.resnames[residue_index]
-    }
-}
-
 impl From<Vec<PDBLine>> for MolecularSystem {
     fn from(atoms: Vec<PDBLine>) -> Self {
         // TODO: Filter alternates
         // TODO: Filter insertions
         if atoms.is_empty() {
-            return MolecularSystem {
-                names: vec![],
-                elements: vec![],
-                positions: vec![],
-                atom_resindex: vec![],
-                resnames: vec![],
-                resids: vec![],
-                residue_chain_index: vec![],
-                chain_identifiers: vec![],
-                bonds: vec![],
-            };
+            return MolecularSystem::default();
         }
+
         let mut names = Vec::new();
         let mut elements = Vec::new();
         let mut positions = Vec::new();
@@ -230,19 +131,12 @@ impl From<Vec<PDBLine>> for MolecularSystem {
         let mut residue_chain_index = vec![current_chain_index];
         let mut current_chain_identifier = atom_chain_identifiers[0];
         let mut chain_identifiers = vec![String::from(atom_chain_identifiers[0])];
-        let mut previous = (
-            (
-                (&atom_resids[0], atom_resnames[0].clone()),
-                atom_insertion_codes[0],
-            ),
-            atom_chain_identifiers[0],            
-        );
         let mut residue_iter = atom_resids
             .iter()
             .zip(atom_resnames)
             .zip(atom_insertion_codes)
             .zip(atom_chain_identifiers);
-        residue_iter.next(); // We already looked at the first residue.
+        let mut previous = residue_iter.next().unwrap();
         for residue in residue_iter {
             let (((resid, resname), insertion_code), chain_identifier) = &residue;
             if residue != previous {
@@ -258,7 +152,7 @@ impl From<Vec<PDBLine>> for MolecularSystem {
                 residue_chain_index.push(current_chain_index);
             }
             atom_resindex.push(current_residue_index);
-            previous = (((resid, resname.to_string()), *insertion_code), *chain_identifier);
+            previous = residue;
         }
 
         MolecularSystem {
