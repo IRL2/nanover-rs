@@ -36,8 +36,8 @@ impl<'a> Iterator for ChainIterator<'a> {
         }
 
         let start = self.particle_index;
-        let current_residue = self.system.atom_resindex[start];
-        let current_chain = self.system.residue_chain_index[current_residue];
+        let mut current_residue = self.system.atom_resindex[start];
+        let mut current_chain = self.system.residue_chain_index[current_residue];
         let mut i = 0;
         for atom in self.particle_index..self.system.atom_count() {
             i = atom;
@@ -46,6 +46,8 @@ impl<'a> Iterator for ChainIterator<'a> {
             if residue != current_residue && chain != current_chain {
                 break;
             }
+            current_residue = residue;
+            current_chain = chain;
         }
         self.particle_index = i + 1;
 
