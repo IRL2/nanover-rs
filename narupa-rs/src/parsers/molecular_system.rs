@@ -13,7 +13,7 @@ pub struct MolecularSystem {
     pub resids: Vec<isize>,
     pub residue_chain_index: Vec<usize>,
     pub chain_identifiers: Vec<String>,
-    pub bonds: Vec<(usize, usize)>,
+    pub bonds: Vec<(usize, usize, f32)>,
 }
 
 impl Default for MolecularSystem {
@@ -47,7 +47,7 @@ impl MolecularSystem {
 
     pub fn add_intra_residue_bonds(mut self) -> MolecularSystem {
         let components = get_bond_templates();
-        let mut bonds: Vec<(usize, usize)> = Vec::new();
+        let mut bonds: Vec<(usize, usize, f32)> = Vec::new();
         for residue in self.iter_residues() {
             let residue_name: &str = &residue.name();
             let Some(templates) = components.get(residue_name) else {
@@ -56,8 +56,9 @@ impl MolecularSystem {
             for bond_template in &templates.bonds {
                 let from = residue.find_atom_position(bond_template.from.trim());
                 let to = residue.find_atom_position(bond_template.to.trim());
+                let order = bond_template.order;
                 if let (Some(from), Some(to)) = (from, to) {
-                    bonds.push((from, to));
+                    bonds.push((from, to, order));
                 }
             }
         }
@@ -67,7 +68,7 @@ impl MolecularSystem {
 
     pub fn add_inter_residue_bonds(mut self) -> MolecularSystem {
         let components = get_bond_templates();
-        let mut bonds: Vec<(usize, usize)> = Vec::new();
+        let mut bonds: Vec<(usize, usize, f32)> = Vec::new();
 
         for chain in self.iter_chains() {
             let previous_residues = chain.iter_residues();
@@ -171,12 +172,12 @@ impl From<Vec<PDBLine>> for MolecularSystem {
     }
 }
 
-fn make_peptide_bond(nter: &ResidueView, cter: &ResidueView) -> Vec<(usize, usize)> {
+fn make_peptide_bond(nter: &ResidueView, cter: &ResidueView) -> Vec<(usize, usize, f32)> {
     let maybe_c_on_nter = nter.find_atom_position("C");
     let maybe_n_on_cter = cter.find_atom_position("N");
     match (maybe_c_on_nter, maybe_n_on_cter) {
         (Some(c_on_nter), Some(n_on_cter)) => {
-            vec![(c_on_nter, n_on_cter)]
+            vec![(c_on_nter, n_on_cter, 1.0)]
         }
         _ => vec![],
     }
