@@ -509,10 +509,12 @@ impl ToFrameData for XMLSimulation {
                         .map(|bond| ([bond.0 as u32, bond.1 as u32], bond.2))
                         .unzip();
         let bonds: Vec<u32> = bonds.into_iter().flatten().collect();
-        frame
-            .insert_index_array("bond.pairs", bonds)
-            .unwrap();
-        frame.insert_float_array("bond.orders", bond_orders).unwrap();
+        if !bonds.is_empty() {
+            frame
+                .insert_index_array("bond.pairs", bonds)
+                .unwrap();
+            frame.insert_float_array("bond.orders", bond_orders).unwrap();
+        }
 
         frame
     }
