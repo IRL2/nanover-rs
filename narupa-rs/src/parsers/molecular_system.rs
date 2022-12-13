@@ -241,6 +241,7 @@ mod tests {
             (4, 9, 1.0), // CB-HB1
             (4, 10, 1.0), // CB-HB2
             (4, 11, 1.0), // CB-HB3
+            (0, 7, 1.0), // N-H3 use an extra bond in components
         ];
         let mut reference = Vec::new();
         for residue_index in 0..number_of_residues {
