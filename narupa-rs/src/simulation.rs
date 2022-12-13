@@ -503,11 +503,43 @@ impl ToFrameData for XMLSimulation {
             .insert_index_array("particle.elements", elements)
             .unwrap();
         
+        let atom_resindex: Vec<u32> = self.topology.atom_resindex
+            .iter()
+            .map(|e| *e as u32)
+            .collect();
+        frame
+            .insert_number_value("residue.count", atom_resindex.len() as f64)
+            .unwrap();
+        frame
+            .insert_index_array("particle.residues", atom_resindex)
+            .unwrap();
+        frame
+            .insert_string_array("residue.names", self.topology.resnames.clone())
+            .unwrap();
+        let resids: Vec<f32> = self.topology.resids.iter().map(|e| *e as f32).collect();
+        frame
+            .insert_float_array("residue.ids", resids)
+            .unwrap();
+
+        let residue_chain_index: Vec<u32> = self.topology.residue_chain_index
+            .iter()
+            .map(|e| *e as u32)
+            .collect();
+        frame
+            .insert_number_value("chain.count", residue_chain_index.len() as f64)
+            .unwrap();
+        frame
+            .insert_index_array("residue.chains", residue_chain_index)
+            .unwrap();
+        frame
+            .insert_string_array("chain.names", self.topology.chain_identifiers.clone())
+            .unwrap();
+
         let (bonds, bond_orders): (Vec<[u32; 2]>, Vec<f32>) = self.topology
-                        .bonds
-                        .iter()
-                        .map(|bond| ([bond.0 as u32, bond.1 as u32], bond.2))
-                        .unzip();
+            .bonds
+            .iter()
+            .map(|bond| ([bond.0 as u32, bond.1 as u32], bond.2))
+            .unzip();
         let bonds: Vec<u32> = bonds.into_iter().flatten().collect();
         if !bonds.is_empty() {
             frame

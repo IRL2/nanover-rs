@@ -1,6 +1,6 @@
 use crate::broadcaster::Mergeable;
 use crate::proto::protocol::value_array::Values;
-use crate::proto::protocol::{FloatArray, IndexArray, ValueArray};
+use crate::proto::protocol::{FloatArray, IndexArray, ValueArray, StringArray};
 use prost_types::{value::Kind, Value};
 use std::collections::HashMap;
 
@@ -39,6 +39,17 @@ impl FrameData {
         let index_array = Values::IndexValues(IndexArray { values: value });
         let value_array = ValueArray {
             values: Some(index_array),
+        };
+        match self.arrays.insert(key.to_string(), value_array) {
+            None => Ok(()),
+            Some(_) => Err(()),
+        }
+    }
+
+    pub fn insert_string_array(&mut self, key: &str, value: Vec<String>) -> Result<(), ()> {
+        let string_array = Values::StringValues(StringArray { values: value });
+        let value_array = ValueArray {
+            values: Some(string_array),
         };
         match self.arrays.insert(key.to_string(), value_array) {
             None => Ok(()),
