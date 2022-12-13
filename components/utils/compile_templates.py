@@ -34,7 +34,7 @@ class BondTemplate(NamedTuple):
 class Template:
     name: Optional[str] = None
     residue_type: ResidueType = ResidueType.UNSUPPORTED
-    bonds: list = field(default_factory=lambda: list())
+    bonds: list[BondTemplate] = field(default_factory=lambda: list())
 
 
 def combine_line(line: str, keys: Iterable[str]) -> dict[str, str]:
@@ -114,6 +114,29 @@ def parse_components(lines: Iterable[str]) -> list[BondTemplate]:
     return data_blocks
 
 
+def integrate_exceptions(data_blocks: Iterable[Template]):
+    exceptions = {
+        ResidueType.PEPTIDE: {
+            "H": "H1",
+            "OXT": "O2",
+        },
+    }
+    for block in data_blocks:
+        for bond in block.bonds:
+            from_atom = exceptions.get(block.residue_type, {}).get(bond.from_atom, bond.from_atom)
+            to_atom = exceptions.get(block.residue_type, {}).get(bond.to_atom, bond.to_atom)
+            new_bond = BondTemplate(from_atom, to_atom, bond.order)
+            if bond != new_bond:
+                block.bonds.append(new_bond)
+
+
+def add_extra_bonds(data_blocks: Iterable[Template]):
+    for block in data_blocks:
+        if block.residue_type == ResidueType.PEPTIDE:
+            new_bond = BondTemplate("N", "H3", 1.0)
+            block.bonds.append(new_bond)
+
+
 def write_components_as_bytes(outfile, data_blocks):
     for block in data_blocks:
         if len(block.name) != 3:
@@ -145,6 +168,8 @@ def main():
     outpath = sys.argv[2]
     with open(path) as infile:
         templates = parse_components(infile)
+    integrate_exceptions(templates)
+    add_extra_bonds(templates)
     with open(outpath, 'wb') as outfile:
         write_components_as_bytes(outfile, templates)
 
