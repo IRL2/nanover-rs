@@ -3,8 +3,8 @@ use crate::parsers::MolecularSystem;
 
 pub struct ChainView<'a> {
     system: &'a MolecularSystem,
-    start_index: usize,
-    next_index: usize,
+    pub start_index: usize,
+    pub next_index: usize,
 }
 
 impl<'a> ChainView<'a> {
@@ -36,20 +36,23 @@ impl<'a> Iterator for ChainIterator<'a> {
         }
 
         let start = self.particle_index;
-        let mut current_residue = self.system.atom_resindex[start];
-        let mut current_chain = self.system.residue_chain_index[current_residue];
+        let first_residue = self.system.atom_resindex[start];
+        let mut current_chain = self.system.residue_chain_index[first_residue];
         let mut i = 0;
-        for atom in self.particle_index..self.system.atom_count() {
+        for atom in self.particle_index..=self.system.atom_count() {
             i = atom;
-            let residue = self.system.atom_resindex[atom];
-            let chain = self.system.residue_chain_index[residue];
-            if residue != current_residue && chain != current_chain {
-                break;
+            match self.system.atom_resindex.get(atom) {
+                None => break,
+                Some(residue) => {
+                    let chain = self.system.residue_chain_index[*residue];
+                    if chain != current_chain {
+                        break;
+                    }
+                    current_chain = chain;
+                }
             }
-            current_residue = residue;
-            current_chain = chain;
         }
-        self.particle_index = i + 1;
+        self.particle_index = i;
 
         Some(ChainView {
             system: self.system,

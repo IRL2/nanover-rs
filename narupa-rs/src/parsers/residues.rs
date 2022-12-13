@@ -21,23 +21,23 @@ impl<'a> Iterator for ResidueIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let end = self.end.min(self.system.atom_count());
-        if self.particle_index >= end {
+        if self.particle_index >= end - 1 {
             return None;
         }
 
         let start = self.particle_index;
         let mut current_residue = self.system.atom_resindex[start];
         let mut i = 0;
-        for atom in start..end {
+        for atom in start..=end {
             i = atom;
-            let residue = self.system.atom_resindex[atom];
-            if residue != current_residue {
-                break;
+            match self.system.atom_resindex.get(atom) {
+                None => break,
+                Some(residue) if *residue != current_residue => break,
+                Some(residue) => current_residue = *residue,
             }
-            current_residue = residue;
         };
 
-        self.particle_index = i + 1;
+        self.particle_index = i;
         Some(ResidueView {
             system: self.system,
             start_index: start,
@@ -48,8 +48,8 @@ impl<'a> Iterator for ResidueIterator<'a> {
 
 pub struct ResidueView<'a> {
     system: &'a MolecularSystem,
-    start_index: usize,
-    next_index: usize,
+    pub start_index: usize,
+    pub next_index: usize,
 }
 
 impl<'a> ResidueView<'a> {

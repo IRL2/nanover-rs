@@ -74,6 +74,7 @@ impl MolecularSystem {
             let previous_residues = chain.iter_residues();
             let current_residues = chain.iter_residues().skip(1);
             for (previous, current) in previous_residues.zip(current_residues) {
+                println!("residue from {} to {}", previous.start_index, previous.next_index);
                 let template_previous = components.get(previous.name());
                 let template_current = components.get(current.name());
                 let (Some(template_previous), Some(template_current)) = (template_previous, template_current) else {
@@ -199,10 +200,9 @@ mod tests {
         let atoms_per_residue = 12;
         let number_of_residues = 6;
         let residues_per_chain = 3;
-        let atoms_per_chain = atoms_per_residue * residues_per_chain;
         let number_of_chains = 2;
         let names_for_one_residue = make_string_vector(
-            vec!["N", "CA", "C", "O", "CB", "H1", "H2", "H3", "HA", "HB1", "HB2", "HB3"]
+            vec!["N", "CA", "C", "O", "CB", "H", "H2", "H3", "HA", "HB1", "HB2", "HB3"]
         );
         let elements_for_one_residue = vec![7, 6, 6, 8, 6, 1, 1, 1, 1, 1, 1, 1]
             .into_iter().map(|element| Some(element)).collect();
@@ -220,7 +220,7 @@ mod tests {
             atom_resindex: repeat((0..number_of_residues).collect(), atoms_per_residue),
             resnames,
             resids,
-            residue_chain_index: repeat((0..number_of_chains).collect(), atoms_per_chain),
+            residue_chain_index: repeat((0..number_of_chains).collect(), residues_per_chain),
             chain_identifiers,
             bonds: vec![],
         }
@@ -243,6 +243,13 @@ mod tests {
             (4, 10, 1.0), // CB-HB2
             (4, 11, 1.0), // CB-HB3
         ];
+        reference_for_one_residue.iter()
+            .for_each(|bond| {
+                println!("{}={}",
+                         two_peptides_without_bonds.names[bond.0],
+                         two_peptides_without_bonds.names[bond.1],
+                        );
+                    });
         let mut reference = Vec::new();
         for residue_index in 0..number_of_residues {
             let offset = number_of_atoms_per_residue * residue_index;
@@ -268,6 +275,34 @@ mod tests {
 
         let two_peptides = two_peptides_without_bonds.add_inter_residue_bonds();
         assert_eq!(two_peptides.bonds, reference);
+    }
+
+    #[rstest]
+    fn test_residue_iterator(two_peptides_without_bonds: MolecularSystem) {
+        let reference = vec![(0, 12), (12, 24), (24, 36), (36, 48), (48, 60), (60, 72)];
+        let residues: Vec<(usize, usize)> = two_peptides_without_bonds
+            .iter_residues()
+            .map(|r| (r.start_index, r.next_index))
+            .collect();
+        assert_eq!(residues, reference);
+    }
+
+    #[rstest]
+    fn test_chain_iterator(two_peptides_without_bonds: MolecularSystem) {
+        println!("{:?}", two_peptides_without_bonds.residue_chain_index);
+        let number_of_chains = 2;
+        let number_of_residues = 6;
+        let number_of_atoms_per_residue = 12;
+        let chain_b_start_index = (number_of_residues / number_of_chains) * number_of_atoms_per_residue;
+        let reference = vec![
+            (0, chain_b_start_index),
+            (chain_b_start_index, two_peptides_without_bonds.atom_count()),
+        ];
+        let chains: Vec<(usize, usize)> = two_peptides_without_bonds
+            .iter_chains()
+            .map(|c| (c.start_index, c.next_index))
+            .collect();
+        assert_eq!(chains, reference);
     }
 
     fn tile<T>(input: Vec<T>, number: usize) -> Vec<T> where T: Clone {
