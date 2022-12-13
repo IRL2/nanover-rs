@@ -74,7 +74,6 @@ impl MolecularSystem {
             let previous_residues = chain.iter_residues();
             let current_residues = chain.iter_residues().skip(1);
             for (previous, current) in previous_residues.zip(current_residues) {
-                println!("residue from {} to {}", previous.start_index, previous.next_index);
                 let template_previous = components.get(previous.name());
                 let template_current = components.get(current.name());
                 let (Some(template_previous), Some(template_current)) = (template_previous, template_current) else {
@@ -243,13 +242,6 @@ mod tests {
             (4, 10, 1.0), // CB-HB2
             (4, 11, 1.0), // CB-HB3
         ];
-        reference_for_one_residue.iter()
-            .for_each(|bond| {
-                println!("{}={}",
-                         two_peptides_without_bonds.names[bond.0],
-                         two_peptides_without_bonds.names[bond.1],
-                        );
-                    });
         let mut reference = Vec::new();
         for residue_index in 0..number_of_residues {
             let offset = number_of_atoms_per_residue * residue_index;
@@ -289,7 +281,6 @@ mod tests {
 
     #[rstest]
     fn test_chain_iterator(two_peptides_without_bonds: MolecularSystem) {
-        println!("{:?}", two_peptides_without_bonds.residue_chain_index);
         let number_of_chains = 2;
         let number_of_residues = 6;
         let number_of_atoms_per_residue = 12;
