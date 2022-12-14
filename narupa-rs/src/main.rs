@@ -12,7 +12,10 @@ use narupa_rs::playback::PlaybackOrder;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 use std::fs::File;
+use std::time::Duration;
+use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{self, Sender, Receiver};
+use tokio::time;
 use tonic::transport::Server;
 
 
@@ -47,6 +50,20 @@ struct Cli {
     statistics: Option<String>,
     #[clap(long, value_parser, default_value_t = 4.0)]
     statistics_fps: f64,
+    #[clap(short, long, value_parser, default_value = "Narupa-RS iMD Server")]
+    name: String,
+}
+
+async fn serve_essd(name: String) {
+    let mut interval = time::interval(Duration::from_secs_f32(0.5));
+    let message = format!("{{\"name\": \"{name}\", \"address\": \"127.0.0.1\", \"port\": 38801, \"id\": \"1234\", \"essd_version\": \"1.0.0\", \"services\": {{\"imd\": 38801, \"trajectory\": 38801}}}}");
+    let message = message.as_bytes();
+    let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
+    socket.set_broadcast(true).unwrap();
+    loop {
+        interval.tick().await;
+        socket.send_to(message, "192.168.1.255:54545").await.unwrap();
+    }
 }
 
 #[tokio::main]
@@ -101,6 +118,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         playback_rx,
         simulation_tx,
     );
+
+    // Advertise the server with ESSD
+    println!("Advertise the server with ESSD");
+    tokio::task::spawn(serve_essd(cli.name));
 
     // Run the GRPC server on the main thread.
     println!("Let's go!");
