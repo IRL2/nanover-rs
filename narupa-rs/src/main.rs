@@ -17,6 +17,8 @@ use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{self, Sender, Receiver};
 use tokio::time;
 use tonic::transport::Server;
+use network_interface::NetworkInterface;
+use network_interface::NetworkInterfaceConfig;
 
 
 use clap::Parser;
@@ -54,15 +56,24 @@ struct Cli {
     name: String,
 }
 
-async fn serve_essd(name: String) {
+async fn serve_essd(name: String, port: usize) {
     let mut interval = time::interval(Duration::from_secs_f32(0.5));
-    let message = format!("{{\"name\": \"{name}\", \"address\": \"127.0.0.1\", \"port\": 38801, \"id\": \"1234\", \"essd_version\": \"1.0.0\", \"services\": {{\"imd\": 38801, \"trajectory\": 38801}}}}");
-    let message = message.as_bytes();
+    let id = uuid::Uuid::new_v4();
+
     let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
     socket.set_broadcast(true).unwrap();
     loop {
         interval.tick().await;
-        socket.send_to(message, "192.168.1.255:54545").await.unwrap();
+        let network_interfaces = NetworkInterface::show().unwrap();
+        for interface in network_interfaces.iter() {
+            let Some(address) = interface.addr else {continue};
+            let Some(broadcast_address) = address.broadcast() else {continue};
+
+            let server_address = address.ip();
+            let message = format!("{{\"name\": \"{name}\", \"address\": \"{server_address}\", \"port\": {port}, \"id\": \"{id}\", \"essd_version\": \"1.0.0\", \"services\": {{\"imd\": {port}, \"trajectory\": {port}}}}}");
+            let message = message.as_bytes();
+            socket.send_to(message, format!("{broadcast_address}:54545")).await.unwrap();
+        }
     }
 }
 
@@ -121,7 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Advertise the server with ESSD
     println!("Advertise the server with ESSD");
-    tokio::task::spawn(serve_essd(cli.name));
+    tokio::task::spawn(serve_essd(cli.name, cli.port));
 
     // Run the GRPC server on the main thread.
     println!("Let's go!");
