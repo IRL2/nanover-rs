@@ -15,15 +15,20 @@ enum PDBXContext {
     Idle,
     /// We just read loop_ or a a loop key.
     /// Next line can be a loop key.
-    /// The argument is the name of the loop, it is optional as
+    /// The first argument is the name of the data block we are in.
+    /// The second argument is the name of the loop, it is optional as
     /// the name is unknown until we read the first key.
-    LoopKey(Option<String>),
+    LoopKey(String, Option<String>),
     /// We read a loop record, we cannot accept anything but new records.
-    /// The argument is the name of the loop.
-    Loop(String),
-    // TODO: Implement data and save blocks.
+    /// The first argument is the name of the data block we are in.
+    /// The second argument is the name of the loop.
+    Loop(String, String),
     // We read a data block with the name in argument.
-    // Data(String)
+    Data(String),
+    // We read a field that spans multiple lines.
+    // The argument is the name of the data block we are in.
+    // The second is false until we start reading the content of the field.
+    Field(String, bool),
     // We read a save block with the name in argument.
     // Save(String)
 }
@@ -43,25 +48,47 @@ where
                 match tokens.next() {
                     // We ignore empty lines.
                     None => PDBXContext::Idle,
-                    // We do not read data blocks. If we encounter one, it
-                    // means the rest of the file will be only data blocks
-                    // until EOF. Therefore, there is no point to keep reading.
+                    Some(first) if first.starts_with("data_") => {
+                        let Some((_, name)) = first.split_once('_') else {
+                            return Err(ReadError::FormatError(FormatError::MissformatedData, lineno));
+                        };
+                        PDBXContext::Data(String::from(name))
+                    },
+                    _ => return Err(ReadError::FormatError(FormatError::ContentOutOfData, lineno)),
+                }
+            }
+            PDBXContext::Data(name) => {
+                match tokens.next() {
+                    // We ignore empty lines.
+                    None => PDBXContext::Data(name),
+                    // We only read the first data block. If we encounter another one,
+                    // it means we are done.
                     Some(first) if first.starts_with("data_") => break,
-                    Some(first) if first == "loop_" => PDBXContext::LoopKey(None),
+                    Some(first) if first == "loop_" => PDBXContext::LoopKey(name, None),
                     // Data items have a first token starting with '_' and the rest of the
                     // tokens are the value. We do not read any at the moment so we ignore
-                    // these lines.
-                    Some(first) if first.starts_with('_') => PDBXContext::Idle,
-                    Some(first) if first.starts_with('#') => PDBXContext::Idle,
+                    // these lines. However, the content of the item can span multiple lines.
+                    // In that case, we need to switch context so we can ignore the full value.
+                    Some(first) if first.starts_with('_') => {
+                        if let Some(_) = tokens.next() {
+                            PDBXContext::Data(name)
+                        } else {
+                            PDBXContext::Field(name, false)
+                        }
+                    },
+                    Some(first) if first.starts_with('#') => PDBXContext::Data(name),
                     _ => {
                         return Err(ReadError::FormatError(FormatError::Unexpected, lineno));
                     }
                 }
             }
-            PDBXContext::LoopKey(perhaps_name) => {
+            PDBXContext::LoopKey(data_name, perhaps_name) => {
                 match (tokens.next(), perhaps_name.clone()) {
-                    (None, _) => PDBXContext::LoopKey(perhaps_name), // We ignore empty lines
-                    (Some(first), _) if first.starts_with('#') => PDBXContext::Idle,
+                    (None, _) => PDBXContext::LoopKey(data_name, perhaps_name), // We ignore empty lines
+                    (Some(first), _) if first.starts_with('#') => {
+                        loop_keys = None;
+                        PDBXContext::Data(data_name)
+                    },
                     (Some(first), Some(name)) if !first.starts_with(&name) => {
                         if first.starts_with('_') {
                             return Err(ReadError::FormatError(
@@ -85,7 +112,7 @@ where
                                     .map_err(|e| ReadError::FormatError(e, lineno))?,
                             );
                         }
-                        PDBXContext::Loop(name)
+                        PDBXContext::Loop(data_name, name)
                     }
                     (Some(first), _) => {
                         let mut name_parts = first.split('.');
@@ -98,22 +125,41 @@ where
                         } else {
                             loop_keys = Some(vec![sub_key]);
                         };
-                        PDBXContext::LoopKey(Some(String::from(base_key)))
+                        PDBXContext::LoopKey(data_name, Some(String::from(base_key)))
                     }
                 }
             }
-            PDBXContext::Loop(name) => {
-                let loop_keys = &loop_keys
-                    .clone()
-                    .ok_or(ReadError::FormatError(FormatError::MissingLoopKeys, lineno))?;
-                // We only store what we need.
-                if name == "_atom_site" {
-                    atoms.push(
-                        parse_cif_atom_line(&line, loop_keys)
-                            .map_err(|e| ReadError::FormatError(e, lineno))?,
-                    );
+            PDBXContext::Loop(data_name, name) => {
+                if line.starts_with('#') {
+                    loop_keys = None;
+                    PDBXContext::Data(data_name)
+                } else {
+                    let loop_keys = &loop_keys
+                        .clone()
+                        .ok_or(ReadError::FormatError(FormatError::MissingLoopKeys, lineno))?;
+                    // We only store what we need.
+                    if name == "_atom_site" {
+                        atoms.push(
+                            parse_cif_atom_line(&line, loop_keys)
+                                .map_err(|e| ReadError::FormatError(e, lineno))?,
+                        );
+                    }
+                    PDBXContext::Loop(data_name, name)
                 }
-                PDBXContext::Loop(name)
+            }
+            PDBXContext::Field(data_name, content_started) => {
+                if content_started && line.starts_with(';') {
+                    PDBXContext::Data(data_name)
+                }
+                else if !content_started && !line.starts_with(';') {
+                    let trimmed_line = line.trim();
+                    if !trimmed_line.starts_with('\'') || !trimmed_line.ends_with('\'') {
+                        return Err(ReadError::FormatError(FormatError::Unexpected, lineno));
+                    }
+                    PDBXContext::Data(data_name)
+                } else {
+                    PDBXContext::Field(data_name, true)
+                }
             }
         };
     }
@@ -127,7 +173,7 @@ where
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
     let fields: Vec<String> = line.split_ascii_whitespace().map(String::from).collect();
     if fields.len() != loop_keys.len() {
-        return Err(FormatError::UnexpectedFieldNumber);
+        return Err(FormatError::UnexpectedFieldNumber(loop_keys.len(), fields.len()));
     };
     let line: HashMap<String, String> =
         HashMap::from_iter(loop_keys.iter().zip(fields).map(|(k, v)| (k.clone(), v)));
@@ -179,4 +225,27 @@ fn extract_string(line: &HashMap<String, String>, key: &str) -> Result<String, F
         .get(key)
         .ok_or(FormatError::MissingField(String::from(key)))?
         .clone())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::BufReader;
+
+    // Copied from https://stackoverflow.com/a/74550371
+    macro_rules! test_case {($fname:expr) => (
+        concat!(env!("CARGO_MANIFEST_DIR"), $fname) // assumes Linux ('/')!
+    )}
+
+    /// Read a file downloaded from the PDB.
+    #[test]
+    fn test_file_from_pdb() {
+        let filepath = test_case!("/1bta.cif");
+        let file = File::open(filepath).expect("Cound not open test file.");
+        let buffer = BufReader::new(file);
+        let molecular_system = read_cif(buffer).expect("Error when parsing the file.");
+        assert_eq!(molecular_system.atom_count(), 1434);
+    }
 }

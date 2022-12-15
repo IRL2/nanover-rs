@@ -15,9 +15,12 @@ pub enum FormatError {
     LineTooShort,
     Unexpected,
     InconsistentKey,
-    UnexpectedFieldNumber,
+    // (expected, found)
+    UnexpectedFieldNumber(usize, usize),
     MissingField(String),
     MissingLoopKeys,
+    ContentOutOfData,
+    MissformatedData,
 }
 
 #[derive(Debug)]
