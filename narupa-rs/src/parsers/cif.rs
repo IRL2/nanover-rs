@@ -25,6 +25,10 @@ enum PDBXContext {
     Loop(String, String),
     // We read a data block with the name in argument.
     Data(String),
+    // We read a field that spans multiple lines.
+    // The argument is the name of the data block we are in.
+    // The second is false until we start reading the content of the field.
+    Field(String, bool),
     // We read a save block with the name in argument.
     // Save(String)
 }
@@ -63,8 +67,15 @@ where
                     Some(first) if first == "loop_" => PDBXContext::LoopKey(name, None),
                     // Data items have a first token starting with '_' and the rest of the
                     // tokens are the value. We do not read any at the moment so we ignore
-                    // these lines.
-                    Some(first) if first.starts_with('_') => PDBXContext::Data(name),
+                    // these lines. However, the content of the item can span multiple lines.
+                    // In that case, we need to switch context so we can ignore the full value.
+                    Some(first) if first.starts_with('_') => {
+                        if let Some(_) = tokens.next() {
+                            PDBXContext::Data(name)
+                        } else {
+                            PDBXContext::Field(name, false)
+                        }
+                    },
                     Some(first) if first.starts_with('#') => PDBXContext::Data(name),
                     _ => {
                         return Err(ReadError::FormatError(FormatError::Unexpected, lineno));
@@ -74,7 +85,10 @@ where
             PDBXContext::LoopKey(data_name, perhaps_name) => {
                 match (tokens.next(), perhaps_name.clone()) {
                     (None, _) => PDBXContext::LoopKey(data_name, perhaps_name), // We ignore empty lines
-                    (Some(first), _) if first.starts_with('#') => PDBXContext::Data(data_name),
+                    (Some(first), _) if first.starts_with('#') => {
+                        loop_keys = None;
+                        PDBXContext::Data(data_name)
+                    },
                     (Some(first), Some(name)) if !first.starts_with(&name) => {
                         if first.starts_with('_') {
                             return Err(ReadError::FormatError(
@@ -117,6 +131,7 @@ where
             }
             PDBXContext::Loop(data_name, name) => {
                 if line.starts_with('#') {
+                    loop_keys = None;
                     PDBXContext::Data(data_name)
                 } else {
                     let loop_keys = &loop_keys
@@ -132,11 +147,23 @@ where
                     PDBXContext::Loop(data_name, name)
                 }
             }
+            PDBXContext::Field(data_name, content_started) => {
+                if content_started && line.starts_with(';') {
+                    PDBXContext::Data(data_name)
+                }
+                else if !content_started && !line.starts_with(';') {
+                    let trimmed_line = line.trim();
+                    if !trimmed_line.starts_with('\'') || !trimmed_line.ends_with('\'') {
+                        return Err(ReadError::FormatError(FormatError::Unexpected, lineno));
+                    }
+                    PDBXContext::Data(data_name)
+                } else {
+                    PDBXContext::Field(data_name, true)
+                }
+            }
         };
-        println!("context: {context:?}");
     }
 
-    println!("debug! {atoms:?}");
     Ok(MolecularSystem::from(atoms)
         .add_intra_residue_bonds()
         .add_inter_residue_bonds()
@@ -146,7 +173,7 @@ where
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
     let fields: Vec<String> = line.split_ascii_whitespace().map(String::from).collect();
     if fields.len() != loop_keys.len() {
-        return Err(FormatError::UnexpectedFieldNumber);
+        return Err(FormatError::UnexpectedFieldNumber(loop_keys.len(), fields.len()));
     };
     let line: HashMap<String, String> =
         HashMap::from_iter(loop_keys.iter().zip(fields).map(|(k, v)| (k.clone(), v)));
@@ -216,7 +243,6 @@ mod tests {
     #[test]
     fn test_file_from_pdb() {
         let filepath = test_case!("/1bta.cif");
-        println!("{filepath}");
         let file = File::open(filepath).expect("Cound not open test file.");
         let buffer = BufReader::new(file);
         let molecular_system = read_cif(buffer).expect("Error when parsing the file.");
