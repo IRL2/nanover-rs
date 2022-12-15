@@ -233,16 +233,12 @@ mod tests {
     use super::*;
     use std::fs::File;
     use std::io::BufReader;
-
-    // Copied from https://stackoverflow.com/a/74550371
-    macro_rules! test_case {($fname:expr) => (
-        concat!(env!("CARGO_MANIFEST_DIR"), $fname) // assumes Linux ('/')!
-    )}
+    use crate::test_utils::test_ressource;
 
     /// Read a file downloaded from the PDB.
     #[test]
     fn test_file_from_pdb() {
-        let filepath = test_case!("/1bta.cif");
+        let filepath = test_ressource!("/1bta.cif");
         let file = File::open(filepath).expect("Cound not open test file.");
         let buffer = BufReader::new(file);
         let molecular_system = read_cif(buffer).expect("Error when parsing the file.");
