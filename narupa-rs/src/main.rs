@@ -9,17 +9,12 @@ use narupa_rs::state_broadcaster::StateBroadcaster;
 use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::observer_thread::run_observer_thread;
 use narupa_rs::playback::PlaybackOrder;
+use narupa_rs::essd::serve_essd;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 use std::fs::File;
-use std::time::Duration;
-use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{self, Sender, Receiver};
-use tokio::time;
 use tonic::transport::Server;
-use network_interface::NetworkInterface;
-use network_interface::NetworkInterfaceConfig;
-
 
 use clap::Parser;
 
@@ -55,27 +50,6 @@ struct Cli {
     /// Server name to advertise for autoconnect.
     #[clap(short, long, value_parser, default_value = "Narupa-RS iMD Server")]
     name: String,
-}
-
-async fn serve_essd(name: String, port: usize) {
-    let mut interval = time::interval(Duration::from_secs_f32(0.5));
-    let id = uuid::Uuid::new_v4();
-
-    let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
-    socket.set_broadcast(true).unwrap();
-    loop {
-        interval.tick().await;
-        let network_interfaces = NetworkInterface::show().unwrap();
-        for interface in network_interfaces.iter() {
-            let Some(address) = interface.addr else {continue};
-            let Some(broadcast_address) = address.broadcast() else {continue};
-
-            let server_address = address.ip();
-            let message = format!("{{\"name\": \"{name}\", \"address\": \"{server_address}\", \"port\": {port}, \"id\": \"{id}\", \"essd_version\": \"1.0.0\", \"services\": {{\"imd\": {port}, \"trajectory\": {port}}}}}");
-            let message = message.as_bytes();
-            socket.send_to(message, format!("{broadcast_address}:54545")).await.unwrap();
-        }
-    }
 }
 
 #[tokio::main]
