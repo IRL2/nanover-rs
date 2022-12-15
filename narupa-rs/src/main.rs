@@ -52,6 +52,7 @@ struct Cli {
     statistics: Option<String>,
     #[clap(long, value_parser, default_value_t = 4.0)]
     statistics_fps: f64,
+    /// Server name to advertise for autoconnect.
     #[clap(short, long, value_parser, default_value = "Narupa-RS iMD Server")]
     name: String,
 }
