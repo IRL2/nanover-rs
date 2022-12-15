@@ -16,3 +16,4 @@ pub mod simulation_thread;
 pub mod playback;
 pub mod observer_thread;
 pub mod parsers;
+pub mod essd;

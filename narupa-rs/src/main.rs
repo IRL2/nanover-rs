@@ -9,12 +9,12 @@ use narupa_rs::state_broadcaster::StateBroadcaster;
 use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::observer_thread::run_observer_thread;
 use narupa_rs::playback::PlaybackOrder;
+use narupa_rs::essd::serve_essd;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 use std::fs::File;
 use tokio::sync::mpsc::{self, Sender, Receiver};
 use tonic::transport::Server;
-
 
 use clap::Parser;
 
@@ -47,6 +47,9 @@ struct Cli {
     statistics: Option<String>,
     #[clap(long, value_parser, default_value_t = 4.0)]
     statistics_fps: f64,
+    /// Server name to advertise for autoconnect.
+    #[clap(short, long, value_parser, default_value = "Narupa-RS iMD Server")]
+    name: String,
 }
 
 #[tokio::main]
@@ -101,6 +104,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         playback_rx,
         simulation_tx,
     );
+
+    // Advertise the server with ESSD
+    println!("Advertise the server with ESSD");
+    tokio::task::spawn(serve_essd(cli.name, cli.port));
 
     // Run the GRPC server on the main thread.
     println!("Let's go!");
