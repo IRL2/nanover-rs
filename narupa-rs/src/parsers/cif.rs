@@ -43,11 +43,10 @@ where
                     // We ignore empty lines.
                     None => PDBXContext::Idle,
                     Some(first) if first.starts_with("data_") => {
-                        if let Some((_, name)) = first.split_once('_') {
-                            PDBXContext::Data(String::from(name))
-                        } else {
+                        let Some((_, name)) = first.split_once('_') else {
                             return Err(ReadError::FormatError(FormatError::MissformatedData, lineno));
-                        }
+                        };
+                        PDBXContext::Data(String::from(name))
                     },
                     _ => return Err(ReadError::FormatError(FormatError::ContentOutOfData, lineno)),
                 }
