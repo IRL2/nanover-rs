@@ -15,12 +15,14 @@ enum PDBXContext {
     Idle,
     /// We just read loop_ or a a loop key.
     /// Next line can be a loop key.
-    /// The argument is the name of the loop, it is optional as
+    /// The first argument is the name of the data block we are in.
+    /// The second argument is the name of the loop, it is optional as
     /// the name is unknown until we read the first key.
-    LoopKey(Option<String>),
+    LoopKey(String, Option<String>),
     /// We read a loop record, we cannot accept anything but new records.
-    /// The argument is the name of the loop.
-    Loop(String),
+    /// The first argument is the name of the data block we are in.
+    /// The second argument is the name of the loop.
+    Loop(String, String),
     // We read a data block with the name in argument.
     Data(String),
     // We read a save block with the name in argument.
@@ -58,7 +60,7 @@ where
                     // We only read the first data block. If we encounter another one,
                     // it means we are done.
                     Some(first) if first.starts_with("data_") => break,
-                    Some(first) if first == "loop_" => PDBXContext::LoopKey(None),
+                    Some(first) if first == "loop_" => PDBXContext::LoopKey(name, None),
                     // Data items have a first token starting with '_' and the rest of the
                     // tokens are the value. We do not read any at the moment so we ignore
                     // these lines.
@@ -69,10 +71,10 @@ where
                     }
                 }
             }
-            PDBXContext::LoopKey(perhaps_name) => {
+            PDBXContext::LoopKey(data_name, perhaps_name) => {
                 match (tokens.next(), perhaps_name.clone()) {
-                    (None, _) => PDBXContext::LoopKey(perhaps_name), // We ignore empty lines
-                    (Some(first), _) if first.starts_with('#') => PDBXContext::Idle,
+                    (None, _) => PDBXContext::LoopKey(data_name, perhaps_name), // We ignore empty lines
+                    (Some(first), _) if first.starts_with('#') => PDBXContext::Data(data_name),
                     (Some(first), Some(name)) if !first.starts_with(&name) => {
                         if first.starts_with('_') {
                             return Err(ReadError::FormatError(
@@ -96,7 +98,7 @@ where
                                     .map_err(|e| ReadError::FormatError(e, lineno))?,
                             );
                         }
-                        PDBXContext::Loop(name)
+                        PDBXContext::Loop(data_name, name)
                     }
                     (Some(first), _) => {
                         let mut name_parts = first.split('.');
@@ -109,26 +111,32 @@ where
                         } else {
                             loop_keys = Some(vec![sub_key]);
                         };
-                        PDBXContext::LoopKey(Some(String::from(base_key)))
+                        PDBXContext::LoopKey(data_name, Some(String::from(base_key)))
                     }
                 }
             }
-            PDBXContext::Loop(name) => {
-                let loop_keys = &loop_keys
-                    .clone()
-                    .ok_or(ReadError::FormatError(FormatError::MissingLoopKeys, lineno))?;
-                // We only store what we need.
-                if name == "_atom_site" {
-                    atoms.push(
-                        parse_cif_atom_line(&line, loop_keys)
-                            .map_err(|e| ReadError::FormatError(e, lineno))?,
-                    );
+            PDBXContext::Loop(data_name, name) => {
+                if line.starts_with('#') {
+                    PDBXContext::Data(data_name)
+                } else {
+                    let loop_keys = &loop_keys
+                        .clone()
+                        .ok_or(ReadError::FormatError(FormatError::MissingLoopKeys, lineno))?;
+                    // We only store what we need.
+                    if name == "_atom_site" {
+                        atoms.push(
+                            parse_cif_atom_line(&line, loop_keys)
+                                .map_err(|e| ReadError::FormatError(e, lineno))?,
+                        );
+                    }
+                    PDBXContext::Loop(data_name, name)
                 }
-                PDBXContext::Loop(name)
             }
         };
+        println!("context: {context:?}");
     }
 
+    println!("debug! {atoms:?}");
     Ok(MolecularSystem::from(atoms)
         .add_intra_residue_bonds()
         .add_inter_residue_bonds()

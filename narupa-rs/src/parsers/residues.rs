@@ -20,6 +20,7 @@ impl<'a> Iterator for ResidueIterator<'a> {
     type Item = ResidueView<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        println!("debug! {} {}", self.end, self.system.atom_count());
         let end = self.end.min(self.system.atom_count());
         if self.particle_index >= end - 1 {
             return None;
