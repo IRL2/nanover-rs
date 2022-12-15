@@ -191,3 +191,27 @@ fn extract_string(line: &HashMap<String, String>, key: &str) -> Result<String, F
         .ok_or(FormatError::MissingField(String::from(key)))?
         .clone())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::BufReader;
+
+    // Copied from https://stackoverflow.com/a/74550371
+    macro_rules! test_case {($fname:expr) => (
+        concat!(env!("CARGO_MANIFEST_DIR"), $fname) // assumes Linux ('/')!
+    )}
+
+    /// Read a file downloaded from the PDB.
+    #[test]
+    fn test_file_from_pdb() {
+        let filepath = test_case!("/1bta.cif");
+        println!("{filepath}");
+        let file = File::open(filepath).expect("Cound not open test file.");
+        let buffer = BufReader::new(file);
+        let molecular_system = read_cif(buffer).expect("Error when parsing the file.");
+        assert_eq!(molecular_system.atom_count(), 1434);
+    }
+}
