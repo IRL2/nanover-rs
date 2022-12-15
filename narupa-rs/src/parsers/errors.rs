@@ -18,6 +18,8 @@ pub enum FormatError {
     UnexpectedFieldNumber,
     MissingField(String),
     MissingLoopKeys,
+    ContentOutOfData,
+    MissformatedData,
 }
 
 #[derive(Debug)]

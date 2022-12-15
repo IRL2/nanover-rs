@@ -21,9 +21,8 @@ enum PDBXContext {
     /// We read a loop record, we cannot accept anything but new records.
     /// The argument is the name of the loop.
     Loop(String),
-    // TODO: Implement data and save blocks.
     // We read a data block with the name in argument.
-    // Data(String)
+    Data(String),
     // We read a save block with the name in argument.
     // Save(String)
 }
@@ -43,16 +42,29 @@ where
                 match tokens.next() {
                     // We ignore empty lines.
                     None => PDBXContext::Idle,
-                    // We do not read data blocks. If we encounter one, it
-                    // means the rest of the file will be only data blocks
-                    // until EOF. Therefore, there is no point to keep reading.
+                    Some(first) if first.starts_with("data_") => {
+                        if let Some((_, name)) = first.split_once('_') {
+                            PDBXContext::Data(String::from(name))
+                        } else {
+                            return Err(ReadError::FormatError(FormatError::MissformatedData, lineno));
+                        }
+                    },
+                    _ => return Err(ReadError::FormatError(FormatError::ContentOutOfData, lineno)),
+                }
+            }
+            PDBXContext::Data(name) => {
+                match tokens.next() {
+                    // We ignore empty lines.
+                    None => PDBXContext::Data(name),
+                    // We only read the first data block. If we encounter another one,
+                    // it means we are done.
                     Some(first) if first.starts_with("data_") => break,
                     Some(first) if first == "loop_" => PDBXContext::LoopKey(None),
                     // Data items have a first token starting with '_' and the rest of the
                     // tokens are the value. We do not read any at the moment so we ignore
                     // these lines.
-                    Some(first) if first.starts_with('_') => PDBXContext::Idle,
-                    Some(first) if first.starts_with('#') => PDBXContext::Idle,
+                    Some(first) if first.starts_with('_') => PDBXContext::Data(name),
+                    Some(first) if first.starts_with('#') => PDBXContext::Data(name),
                     _ => {
                         return Err(ReadError::FormatError(FormatError::Unexpected, lineno));
                     }
