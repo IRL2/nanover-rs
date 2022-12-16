@@ -1,5 +1,5 @@
 pub type Position = [f64; 3];
-pub type Bond = [isize; 2];
+pub type Bond = (usize, usize, f32);  // from, to, order
 
 pub mod chemistry;
 pub mod errors;

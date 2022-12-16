@@ -9,7 +9,7 @@ pub struct ChainView<'a> {
 
 impl<'a> ChainView<'a> {
     pub fn iter_residues(&self) -> ResidueIterator {
-        ResidueIterator::new(&self.system, self.start_index, self.next_index)
+        ResidueIterator::new(self.system, self.start_index, self.next_index)
     }
 }
 

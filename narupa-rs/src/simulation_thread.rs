@@ -68,7 +68,7 @@ pub fn run_simulation_thread(
                 .unwrap();
         }
         println!("Platform: {}", simulation.get_platform_name());
-        println!("Simulation interval: {}", simulation_interval);
+        println!("Simulation interval: {simulation_interval}");
         println!("Start simulating");
         let mut current_simulation_frame: u64 = 0;
         for _i in 0.. {

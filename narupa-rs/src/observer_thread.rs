@@ -20,9 +20,9 @@ pub fn run_observer_thread(
         let mut keep_running = true;
         let mut frame_receivers = 0;
         let mut state_receivers = 0;
-        write!(
+        writeln!(
             output_file,
-            "#\"Time (s)\"\t\"Average FPS\"\t\"Max interactions\"\t\"Frame clients\"\t\"State clients\"\n"
+            "#\"Time (s)\"\t\"Average FPS\"\t\"Max interactions\"\t\"Frame clients\"\t\"State clients\""
         ).unwrap();
         while keep_running {
             let now = Instant::now();
@@ -61,9 +61,9 @@ pub fn run_observer_thread(
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => keep_running = false,
                 }
             }
-            write!(
+            writeln!(
                 output_file,
-                "{:.6}\t{:.3}\t{}\t{}\t{}\n",
+                "{:.6}\t{:.3}\t{}\t{}\t{}",
                 now.saturating_duration_since(start).as_secs_f64(),
                 mean_fps.average(),
                 max_interactions,

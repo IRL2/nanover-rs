@@ -11,7 +11,7 @@ impl<'a> ResidueIterator<'a> {
         ResidueIterator {
             system,
             particle_index: start,
-            end: end,
+            end,
         }
     }
 }
