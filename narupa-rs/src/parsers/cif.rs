@@ -244,4 +244,28 @@ mod tests {
         let molecular_system = read_cif(buffer).expect("Error when parsing the file.");
         assert_eq!(molecular_system.atom_count(), 1434);
     }
+
+    #[test]
+    fn test_conect_from_cif() {
+        let filepath = test_ressource!("/mercaptoethanol.cif");
+        let file = File::open(filepath).expect("Could not open test file.");
+        let buffer = BufReader::new(file);
+        let molecular_system = read_cif(buffer).expect("Error when parsing the file.");
+        let reference = vec![
+            (0, 1, 1.0),  // 1@C1 - 1@C2
+            (0, 2, 1.0),  // 1@C1 - 1@O1
+            (1, 3, 1.0),  // 1@C2 - 1@S2
+            (3, 7, 1.0),  // 1@S2 - 2@S2
+            (4, 5, 1.0),  // 2@C1 - 2@C2
+            (4, 6, 1.0),  // 2@C1 - 2@O1
+            (5, 7, 1.0),  // 2@C2 - 2@S2
+            (8, 9, 1.0),  // 3@C1 - 3@C2
+            (8, 13, 1.0),  // 3@C1 - 3@C6
+            (2, 10, 1.0),  // 3@C2 - 3@C3
+            (10, 11, 1.0),  // 3@C3 - 3@C4
+            (11, 12, 1.0),  // 3@C4 - 3@C5
+            (12, 13, 1.0),  // 3@C5 - 3@C6
+        ];
+        assert_eq!(molecular_system.bonds, reference);
+    }
 }
