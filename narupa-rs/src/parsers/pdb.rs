@@ -174,7 +174,6 @@ mod tests {
             (12, 11, 1.0), (12, 13, 1.0), // 1299 - 12
             (13, 8, 1.0), (13, 12, 1.0),
         ];
-        // The molecular_system object also contains the bonds read from the template.
-        assert_eq!(molecular_system.bonds[0..reference.len()], reference);
+        assert_eq!(molecular_system.bonds, reference);
     }
 }
