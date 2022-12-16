@@ -34,6 +34,7 @@ class BondTemplate(NamedTuple):
 class Template:
     name: Optional[str] = None
     residue_type: ResidueType = ResidueType.UNSUPPORTED
+    raw_residue_type: str = ""
     bonds: list[BondTemplate] = field(default_factory=lambda: list())
 
 
@@ -87,6 +88,7 @@ def parse_components(lines: Iterable[str]) -> list[BondTemplate]:
                 else:
                     residue_type = ResidueType.UNSUPPORTED
                 template.residue_type = residue_type
+                template.raw_residue_type = value
         elif context == context.LOOP_KEY:
             if first.startswith('_'):
                 name, key = first.split('.', maxsplit=1)
@@ -137,6 +139,16 @@ def add_extra_bonds(data_blocks: Iterable[Template]):
             block.bonds.append(new_bond)
 
 
+def prune_components(data_blocks: Iterable[Template]) ->  list[Template]:
+    keep = (
+        'A', 'ACE', 'AIB', 'ALA', 'ARG', 'ASN', 'ASP', 'C', 'CYS',
+        'DA', 'DC', 'DG', 'DT', 'FOR', 'G', 'GLN', 'GLU', 'GLY',
+        'HIS', 'HOH', 'ILE', 'LEU', 'LYS', 'MET', 'ORN', 'PCA', 'PHE',
+        'PRO', 'SER', 'THR', 'TRP', 'TYR', 'U', 'VAL',
+    )
+    return [block for block in data_blocks if block.name in keep]
+
+
 def write_components_as_bytes(outfile, data_blocks):
     for block in data_blocks:
         if len(block.name) != 3:
@@ -170,8 +182,11 @@ def main():
         templates = parse_components(infile)
     integrate_exceptions(templates)
     add_extra_bonds(templates)
+    templates = prune_components(templates)
     with open(outpath, 'wb') as outfile:
         write_components_as_bytes(outfile, templates)
+    
+    print([block.name for block in templates])
 
 
 if __name__ == '__main__':
