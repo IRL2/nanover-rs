@@ -4,6 +4,7 @@ use crate::parsers::chemistry::lookup_element_symbol;
 use crate::parsers::errors::*;
 use crate::parsers::molecular_system::MolecularSystem;
 use crate::parsers::line::PDBLine;
+use crate::parsers::Bond;
 
 
 pub fn read_pdb<F>(input: F) -> Result<MolecularSystem, ReadError>
@@ -19,7 +20,7 @@ where
     )
 }
 
-fn read_pdb_atoms<F>(input: F) -> Result<(Vec<PDBLine>, Vec<(usize, usize, f32)>), ReadError>
+fn read_pdb_atoms<F>(input: F) -> Result<(Vec<PDBLine>, Vec<Bond>), ReadError>
 where
     F: BufRead,
 {
@@ -109,7 +110,7 @@ fn parse_pdb_conect_line(line: &str) -> Result<Vec<(isize, isize)>, FormatError>
     Ok(line_bonds)
 }
 
-fn match_bonds_to_atoms(originals: &Vec<(isize, isize)>, atoms: &Vec<PDBLine>) -> Vec<(usize, usize, f32)> {
+fn match_bonds_to_atoms(originals: &[(isize, isize)], atoms: &[PDBLine]) -> Vec<(usize, usize, f32)> {
     let serial_to_index = atoms.iter().enumerate().map(|(index, atom)| (atom.serial, index));
     let serial_to_index: HashMap<isize, usize> = HashMap::from_iter(serial_to_index);
     originals

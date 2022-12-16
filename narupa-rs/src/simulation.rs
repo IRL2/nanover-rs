@@ -283,7 +283,7 @@ impl XMLSimulation {
             if n_particles != n_atoms {
                 panic!("The number of particles in the structure does not match the system.");
             }
-            println!("Particles in system: {}", n_particles);
+            println!("Particles in system: {n_particles}");
             let integrator =
                 OpenMM_XmlSerializer_deserializeIntegrator(integrator_content.as_ptr());
             println!("Integrator read");

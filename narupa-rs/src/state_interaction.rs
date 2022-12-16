@@ -82,7 +82,7 @@ fn get_particles(content: &Struct, key: &str) -> Result<Vec<usize>, ()> {
                 .collect()
             )
         }
-        _ => return Err(()),
+        _ => Err(()),
     }
 }
 

@@ -92,7 +92,7 @@ where
                     // these lines. However, the content of the item can span multiple lines.
                     // In that case, we need to switch context so we can ignore the full value.
                     Some(first) if first.starts_with('_') => {
-                        if let Some(_) = tokens.next() {
+                        if tokens.next().is_some() {
                             PDBXContext::Data(name)
                         } else {
                             PDBXContext::Field(name, false)
@@ -213,7 +213,7 @@ where
 }
 
 
-fn match_bonds_to_atoms(originals: &Vec<PreBond>, atoms: &Vec<PDBLine>) -> Vec<(usize, usize, f32)> {
+fn match_bonds_to_atoms(originals: &[PreBond], atoms: &[PDBLine]) -> Vec<(usize, usize, f32)> {
     let atom_to_index: HashMap<BondedAtom, usize> = HashMap::from_iter(
         atoms.iter().enumerate().map(|(index, atom)| (atom.into(), index))
     );

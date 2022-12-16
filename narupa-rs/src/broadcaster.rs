@@ -78,7 +78,7 @@ pub trait Broadcaster {
     }
 
     fn send_broadaster_signal(&self, signal: BroadcasterSignal) {
-        self.get_signal_tx().map(|tx| tx.send(signal).unwrap());
+        if let Some(tx) = self.get_signal_tx() {tx.send(signal).unwrap()}
     }
 
     /// List the receivers.

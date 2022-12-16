@@ -4,6 +4,7 @@ use crate::parsers::residues::{ResidueIterator, ResidueView};
 use crate::parsers::Position;
 use components::{get_bond_templates, ResidueType};
 
+#[derive(Default)]
 pub struct MolecularSystem {
     pub names: Vec<String>,
     pub elements: Vec<Option<usize>>,
@@ -16,40 +17,24 @@ pub struct MolecularSystem {
     pub bonds: Vec<(usize, usize, f32)>,
 }
 
-impl Default for MolecularSystem {
-    fn default() -> Self {
-        MolecularSystem {
-            names: vec![],
-            elements: vec![],
-            positions: vec![],
-            atom_resindex: vec![],
-            resnames: vec![],
-            resids: vec![],
-            residue_chain_index: vec![],
-            chain_identifiers: vec![],
-            bonds: vec![],
-        }
-    }
-}
-
 impl MolecularSystem {
     pub fn atom_count(&self) -> usize {
         self.positions.len()
     }
 
     pub fn iter_residues(&self) -> ResidueIterator {
-        ResidueIterator::new(&self, 0, self.atom_count())
+        ResidueIterator::new(self, 0, self.atom_count())
     }
 
     pub fn iter_chains(&self) -> ChainIterator {
-        ChainIterator::new(&self)
+        ChainIterator::new(self)
     }
 
     pub fn add_intra_residue_bonds(mut self) -> MolecularSystem {
         let components = get_bond_templates();
         let mut bonds: Vec<(usize, usize, f32)> = Vec::new();
         for residue in self.iter_residues() {
-            let residue_name: &str = &residue.name();
+            let residue_name: &str = residue.name();
             let Some(templates) = components.get(residue_name) else {
                 continue;
             };

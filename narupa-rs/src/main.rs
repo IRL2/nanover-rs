@@ -58,19 +58,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let xml_path = cli.input_xml_path;
     let address = format!("{}:{}", cli.address, cli.port);
-    let simulation_interval = ((1.0 / (cli.simulation_fps) as f64) * 1000.0) as u64;
+    let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
     let frame_interval = cli .frame_interval;
     let force_interval = cli .force_interval;
     let verbose = cli.verbose;
     let statistics_file = cli
         .statistics
-        .map_or(
-            None,
-            |path| Some(
-                File::create(path)
-                    .expect("Cannot open statistics file.")
-            )
-        );
+        .map(|path| File::create(path)
+            .expect("Cannot open statistics file."));
     let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;
 
     // We have 3 separate threads: one runs the simulation, one
