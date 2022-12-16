@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::BufRead;
 use crate::parsers::chemistry::lookup_element_symbol;
 use crate::parsers::errors::*;
@@ -9,28 +10,37 @@ pub fn read_pdb<F>(input: F) -> Result<MolecularSystem, ReadError>
 where
     F: BufRead,
 {
-    let atoms = read_pdb_atoms(input)?;
-    Ok(MolecularSystem::from(atoms)
+    let (atoms, bonds) = read_pdb_atoms(input)?;
+    let mut atoms = MolecularSystem::from(atoms);
+    atoms.bonds.extend(bonds);
+    Ok(atoms
         .add_intra_residue_bonds()
         .add_inter_residue_bonds()
     )
 }
 
-fn read_pdb_atoms<F>(input: F) -> Result<Vec<PDBLine>, ReadError>
+fn read_pdb_atoms<F>(input: F) -> Result<(Vec<PDBLine>, Vec<(usize, usize, f32)>), ReadError>
 where
     F: BufRead,
 {
-    let mut output = Vec::new();
+    let mut atoms = Vec::new();
+    let mut bonds = Vec::new();
     for (lineno, line) in input.lines().enumerate() {
         let line = line.map_err(ReadError::IOError)?;
         if line.starts_with("ATOM") || line.starts_with("HETATM") {
             let parsed_line =
                 parse_pdb_atom_line(&line).map_err(|e| ReadError::FormatError(e, lineno))?;
-            output.push(parsed_line);
+            atoms.push(parsed_line);
+        } else if line.starts_with("CONECT") {
+            let line_bonds =
+                parse_pdb_conect_line(&line).map_err(|e| ReadError::FormatError(e, lineno))?;
+            bonds.extend(line_bonds);
         }
     }
+    
+    let bonds = match_bonds_to_atoms(&bonds, &atoms);
 
-    Ok(output)
+    Ok((atoms, bonds))
 }
 
 fn parse_pdb_atom_line(line: &str) -> Result<PDBLine, FormatError> {
@@ -86,10 +96,40 @@ fn parse_pdb_atom_line(line: &str) -> Result<PDBLine, FormatError> {
     })
 }
 
+fn parse_pdb_conect_line(line: &str) -> Result<Vec<(isize, isize)>, FormatError> {
+    let mut line_bonds = Vec::new();
+    let base = line.get(6..11).ok_or(FormatError::FieldFormat(FieldError::Conect))?;
+    let base = base.trim().parse().map_err(|_| FormatError::FieldFormat(FieldError::Conect))?;
+    for index in (11..31).step_by(5) {
+        let other = line.get(index..(index + 5));
+        let Some(other) = other else {break};
+        let other = other.trim().parse().map_err(|_| FormatError::FieldFormat(FieldError::Conect))?;
+        line_bonds.push((base, other));
+    }
+    Ok(line_bonds)
+}
+
+fn match_bonds_to_atoms(originals: &Vec<(isize, isize)>, atoms: &Vec<PDBLine>) -> Vec<(usize, usize, f32)> {
+    let serial_to_index = atoms.iter().enumerate().map(|(index, atom)| (atom.serial, index));
+    let serial_to_index: HashMap<isize, usize> = HashMap::from_iter(serial_to_index);
+    originals
+        .iter()
+        .filter_map(|bond| {
+            let from = serial_to_index.get(&bond.0);
+            let to = serial_to_index.get(&bond.1);
+            from.zip(to).map(|(from, to)| (*from, *to, 1.0))
+        })
+        .collect()
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rstest::rstest;
+    use crate::test_utils::test_ressource;
+    use std::fs::File;
+    use std::io::BufReader;
 
     #[rstest]
     // Full line
@@ -110,5 +150,31 @@ mod tests {
         };
         let atom = parse_pdb_atom_line(line).unwrap();
         assert_eq!(atom, expected);
+    }
+
+    #[test]
+    fn test_conect() {
+        let filepath = test_ressource!("/mercaptoethanol.pdb");
+        let file = File::open(filepath).expect("Cound not open test file.");
+        let buffer = BufReader::new(file);
+        let molecular_system = read_pdb(buffer).expect("Error parsing the file.");
+        let reference = vec![
+            (0, 1, 1.0), (0, 2, 1.0), // 1287 - 0
+            (1, 0, 1.0), (1, 3, 1.0), // 1288 - 1
+            (2, 0, 1.0),              // 1289 - 2
+            (3, 1, 1.0), (3, 7, 1.0), // 1290 - 3
+            (4, 5, 1.0), (4, 6, 1.0), // 1291 - 4
+            (5, 4, 1.0), (5, 7, 1.0), // 1292 - 5
+            (6, 4, 1.0),              // 1293 - 6
+            (7, 3, 1.0), (7, 5, 1.0), // 1294 - 7
+            (8, 9, 1.0), (8, 13, 1.0), // 1295 - 8
+            (9, 8, 1.0), (9, 10, 1.0), // 1296 - 9
+            (10, 9, 1.0), (10, 11, 1.0), // 1297 - 10
+            (11, 10, 1.0), (11, 12, 1.0), // 1298 - 11
+            (12, 11, 1.0), (12, 13, 1.0), // 1299 - 12
+            (13, 8, 1.0), (13, 12, 1.0),
+        ];
+        // The molecular_system object also contains the bonds read from the template.
+        assert_eq!(molecular_system.bonds[0..reference.len()], reference);
     }
 }

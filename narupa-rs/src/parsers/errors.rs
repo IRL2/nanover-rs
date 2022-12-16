@@ -6,6 +6,7 @@ pub enum FieldError {
     Serial,
     ResidueIdentifier,
     Position,
+    Conect,
 }
 
 /// What when wrong when reading an ATOM line in a PDB file?
