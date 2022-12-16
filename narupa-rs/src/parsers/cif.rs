@@ -33,6 +33,27 @@ enum PDBXContext {
     // Save(String)
 }
 
+#[derive(PartialEq, Eq, Hash)]
+struct BondedAtom {
+    pub chain: String,
+    pub residue_name: String,
+    pub residue_num: isize,
+    pub atom_name: String,
+}
+
+impl From<&PDBLine> for BondedAtom {
+    fn from(value: &PDBLine) -> Self {
+        BondedAtom {
+            chain: String::from(value.chain_identifier),
+            residue_name: value.residue_name.clone(),
+            residue_num: value.residue_identifier,
+            atom_name: value.atom_name.clone(),
+        }
+    }
+}
+
+type PreBond = (BondedAtom, BondedAtom);
+
 pub fn read_cif<F>(input: F) -> Result<MolecularSystem, ReadError>
 where
     F: BufRead,
@@ -40,6 +61,7 @@ where
     let mut context = PDBXContext::Idle;
     let mut loop_keys: Option<Vec<String>> = None;
     let mut atoms: Vec<PDBLine> = Vec::new();
+    let mut bonds: Vec<PreBond> = Vec::new();
     for (lineno, line) in input.lines().enumerate() {
         let line = line.map_err(ReadError::IOError)?;
         let mut tokens = line.split_ascii_whitespace();
@@ -106,11 +128,19 @@ where
                             Some(ref keys) => keys,
                         };
                         // We only store what we need.
-                        if name == "_atom_site" {
-                            atoms.push(
-                                parse_cif_atom_line(&line, loop_keys)
-                                    .map_err(|e| ReadError::FormatError(e, lineno))?,
-                            );
+                        match name.as_str() {
+                            "_atom_site" => {
+                                atoms.push(
+                                    parse_cif_atom_line(&line, loop_keys)
+                                        .map_err(|e| ReadError::FormatError(e, lineno))?
+                                );
+                            },
+                            "_struct_conn" => {
+                                if let Some(bond) = parse_cif_bond_line(&line, loop_keys).map_err(|e| ReadError::FormatError(e, lineno))? {
+                                    bonds.push(bond);
+                                };
+                            }
+                            _ => ()
                         }
                         PDBXContext::Loop(data_name, name)
                     }
@@ -138,11 +168,19 @@ where
                         .clone()
                         .ok_or(ReadError::FormatError(FormatError::MissingLoopKeys, lineno))?;
                     // We only store what we need.
-                    if name == "_atom_site" {
-                        atoms.push(
-                            parse_cif_atom_line(&line, loop_keys)
-                                .map_err(|e| ReadError::FormatError(e, lineno))?,
-                        );
+                    match name.as_str() {
+                        "_atom_site" => {
+                            atoms.push(
+                                parse_cif_atom_line(&line, loop_keys)
+                                    .map_err(|e| ReadError::FormatError(e, lineno))?,
+                            );
+                        },
+                        "_struct_conn" => {
+                            if let Some(bond) = parse_cif_bond_line(&line, loop_keys).map_err(|e| ReadError::FormatError(e, lineno))? {
+                                bonds.push(bond);
+                            };
+                        }
+                        _ => ()
                     }
                     PDBXContext::Loop(data_name, name)
                 }
@@ -164,10 +202,58 @@ where
         };
     }
 
-    Ok(MolecularSystem::from(atoms)
+    let bonds = match_bonds_to_atoms(&bonds, &atoms);
+    let mut molecular_system = MolecularSystem::from(atoms);
+    molecular_system.bonds.extend(bonds);
+
+    Ok(molecular_system
         .add_intra_residue_bonds()
         .add_inter_residue_bonds()
     )
+}
+
+
+fn match_bonds_to_atoms(originals: &Vec<PreBond>, atoms: &Vec<PDBLine>) -> Vec<(usize, usize, f32)> {
+    let atom_to_index: HashMap<BondedAtom, usize> = HashMap::from_iter(
+        atoms.iter().enumerate().map(|(index, atom)| (atom.into(), index))
+    );
+    originals.iter().filter_map(|bond| {
+        let from = atom_to_index.get(&bond.0);
+        let to = atom_to_index.get(&bond.1);
+        from.zip(to).map(|pre| (*pre.0, *pre.1, 1.0))
+    }).collect()
+}
+
+fn parse_cif_bond_line(line: &str, loop_keys: &Vec<String>) -> Result<Option<PreBond>, FormatError> {
+    let fields: Vec<String> = line.split_ascii_whitespace().map(String::from).collect();
+    if fields.len() != loop_keys.len() {
+        return Err(FormatError::UnexpectedFieldNumber(loop_keys.len(), fields.len()));
+    };
+    let line: HashMap<String, String> =
+        HashMap::from_iter(loop_keys.iter().zip(fields).map(|(k, v)| (k.clone(), v)));
+    
+    let from = BondedAtom {
+        chain: String::from(extract_char_with_default(&line, "ptnr1_label_asym_id", ' ')),
+        residue_name: extract_string(&line, "ptnr1_label_comp_id")?,
+        residue_num: extract_number(&line, "ptnr1_label_seq_id", FieldError::Conect)?,
+        atom_name: extract_string(&line, "ptnr1_label_atom_id")?,
+    };
+    let to = BondedAtom {
+        chain: String::from(extract_char_with_default(&line, "ptnr2_label_asym_id", ' ')),
+        residue_name: extract_string(&line, "ptnr2_label_comp_id")?,
+        residue_num: extract_number(&line, "ptnr2_label_seq_id", FieldError::Conect)?,
+        atom_name: extract_string(&line, "ptnr2_label_atom_id")?,
+    };
+
+    let bond_type = extract_string(&line, "conn_type_id")?.to_uppercase();
+    // The bond type can be "covale", "disulf","hydrog", or "metalc".
+    // Only the two first types are covalent bond we want in our topology.
+    // Cif documentation: https://mmcif.wwpdb.org/dictionaries/mmcif_pdbx_v50.dic/Items/_struct_conn.conn_type_id.html
+    if bond_type == "COVALE" || bond_type == "DISULF" {
+        Ok(Some((from, to)))
+    } else {
+        Ok(None)
+    }
 }
 
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
@@ -261,7 +347,7 @@ mod tests {
             (5, 7, 1.0),  // 2@C2 - 2@S2
             (8, 9, 1.0),  // 3@C1 - 3@C2
             (8, 13, 1.0),  // 3@C1 - 3@C6
-            (2, 10, 1.0),  // 3@C2 - 3@C3
+            (9, 10, 1.0),  // 3@C2 - 3@C3
             (10, 11, 1.0),  // 3@C3 - 3@C4
             (11, 12, 1.0),  // 3@C4 - 3@C5
             (12, 13, 1.0),  // 3@C5 - 3@C6
