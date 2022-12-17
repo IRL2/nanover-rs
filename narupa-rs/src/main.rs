@@ -2,7 +2,8 @@ extern crate clap;
 
 use narupa_rs::frame::FrameData;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
-use narupa_rs::services::commands::{CommandServer, CommandService, Command, PlaybackCommand, RadialOrient};
+use narupa_rs::playback::PlaybackCommand;
+use narupa_rs::services::commands::{CommandServer, CommandService, Command, RadialOrient};
 use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::state_broadcaster::StateBroadcaster;

@@ -1,7 +1,6 @@
 use std::collections::{HashMap, BTreeMap};
 use std::sync::{Arc, Mutex};
 
-use crate::playback::PlaybackOrder;
 use crate::proto::protocol::command::command_server;
 use crate::proto::protocol::command::{
     CommandMessage, CommandReply, GetCommandsReply, GetCommandsRequest,
@@ -12,35 +11,12 @@ use crate::state_broadcaster::StateBroadcaster;
 use prost::alloc::vec::Vec;
 use prost_types::{Struct, Value, ListValue};
 use prost_types::value::Kind;
-use tokio::sync::mpsc::Sender;
 
 pub use crate::proto::protocol::command::command_server::CommandServer;
 
 pub trait Command: Send + Sync {
     fn run(&self, input: CommandMessage) -> CommandReply;
     fn arguments(&self) -> Option<Struct>;
-}
-
-pub struct PlaybackCommand {
-    channel: Sender<PlaybackOrder>,
-    order: PlaybackOrder
-}
-
-impl PlaybackCommand {
-    pub fn new(channel: Sender<PlaybackOrder>, order: PlaybackOrder) -> Self {
-        Self {channel, order}
-    }
-}
-
-impl Command for PlaybackCommand {
-    fn run(&self, _input: CommandMessage) -> CommandReply {
-        self.channel.try_send(self.order).unwrap();
-        CommandReply { result: None }
-    }
-
-    fn arguments(&self) -> Option<Struct> {
-        None
-    }
 }
 
 pub struct RadialOrient {

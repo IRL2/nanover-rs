@@ -1,3 +1,8 @@
+use tokio::sync::mpsc::Sender;
+use crate::services::commands::Command;
+use crate::proto::protocol::command::{CommandMessage, CommandReply};
+use prost_types::Struct;
+
 #[derive(Debug, Clone, Copy)]
 pub enum PlaybackOrder {
     Play,
@@ -30,6 +35,29 @@ impl PlaybackState {
         }
     }
 }
+
+pub struct PlaybackCommand {
+    channel: Sender<PlaybackOrder>,
+    order: PlaybackOrder
+}
+
+impl PlaybackCommand {
+    pub fn new(channel: Sender<PlaybackOrder>, order: PlaybackOrder) -> Self {
+        Self {channel, order}
+    }
+}
+
+impl Command for PlaybackCommand {
+    fn run(&self, _input: CommandMessage) -> CommandReply {
+        self.channel.try_send(self.order).unwrap();
+        CommandReply { result: None }
+    }
+
+    fn arguments(&self) -> Option<Struct> {
+        None
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
