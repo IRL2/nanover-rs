@@ -6,12 +6,14 @@ use crate::proto::protocol::command::{
     CommandMessage, CommandReply, GetCommandsReply, GetCommandsRequest,
 };
 use prost::alloc::vec::Vec;
+use prost_types::Struct;
 use tokio::sync::mpsc::Sender;
 
 pub use crate::proto::protocol::command::command_server::CommandServer;
 
 pub trait Command: Send + Sync {
     fn run(&self, input: CommandMessage) -> CommandReply;
+    fn arguments(&self) -> Option<Struct>;
 }
 
 pub struct PlaybackCommand {
@@ -29,6 +31,10 @@ impl Command for PlaybackCommand {
     fn run(&self, _input: CommandMessage) -> CommandReply {
         self.channel.try_send(self.order).unwrap();
         CommandReply { result: None }
+    }
+
+    fn arguments(&self) -> Option<Struct> {
+        None
     }
 }
 
@@ -51,8 +57,8 @@ impl command_server::Command for CommandService {
         // TODO: Provide the command arguments
         let command_list: Vec<CommandMessage> = self
             .commands
-            .keys()
-            .map(|name| CommandMessage {name: name.clone(), arguments: None})
+            .iter()
+            .map(|(name, command)| CommandMessage { name: name.clone(), arguments: command.arguments() })
             .collect();
         let reply = GetCommandsReply {
             commands: command_list,
