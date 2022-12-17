@@ -20,3 +20,4 @@ pub mod playback;
 pub mod observer_thread;
 pub mod parsers;
 pub mod essd;
+pub mod multiuser;
