@@ -2,7 +2,7 @@ extern crate clap;
 
 use narupa_rs::frame::FrameData;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
-use narupa_rs::services::commands::{CommandServer, CommandService, Command, PlaybackCommand};
+use narupa_rs::services::commands::{CommandServer, CommandService, Command, PlaybackCommand, RadialOrient};
 use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::state_broadcaster::StateBroadcaster;
@@ -86,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     commands.insert("playback/pause".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Pause)));
     commands.insert("playback/reset".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Reset)));
     commands.insert("playback/step".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Step)));
+    commands.insert("multiuser/radially-orient-origins".into(), Box::new(RadialOrient::new(Arc::clone(&shared_state))));
 
     // Observe what is happening for statistics.
     if let Some(output) = statistics_file {
