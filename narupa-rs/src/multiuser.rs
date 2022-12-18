@@ -21,30 +21,12 @@ impl RadialOrient {
 impl Command for RadialOrient {
     fn run(&self, input: CommandMessage) -> CommandReply {
         let default_radius = 1.0;
-        let radius = input.arguments
-            .map_or(default_radius, |args| args
-                .fields
-                .get("radius")
-                .map_or(default_radius, |value|
-                    if let Some(Kind::NumberValue(radius)) = value.kind {
-                        radius
-                    } else {
-                        default_radius
-                    })
-            );
+        let radius = extract_radius(&input, default_radius);
         let full_circle = std::f64::consts::PI * 2.0;
-        let avatars: Vec<String> = {
-            let state = self.state.lock().unwrap();
-            state
-                .iter()
-                .filter_map(|(key, _)| if key.starts_with("avatar.") {
-                    Some(String::from(key.split_once('.').unwrap().1))
-                } else {None})
-                .collect()
-        };
+        let avatars = get_avatar_ids(&self.state);
         let count = avatars.len();
         let angles = (0..count).map(|i| i as f64 * full_circle / (count as f64));
-        let updates = StateUpdate{ changed_keys: Some(Struct {fields: BTreeMap::from_iter(avatars
+        let updates = to_user_origin_update(avatars
             .iter()
             .zip(angles)
             .map(|(avatar, angle)| {
@@ -57,27 +39,7 @@ impl Command for RadialOrient {
                     ],
                 )
             })
-            .map(|(key, value)| {
-                (
-                    key,
-                    Value{ kind: Some(Kind::StructValue(Struct{ fields: BTreeMap::from_iter(
-                        value.into_iter().map(|(key, value)| {(
-                            String::from(key),
-                            Value{kind: Some(
-                                Kind::ListValue(ListValue {
-                                    values: value
-                                        .iter()
-                                        .map(|number| {
-                                            Value {kind: Some(Kind::NumberValue(*number))}
-                                        })
-                                        .collect()
-                                })
-                            )}
-                        )})
-                    )}))},
-                )
-            })
-        )})};
+        );
         self.state.lock().unwrap().send(updates).unwrap();
         CommandReply { result: None }
     }
@@ -85,4 +47,49 @@ impl Command for RadialOrient {
     fn arguments(&self) -> Option<Struct> {
         None
     }
+}
+
+fn get_avatar_ids(state: &Arc<Mutex<StateBroadcaster>>) -> Vec<String> {
+    let state = state.lock().unwrap();
+    state
+        .iter()
+        .filter_map(|(key, _)| if key.starts_with("avatar.") {
+            Some(String::from(key.split_once('.').unwrap().1))
+        } else {None})
+        .collect()
+}
+
+fn extract_radius(input: &CommandMessage, default: f64) -> f64 {
+    input.arguments.as_ref()
+        .map_or(default, |args| args
+            .fields
+            .get("radius")
+            .map_or(default, |value|
+                if let Some(Kind::NumberValue(radius)) = value.kind {
+                    radius
+                } else {
+                    default
+                })
+        )
+}
+
+fn to_user_origin_update<'a>(input: impl Iterator<Item=(String, [(&'a str, Vec<f64>); 2])>) -> StateUpdate {
+    StateUpdate{ changed_keys: Some(Struct {fields: BTreeMap::from_iter(input.map(|(key, value)| (
+        String::from(key),
+        Value{ kind: Some(Kind::StructValue(Struct{ fields: BTreeMap::from_iter(
+            value.into_iter().map(|(key, value)| {(
+                String::from(key),
+                Value{kind: Some(
+                    Kind::ListValue(ListValue {
+                        values: value
+                            .iter()
+                            .map(|number| {
+                                Value {kind: Some(Kind::NumberValue(*number))}
+                            })
+                            .collect()
+                    })
+                )}
+            )})
+        )}))},
+    )))})}
 }
