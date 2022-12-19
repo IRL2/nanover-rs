@@ -88,9 +88,29 @@ pub trait IMD {
     fn update_imd_forces(&mut self, interactions: Vec<Interaction>) -> Result<(), ()>;
 }
 
+#[derive(Debug)]
+enum XMLTarget {
+    System,
+    Integrator,
+}
+
+impl TryFrom<&[u8]> for XMLTarget {
+    type Error = ();
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        match value {
+            b"System" => Ok(Self::System),
+            b"Integrator" => Ok(Self::Integrator),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug)]
 enum ReadState {
+    Unstarted,
     Ignore,
-    CopyXML,
+    CopyXML(XMLTarget),
     CopyStructure,
 }
 
@@ -99,6 +119,88 @@ enum StructureType {
     Pdb,
     Pdbx,
 }
+
+struct PreSimulation {
+    structure: Vec<u8>,
+    system: Writer<Cursor<Vec<u8>>>,
+    integrator: Writer<Cursor<Vec<u8>>>,
+    structure_type: StructureType,
+}
+
+impl PreSimulation {
+    pub fn new() -> Self {
+        PreSimulation {
+            structure: vec![],
+            system: Writer::new(Cursor::new(Vec::new())),
+            integrator: Writer::new(Cursor::new(Vec::new())),
+            structure_type: StructureType::None,
+        }
+    }
+
+    pub fn set_structure_type(&mut self, structure_type: &[u8]) {
+        self.structure_type = match structure_type {
+            b"pdb" => StructureType::Pdb,
+            b"pdbx" => StructureType::Pdbx,
+            // Cannot happen because of the condition above
+            _ => panic!("Unrecognised structure type."),
+        };
+    }
+
+    pub fn add_structure_line(&mut self, line: &[u8]) {
+        self.structure.extend(line.iter());
+    }
+
+    pub fn start_xml_element(&mut self, target: &XMLTarget, element: &BytesStart) {
+        let name = element.name();
+        let mut elem = BytesStart::owned(name.to_vec(), name.len());
+        elem.extend_attributes(element.attributes().map(|attr| attr.unwrap()));
+        let writer = self.choose_writer(target);
+        writer.write_event(Event::Start(elem)).unwrap();
+    }
+
+    pub fn end_xml_element(&mut self, target: &XMLTarget, element: &BytesEnd) {
+        let writer = self.choose_writer(target);
+        let elem = BytesEnd::owned(element.name().to_vec());
+        writer.write_event(Event::End(elem)).unwrap();
+    }
+
+    pub fn empty_xml_element(&mut self, target: &XMLTarget, element: &BytesStart) {
+        let writer = self.choose_writer(target);
+        let mut elem = BytesStart::owned(element.name().to_vec(), element.name().len());
+        elem.extend_attributes(element.attributes().map(|attr| attr.unwrap()));
+        writer.write_event(Event::Empty(elem)).unwrap();
+    }
+
+    pub fn close_xml(&mut self, target: &XMLTarget) {
+        let writer = self.choose_writer(target);
+        writer.write_event(Event::Eof).unwrap();
+    }
+
+    pub fn finish(self) -> (CString, CString, MolecularSystem) {
+        let system_content = CString::new(str::from_utf8(&self.system.into_inner().into_inner()).unwrap()).unwrap();
+        let integrator_content = CString::new(str::from_utf8(&self.integrator.into_inner().into_inner()).unwrap()).unwrap();
+        let structure = match self.structure_type {
+            StructureType::None => panic!("No structure found."),
+            StructureType::Pdb => {
+                let input = BufReader::new(Cursor::new(self.structure));
+                read_pdb(input).expect("Could not read the PDB.")
+            }
+            StructureType::Pdbx => {
+                let input = BufReader::new(Cursor::new(self.structure));
+                read_cif(input).expect("Could not read the PDBx.")
+            }
+        };
+        (system_content, integrator_content, structure)
+    }
+
+    fn choose_writer(&mut self, target: &XMLTarget) -> &mut Writer<Cursor<Vec<u8>>> { 
+        match target {
+            XMLTarget::System => &mut self.system,
+            XMLTarget::Integrator => &mut self.integrator,
+        }
+    }
+}
+
 
 pub struct XMLSimulation {
     system: *mut OpenMM_System,
@@ -119,128 +221,73 @@ impl XMLSimulation {
         reader.trim_text(true);
         let mut buf = Vec::new();
 
-        let mut read_state = ReadState::Ignore;
-        let mut writer = Writer::new(Cursor::new(Vec::new()));
-
-        let mut structure_type = StructureType::None;
-        let mut structure_buffer: Vec<u8> = Vec::new();
-
-        let mut system_content: Option<Vec<u8>> = None;
-        let mut integrator_content: Option<Vec<u8>> = None;
+        let mut read_state = ReadState::Unstarted;
+        let mut sim_builder = PreSimulation::new();
 
         loop {
-            match reader.read_event(&mut buf) {
+            read_state = match (read_state, reader.read_event(&mut buf)) {
+                // Start
+                (ReadState::Unstarted, Ok(Event::Start(ref e))) if e.name() == b"OpenMMSimulation" => {
+                    ReadState::Ignore
+                }
+                (ReadState::Unstarted, Ok(_)) => {panic!("Not reading the expected file format.")}
+
                 // Structure
-                Ok(Event::Start(ref e)) if e.name() == b"pdbx" || e.name() == b"pdb" => {
-                    let name = e.name();
-                    let name_str = str::from_utf8(name).unwrap();
-                    println!("Start {name_str}");
-                    read_state = ReadState::CopyStructure;
-                    structure_type = match name {
-                        b"pdb" => StructureType::Pdb,
-                        b"pdbx" => StructureType::Pdbx,
-                        // Cannot happen because of the condition above
-                        _ => panic!("Unrecognised structure type."),
-                    };
+                (ReadState::Ignore, Ok(Event::Start(ref e))) if e.name() == b"pdbx" || e.name() == b"pdb" => {
+                    println!("Start {}", str::from_utf8(e.name()).unwrap());
+                    sim_builder.set_structure_type(e.name());
+                    ReadState::CopyStructure
                 }
-                Ok(Event::End(ref e)) if e.name() == b"pdbx" || e.name() == b"pdb" => {
-                    let name = e.name();
-                    let name_str = str::from_utf8(name).unwrap();
-                    println!("End {name_str}");
-                    read_state = ReadState::Ignore;
+                (ReadState::CopyStructure, Ok(Event::End(ref e))) if e.name() == b"pdbx" || e.name() == b"pdb" => {
+                    println!("End {}", str::from_utf8(e.name()).unwrap());
+                    ReadState::Ignore
                 }
-                Ok(Event::Text(ref e)) => {
-                    if let ReadState::CopyStructure = read_state {
-                        structure_buffer.extend(e.iter());
-                    }
+                (ReadState::CopyStructure, Ok(Event::Text(ref e))) => {
+                    sim_builder.add_structure_line(e);
+                    ReadState::CopyStructure
                 }
 
                 // Structure and Integrator XML
-                Ok(Event::Start(ref e)) => {
-                    let name = e.name();
-                    let name_str = str::from_utf8(name).unwrap();
-                    if name == b"System" || name == b"Integrator" {
-                        println!("Start {name_str}");
-                        writer = Writer::new(Cursor::new(Vec::new()));
-                        read_state = ReadState::CopyXML;
-                    }
-                    if let ReadState::CopyXML = read_state {
-                        let mut elem = BytesStart::owned(name.to_vec(), name.len());
-                        elem.extend_attributes(e.attributes().map(|attr| attr.unwrap()));
-                        writer.write_event(Event::Start(elem)).unwrap();
+                (ReadState::Ignore, Ok(Event::Start(ref e))) if e.name() == b"System" || e.name() == b"Integrator" => {
+                    println!("Start {}", str::from_utf8(e.name()).unwrap());
+                    let target = e.name().try_into().unwrap();
+                    sim_builder.start_xml_element(&target, e);
+                    ReadState::CopyXML(target)
+                }
+                (ReadState::Ignore, Ok(Event::Empty(ref e))) if e.name() == b"System" || e.name() == b"Integrator" => {
+                    println!("Empty {}", str::from_utf8(e.name()).unwrap());
+                    let target = e.name().try_into().unwrap();
+                    sim_builder.empty_xml_element(&target, e);
+                    ReadState::CopyXML(target)
+                }
+                (ReadState::CopyXML(target), Ok(Event::Start(ref e))) => {
+                    sim_builder.start_xml_element(&target, e);
+                    ReadState::CopyXML(target)
+                }
+                (ReadState::CopyXML(target), Ok(Event::End(ref e))) => {
+                    sim_builder.end_xml_element(&target, e);
+                    if e.name() == b"System" || e.name() == b"Integrator" {
+                        println!("End {}", str::from_utf8(e.name()).unwrap());
+                        sim_builder.close_xml(&target);
+                        ReadState::Ignore
+                    } else {
+                        ReadState::CopyXML(target)
                     }
                 }
-                Ok(Event::End(ref e)) => {
-                    let name = e.name();
-                    let name_str = str::from_utf8(name).unwrap();
-                    if let ReadState::CopyXML = read_state {
-                        let elem = BytesEnd::owned(name.to_vec());
-                        writer.write_event(Event::End(elem)).unwrap();
-                    }
-                    if name == b"System" || name == b"Integrator" {
-                        println!("End {name_str}");
-                        read_state = ReadState::Ignore;
-
-                        writer.write_event(Event::Eof).unwrap();
-
-                        let to_write = writer;
-                        writer = Writer::new(Cursor::new(Vec::new()));
-                        if name == b"System" {
-                            system_content = Some(to_write.into_inner().into_inner());
-                        } else if name == b"Integrator" {
-                            integrator_content = Some(to_write.into_inner().into_inner());
-                        }
-                    }
-                }
-                Ok(Event::Empty(ref e)) => {
-                    let name = e.name();
-                    let name_str = str::from_utf8(name).unwrap();
-                    if name == b"System" || name == b"Integrator" {
-                        println!("Empty {name_str}");
-                        read_state = ReadState::CopyXML;
-                    }
-                    if let ReadState::CopyXML = read_state {
-                        let mut elem = BytesStart::owned(name.to_vec(), name.len());
-                        elem.extend_attributes(e.attributes().map(|attr| attr.unwrap()));
-                        writer.write_event(Event::Empty(elem)).unwrap();
-                    }
-                    if name == b"System" || name == b"Integrator" {
-                        let to_write = writer;
-                        writer = Writer::new(Cursor::new(Vec::new()));
-                        if name == b"System" {
-                            system_content = Some(to_write.into_inner().into_inner());
-                        } else if name == b"Integrator" {
-                            integrator_content = Some(to_write.into_inner().into_inner());
-                        }
-                    }
+                (ReadState::CopyXML(target), Ok(Event::Empty(ref e))) => {
+                    sim_builder.empty_xml_element(&target, e);
+                    ReadState::CopyXML(target)
                 }
 
                 // End
-                Ok(Event::Eof) => break,
-                Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
-                _ => {}
+                (_, Ok(Event::Eof)) => break,
+                (_, Err(e)) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
+                (state, Ok(event)) => panic!("Unexpected event at position {}: state {state:?} event {event:?}", reader.buffer_position()),
             }
         }
 
-        let system_content = match system_content {
-            None => panic!("No system found in the file."),
-            Some(content) => CString::new(str::from_utf8(&content).unwrap()).unwrap(),
-        };
-        let integrator_content = match integrator_content {
-            None => panic!("No integrator found in the file."),
-            Some(content) => CString::new(str::from_utf8(&content).unwrap()).unwrap(),
-        };
-        let structure = match structure_type {
-            StructureType::None => panic!("No structure found."),
-            StructureType::Pdb => {
-                let input = BufReader::new(Cursor::new(structure_buffer));
-                read_pdb(input).expect("Could not read the PDB.")
-            }
-            StructureType::Pdbx => {
-                let input = BufReader::new(Cursor::new(structure_buffer));
-                read_cif(input).expect("Could not read the PDBx.")
-            }
-        };
+        let (system_content, integrator_content, structure) = sim_builder.finish();
+
         let n_atoms = structure.atom_count();
         println!("Particles in the structure: {n_atoms}");
 
