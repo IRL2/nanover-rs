@@ -71,7 +71,7 @@ pub fn run_simulation_thread(
         println!("Simulation interval: {simulation_interval}");
         println!("Start simulating");
         let mut current_simulation_frame: u64 = 0;
-        for _i in 0.. {
+        loop {
             let now = time::Instant::now();
             loop {
                 let order_result = playback_rx.try_recv();
