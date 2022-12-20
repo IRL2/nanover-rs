@@ -92,27 +92,37 @@ fn to_user_origin_update<'a>(
             fields: BTreeMap::from_iter(input.map(|(key, value)| {
                 (
                     String::from(key),
-                    Value {
-                        kind: Some(Kind::StructValue(Struct {
-                            fields: BTreeMap::from_iter(value.into_iter().map(|(key, value)| {
-                                (
-                                    String::from(key),
-                                    Value {
-                                        kind: Some(Kind::ListValue(ListValue {
-                                            values: value
-                                                .iter()
-                                                .map(|number| Value {
-                                                    kind: Some(Kind::NumberValue(*number)),
-                                                })
-                                                .collect(),
-                                        })),
-                                    },
-                                )
-                            })),
-                        })),
-                    },
+                    orient_inner_struct_value(&value)
                 )
             })),
         }),
+    }
+}
+
+fn number_to_value(number: &f64) -> Value {
+    Value{ kind: Some(Kind::NumberValue(*number)) }
+}
+
+fn list_of_numbers(values: &Vec<f64>) -> Value {
+    Value {
+        kind: Some(Kind::ListValue(ListValue {
+            values: values
+                .iter()
+                .map(number_to_value)
+                .collect(),
+        })),
+    }
+}
+
+fn orient_inner_struct_value(content: &[(&str, Vec<f64>)]) -> Value {
+    Value {
+        kind: Some(Kind::StructValue(Struct {
+            fields: BTreeMap::from_iter(content.into_iter().map(|(key, value)| {
+                (
+                    String::from(*key),
+                    list_of_numbers(value),
+                )
+            })),
+        })),
     }
 }
