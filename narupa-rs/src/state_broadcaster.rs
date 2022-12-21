@@ -157,6 +157,23 @@ impl StateBroadcaster {
             Some(lock) => can_write(lock, now, token),
         }
     }
+
+    pub fn send_with_locks(&mut self, item: StateUpdate, token: &String) -> Result<(), ()> {
+        let now = Instant::now();
+        let can_update = match &item.changed_keys {
+            None => true,
+            Some(changed_keys) => changed_keys
+                .fields
+                .keys()
+                .all(|key| self.can_write_key(key, &now, token)),
+        };
+        if can_update {
+            self.send(item).unwrap();
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
 }
 
 fn has_lock_expired(lock: &StateLock, now: &Instant) -> bool {

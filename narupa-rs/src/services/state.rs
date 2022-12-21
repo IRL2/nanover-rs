@@ -8,7 +8,6 @@ use crate::state_broadcaster::StateBroadcaster;
 use futures::Stream;
 use prost_types::value::Kind;
 use std::collections::BTreeMap;
-use std::time::Instant;
 use std::{
     pin::Pin,
     sync::{Arc, Mutex},
@@ -96,17 +95,7 @@ impl State for StateService {
             }
             Some(update) => {
                 let mut state = self.shared_state.lock().unwrap();
-                let now = Instant::now();
-                let can_update = match &update.changed_keys {
-                    None => true,
-                    Some(changed_keys) => changed_keys
-                        .fields
-                        .keys()
-                        .all(|key| state.can_write_key(key, &now, &token)),
-                };
-                if can_update {
-                    state.send(update).unwrap();
-                };
+                let can_update = state.send_with_locks(update, &token).is_ok();
                 can_update
             }
         };
