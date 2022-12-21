@@ -2,7 +2,9 @@ extern crate clap;
 
 use narupa_rs::frame::FrameData;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
-use narupa_rs::services::commands::{CommandServer, CommandService};
+use narupa_rs::playback::PlaybackCommand;
+use narupa_rs::multiuser::RadialOrient;
+use narupa_rs::services::commands::{CommandServer, CommandService, Command};
 use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::state_broadcaster::StateBroadcaster;
@@ -10,6 +12,7 @@ use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::observer_thread::run_observer_thread;
 use narupa_rs::playback::PlaybackOrder;
 use narupa_rs::essd::serve_essd;
+use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 use std::fs::File;
@@ -80,6 +83,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(Some(state_tx))));
     let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) = mpsc::channel(100);
 
+    let mut commands: HashMap<String, Box<dyn Command>> = HashMap::new();
+    commands.insert("playback/play".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Play)));
+    commands.insert("playback/pause".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Pause)));
+    commands.insert("playback/reset".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Reset)));
+    commands.insert("playback/step".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Step)));
+    commands.insert("multiuser/radially-orient-origins".into(), Box::new(RadialOrient::new(Arc::clone(&shared_state))));
+
     // Observe what is happening for statistics.
     if let Some(output) = statistics_file {
         run_observer_thread(output, statistics_interval, frame_rx, state_rx, simulation_rx);
@@ -109,7 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let socket_address = address.to_socket_addrs().unwrap().next().unwrap();
     println!("Listening to {socket_address}");
     let server = Trajectory::new(Arc::clone(&frame_source));
-    let command_service = CommandService::new(playback_tx);
+    let command_service = CommandService::new(commands);
     let state_service = StateService::new(Arc::clone(&shared_state));
     Server::builder()
         .add_service(TrajectoryServiceServer::new(server))
