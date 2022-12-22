@@ -35,7 +35,7 @@ impl<'a> Iterator for ResidueIterator<'a> {
                 Some(residue) if *residue != current_residue => break,
                 Some(residue) => current_residue = *residue,
             }
-        };
+        }
 
         self.particle_index = i;
         Some(ResidueView {

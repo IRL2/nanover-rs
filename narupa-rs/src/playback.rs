@@ -1,7 +1,7 @@
-use tokio::sync::mpsc::Sender;
-use crate::services::commands::Command;
 use crate::proto::protocol::command::{CommandMessage, CommandReply};
+use crate::services::commands::Command;
 use prost_types::Struct;
+use tokio::sync::mpsc::Sender;
 
 #[derive(Debug, Clone, Copy)]
 pub enum PlaybackOrder {
@@ -17,7 +17,9 @@ pub struct PlaybackState {
 
 impl PlaybackState {
     pub fn new(start_playing: bool) -> Self {
-        PlaybackState { playing: start_playing }
+        PlaybackState {
+            playing: start_playing,
+        }
     }
 
     pub fn is_playing(&self) -> bool {
@@ -31,19 +33,19 @@ impl PlaybackState {
             // Stepping implies to pause the trajectory
             PlaybackOrder::Step => self.playing = false,
             // Not our responsability here
-            PlaybackOrder::Reset => {},
+            PlaybackOrder::Reset => {}
         }
     }
 }
 
 pub struct PlaybackCommand {
     channel: Sender<PlaybackOrder>,
-    order: PlaybackOrder
+    order: PlaybackOrder,
 }
 
 impl PlaybackCommand {
     pub fn new(channel: Sender<PlaybackOrder>, order: PlaybackOrder) -> Self {
-        Self {channel, order}
+        Self { channel, order }
     }
 }
 
@@ -57,7 +59,6 @@ impl Command for PlaybackCommand {
         None
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -82,10 +83,10 @@ mod tests {
     #[case(true, PlaybackOrder::Step, false)]
     #[case(false, PlaybackOrder::Step, false)]
     fn test_playback_update(
-            #[case] previous_play: bool,
-            #[case] order: PlaybackOrder,
-            #[case] expected_play: bool,
-        ) {
+        #[case] previous_play: bool,
+        #[case] order: PlaybackOrder,
+        #[case] expected_play: bool,
+    ) {
         let mut state = PlaybackState::new(previous_play);
         state.update(order);
         assert_eq!(state.is_playing(), expected_play);

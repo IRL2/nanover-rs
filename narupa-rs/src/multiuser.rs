@@ -89,27 +89,23 @@ fn to_user_origin_update<'a>(
 ) -> StateUpdate {
     StateUpdate {
         changed_keys: Some(Struct {
-            fields: BTreeMap::from_iter(input.map(|(key, value)| {
-                (
-                    String::from(key),
-                    orient_inner_struct_value(&value)
-                )
-            })),
+            fields: BTreeMap::from_iter(
+                input.map(|(key, value)| (String::from(key), orient_inner_struct_value(&value))),
+            ),
         }),
     }
 }
 
 fn number_to_value(number: &f64) -> Value {
-    Value{ kind: Some(Kind::NumberValue(*number)) }
+    Value {
+        kind: Some(Kind::NumberValue(*number)),
+    }
 }
 
 fn list_of_numbers(values: &Vec<f64>) -> Value {
     Value {
         kind: Some(Kind::ListValue(ListValue {
-            values: values
-                .iter()
-                .map(number_to_value)
-                .collect(),
+            values: values.iter().map(number_to_value).collect(),
         })),
     }
 }
@@ -117,16 +113,14 @@ fn list_of_numbers(values: &Vec<f64>) -> Value {
 fn orient_inner_struct_value(content: &[(&str, Vec<f64>)]) -> Value {
     Value {
         kind: Some(Kind::StructValue(Struct {
-            fields: BTreeMap::from_iter(content.into_iter().map(|(key, value)| {
-                (
-                    String::from(*key),
-                    list_of_numbers(value),
-                )
-            })),
+            fields: BTreeMap::from_iter(
+                content
+                    .into_iter()
+                    .map(|(key, value)| (String::from(*key), list_of_numbers(value))),
+            ),
         })),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -168,19 +162,51 @@ mod tests {
     }
 
     fn build_arguments(radius: f64) -> CommandMessage {
-        CommandMessage {name: String::from("command/name"), arguments: Some(Struct{fields: BTreeMap::from([(String::from("radius"), number_to_value(&radius))])})}
+        CommandMessage {
+            name: String::from("command/name"),
+            arguments: Some(Struct {
+                fields: BTreeMap::from([(String::from("radius"), number_to_value(&radius))]),
+            }),
+        }
     }
 
-    fn populate_avatars(state: &Arc<Mutex<StateBroadcaster>>, number_of_avatars: usize) -> Vec<String> {
+    fn populate_avatars(
+        state: &Arc<Mutex<StateBroadcaster>>,
+        number_of_avatars: usize,
+    ) -> Vec<String> {
         let avatar_ids: Vec<String> = (0..number_of_avatars).map(|id| format!("{id}")).collect();
-        let avatars = avatar_ids.iter().map(|id| (format!("avatar.{id}"), Value{kind: Some(Kind::StructValue(Struct{fields: BTreeMap::new()}))}));
-        let update = StateUpdate { changed_keys: Some(Struct{fields: BTreeMap::from_iter(avatars)}) };
+        let avatars = avatar_ids.iter().map(|id| {
+            (
+                format!("avatar.{id}"),
+                Value {
+                    kind: Some(Kind::StructValue(Struct {
+                        fields: BTreeMap::new(),
+                    })),
+                },
+            )
+        });
+        let update = StateUpdate {
+            changed_keys: Some(Struct {
+                fields: BTreeMap::from_iter(avatars),
+            }),
+        };
         state.lock().unwrap().send(update).unwrap();
         avatar_ids
     }
 
     fn get_avatar_ids_from_origins(state: &Arc<Mutex<StateBroadcaster>>) -> Vec<String> {
-        state.lock().unwrap().iter().filter_map(|(key, _)| if key.starts_with("user-origin.") {Some(String::from(key.split_once('.').unwrap().1))} else {None}).collect()
+        state
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(key, _)| {
+                if key.starts_with("user-origin.") {
+                    Some(String::from(key.split_once('.').unwrap().1))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     fn get_positions_from_origins(state: &Arc<Mutex<StateBroadcaster>>) -> Vec<[f64; 3]> {
@@ -188,10 +214,13 @@ mod tests {
             .lock()
             .unwrap()
             .iter()
-            .filter_map(|(key, value)|
-                if !key.starts_with("user-origin.") {None}
-                else {extract_position(value)}
-            )
+            .filter_map(|(key, value)| {
+                if !key.starts_with("user-origin.") {
+                    None
+                } else {
+                    extract_position(value)
+                }
+            })
             .collect()
     }
 
@@ -207,17 +236,12 @@ mod tests {
         let Some(Kind::ListValue(ref position_vector)) = positions_value.kind else {
             return None;
         };
-        let perhaps_vector_numbers: Option<Vec<f64>> = position_vector
-            .values
-            .iter()
-            .map(unpack_number)
-            .collect();
+        let perhaps_vector_numbers: Option<Vec<f64>> =
+            position_vector.values.iter().map(unpack_number).collect();
         let Some(vector_numbers) = perhaps_vector_numbers else {
             return None;
         };
-        vector_numbers
-            .try_into()
-            .ok()
+        vector_numbers.try_into().ok()
     }
 
     fn unpack_number(value: &Value) -> Option<f64> {

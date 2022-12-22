@@ -1,6 +1,6 @@
 use crate::broadcaster::Mergeable;
 use crate::proto::protocol::value_array::Values;
-use crate::proto::protocol::{FloatArray, IndexArray, ValueArray, StringArray};
+use crate::proto::protocol::{FloatArray, IndexArray, StringArray, ValueArray};
 use prost_types::{value::Kind, Value};
 use std::collections::HashMap;
 
@@ -23,40 +23,52 @@ impl FrameData {
         };
         match self.values.insert(key.to_string(), serialed_value) {
             None => Ok(()),
-            Some(_) => Err(ExistingDataError {  }),
+            Some(_) => Err(ExistingDataError {}),
         }
     }
 
-    pub fn insert_float_array(&mut self, key: &str, value: Vec<f32>) -> Result<(), ExistingDataError> {
+    pub fn insert_float_array(
+        &mut self,
+        key: &str,
+        value: Vec<f32>,
+    ) -> Result<(), ExistingDataError> {
         let float_array = Values::FloatValues(FloatArray { values: value });
         let value_array = ValueArray {
             values: Some(float_array),
         };
         match self.arrays.insert(key.to_string(), value_array) {
             None => Ok(()),
-            Some(_) => Err(ExistingDataError {  }),
+            Some(_) => Err(ExistingDataError {}),
         }
     }
 
-    pub fn insert_index_array(&mut self, key: &str, value: Vec<u32>) -> Result<(), ExistingDataError> {
+    pub fn insert_index_array(
+        &mut self,
+        key: &str,
+        value: Vec<u32>,
+    ) -> Result<(), ExistingDataError> {
         let index_array = Values::IndexValues(IndexArray { values: value });
         let value_array = ValueArray {
             values: Some(index_array),
         };
         match self.arrays.insert(key.to_string(), value_array) {
             None => Ok(()),
-            Some(_) => Err(ExistingDataError {  }),
+            Some(_) => Err(ExistingDataError {}),
         }
     }
 
-    pub fn insert_string_array(&mut self, key: &str, value: Vec<String>) -> Result<(), ExistingDataError> {
+    pub fn insert_string_array(
+        &mut self,
+        key: &str,
+        value: Vec<String>,
+    ) -> Result<(), ExistingDataError> {
         let string_array = Values::StringValues(StringArray { values: value });
         let value_array = ValueArray {
             values: Some(string_array),
         };
         match self.arrays.insert(key.to_string(), value_array) {
             None => Ok(()),
-            Some(_) => Err(ExistingDataError {  }),
+            Some(_) => Err(ExistingDataError {}),
         }
     }
 }

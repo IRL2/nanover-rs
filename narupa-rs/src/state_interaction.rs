@@ -1,8 +1,7 @@
 use crate::simulation::{IMDInteraction, InteractionKind};
 use crate::state_broadcaster::StateBroadcaster;
-use std::sync::{Arc, Mutex};
 use prost_types::{value::Kind, Struct};
-
+use std::sync::{Arc, Mutex};
 
 pub fn read_forces(state_clone: &Arc<Mutex<StateBroadcaster>>) -> Vec<IMDInteraction> {
     let state_interactions: Vec<IMDInteraction> = {
@@ -33,7 +32,7 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
     let scale = get_number_or_error(content, "scale")?.unwrap_or(1.0);
     let particles = get_particles(content, "particles")?;
     let position = get_position(content, "position")?;
-    
+
     Ok(IMDInteraction::new(
         position, particles, kind, max_force, scale,
     ))
@@ -69,8 +68,7 @@ fn get_particles(content: &Struct, key: &str) -> Result<Vec<usize>, ()> {
     let particles = content.fields.get(key).ok_or(())?;
     match &particles.kind {
         Some(Kind::ListValue(values)) => {
-            Ok(
-                values
+            Ok(values
                 .values
                 .iter()
                 .filter_map(|v| v.kind.as_ref())
@@ -79,8 +77,7 @@ fn get_particles(content: &Struct, key: &str) -> Result<Vec<usize>, ()> {
                     Kind::NumberValue(inner) => Some((*inner) as usize),
                     _ => None,
                 })
-                .collect()
-            )
+                .collect())
         }
         _ => Err(()),
     }

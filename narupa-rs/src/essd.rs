@@ -20,7 +20,10 @@ pub async fn serve_essd(name: String, port: usize) {
             let server_address = address.ip();
             let message = format!("{{\"name\": \"{name}\", \"address\": \"{server_address}\", \"port\": {port}, \"id\": \"{id}\", \"essd_version\": \"1.0.0\", \"services\": {{\"imd\": {port}, \"trajectory\": {port}}}}}");
             let message = message.as_bytes();
-            socket.send_to(message, format!("{broadcast_address}:54545")).await.unwrap();
+            socket
+                .send_to(message, format!("{broadcast_address}:54545"))
+                .await
+                .unwrap();
         }
     }
 }
