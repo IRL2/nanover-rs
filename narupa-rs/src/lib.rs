@@ -1,6 +1,3 @@
-#![feature(str_split_as_str)]
-#![feature(str_split_whitespace_as_str)]
-
 #[macro_use]
 extern crate assert_float_eq;
 
