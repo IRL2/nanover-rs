@@ -2,20 +2,21 @@ extern crate openmm_sys;
 
 use openmm_sys::{
     OpenMM_Context, OpenMM_Context_create, OpenMM_Context_destroy, OpenMM_Context_getPlatform,
-    OpenMM_Context_getState, OpenMM_Context_setPositions, OpenMM_CustomExternalForce,
-    OpenMM_CustomExternalForce_addParticle, OpenMM_CustomExternalForce_addPerParticleParameter,
-    OpenMM_CustomExternalForce_create, OpenMM_CustomExternalForce_destroy,
-    OpenMM_CustomExternalForce_setParticleParameters,
+    OpenMM_Context_getState, OpenMM_Context_setPositions, OpenMM_Context_setState,
+    OpenMM_CustomExternalForce, OpenMM_CustomExternalForce_addParticle,
+    OpenMM_CustomExternalForce_addPerParticleParameter, OpenMM_CustomExternalForce_create,
+    OpenMM_CustomExternalForce_destroy, OpenMM_CustomExternalForce_setParticleParameters,
     OpenMM_CustomExternalForce_updateParametersInContext, OpenMM_DoubleArray_create,
     OpenMM_DoubleArray_set, OpenMM_Force, OpenMM_Integrator, OpenMM_Integrator_destroy,
     OpenMM_Integrator_step, OpenMM_Platform_getName, OpenMM_Platform_getNumPlatforms,
-    OpenMM_Platform_loadPluginsFromDirectory, OpenMM_State_DataType_OpenMM_State_Positions,
-    OpenMM_State_destroy, OpenMM_State_getPeriodicBoxVectors, OpenMM_State_getPositions,
-    OpenMM_System, OpenMM_System_addForce, OpenMM_System_destroy, OpenMM_System_getNumParticles,
+    OpenMM_Platform_loadPluginsFromDirectory, OpenMM_State,
+    OpenMM_State_DataType_OpenMM_State_Positions, OpenMM_State_destroy,
+    OpenMM_State_getPeriodicBoxVectors, OpenMM_State_getPositions, OpenMM_System,
+    OpenMM_System_addForce, OpenMM_System_destroy, OpenMM_System_getNumParticles,
     OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create,
     OpenMM_Vec3Array_destroy, OpenMM_Vec3Array_get, OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set,
     OpenMM_Vec3_scale, OpenMM_XmlSerializer_deserializeIntegrator,
-    OpenMM_XmlSerializer_deserializeSystem, OpenMM_State, OpenMM_Context_setState,
+    OpenMM_XmlSerializer_deserializeSystem,
 };
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Reader;
@@ -27,7 +28,7 @@ use std::io::{BufReader, Cursor, Read};
 use std::str;
 
 use crate::frame::FrameData;
-use crate::parsers::{read_pdb, read_cif, MolecularSystem};
+use crate::parsers::{read_cif, read_pdb, MolecularSystem};
 
 type Coordinate = [f64; 3];
 type CoordMap = BTreeMap<i32, Coordinate>;
@@ -177,8 +178,11 @@ impl PreSimulation {
     }
 
     pub fn finish(self) -> (CString, CString, MolecularSystem) {
-        let system_content = CString::new(str::from_utf8(&self.system.into_inner().into_inner()).unwrap()).unwrap();
-        let integrator_content = CString::new(str::from_utf8(&self.integrator.into_inner().into_inner()).unwrap()).unwrap();
+        let system_content =
+            CString::new(str::from_utf8(&self.system.into_inner().into_inner()).unwrap()).unwrap();
+        let integrator_content =
+            CString::new(str::from_utf8(&self.integrator.into_inner().into_inner()).unwrap())
+                .unwrap();
         let structure = match self.structure_type {
             StructureType::None => panic!("No structure found."),
             StructureType::Pdb => {
@@ -193,14 +197,13 @@ impl PreSimulation {
         (system_content, integrator_content, structure)
     }
 
-    fn choose_writer(&mut self, target: &XMLTarget) -> &mut Writer<Cursor<Vec<u8>>> { 
+    fn choose_writer(&mut self, target: &XMLTarget) -> &mut Writer<Cursor<Vec<u8>>> {
         match target {
             XMLTarget::System => &mut self.system,
             XMLTarget::Integrator => &mut self.integrator,
         }
     }
 }
-
 
 pub struct XMLSimulation {
     system: *mut OpenMM_System,
@@ -227,18 +230,26 @@ impl XMLSimulation {
         loop {
             read_state = match (read_state, reader.read_event(&mut buf)) {
                 // Start
-                (ReadState::Unstarted, Ok(Event::Start(ref e))) if e.name() == b"OpenMMSimulation" => {
+                (ReadState::Unstarted, Ok(Event::Start(ref e)))
+                    if e.name() == b"OpenMMSimulation" =>
+                {
                     ReadState::Ignore
                 }
-                (ReadState::Unstarted, Ok(_)) => {panic!("Not reading the expected file format.")}
+                (ReadState::Unstarted, Ok(_)) => {
+                    panic!("Not reading the expected file format.")
+                }
 
                 // Structure
-                (ReadState::Ignore, Ok(Event::Start(ref e))) if e.name() == b"pdbx" || e.name() == b"pdb" => {
+                (ReadState::Ignore, Ok(Event::Start(ref e)))
+                    if e.name() == b"pdbx" || e.name() == b"pdb" =>
+                {
                     println!("Start {}", str::from_utf8(e.name()).unwrap());
                     sim_builder.set_structure_type(e.name());
                     ReadState::CopyStructure
                 }
-                (ReadState::CopyStructure, Ok(Event::End(ref e))) if e.name() == b"pdbx" || e.name() == b"pdb" => {
+                (ReadState::CopyStructure, Ok(Event::End(ref e)))
+                    if e.name() == b"pdbx" || e.name() == b"pdb" =>
+                {
                     println!("End {}", str::from_utf8(e.name()).unwrap());
                     ReadState::Ignore
                 }
@@ -248,13 +259,17 @@ impl XMLSimulation {
                 }
 
                 // Structure and Integrator XML
-                (ReadState::Ignore, Ok(Event::Start(ref e))) if e.name() == b"System" || e.name() == b"Integrator" => {
+                (ReadState::Ignore, Ok(Event::Start(ref e)))
+                    if e.name() == b"System" || e.name() == b"Integrator" =>
+                {
                     println!("Start {}", str::from_utf8(e.name()).unwrap());
                     let target = e.name().try_into().unwrap();
                     sim_builder.start_xml_element(&target, e);
                     ReadState::CopyXML(target)
                 }
-                (ReadState::Ignore, Ok(Event::Empty(ref e))) if e.name() == b"System" || e.name() == b"Integrator" => {
+                (ReadState::Ignore, Ok(Event::Empty(ref e)))
+                    if e.name() == b"System" || e.name() == b"Integrator" =>
+                {
                     println!("Empty {}", str::from_utf8(e.name()).unwrap());
                     let target = e.name().try_into().unwrap();
                     sim_builder.empty_xml_element(&target, e);
@@ -282,7 +297,10 @@ impl XMLSimulation {
                 // End
                 (_, Ok(Event::Eof)) => break,
                 (_, Err(e)) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
-                (state, Ok(event)) => panic!("Unexpected event at position {}: state {state:?} event {event:?}", reader.buffer_position()),
+                (state, Ok(event)) => panic!(
+                    "Unexpected event at position {}: state {state:?} event {event:?}",
+                    reader.buffer_position()
+                ),
             }
         }
 
@@ -338,7 +356,10 @@ impl XMLSimulation {
             OpenMM_Context_setPositions(context, init_pos);
 
             let initial_state = OpenMM_Context_getState(
-                context, OpenMM_State_DataType_OpenMM_State_Positions as i32, 0);
+                context,
+                OpenMM_State_DataType_OpenMM_State_Positions as i32,
+                0,
+            );
 
             let platform = OpenMM_Context_getPlatform(context);
             let platform_name = CStr::from_ptr(OpenMM_Platform_getName(platform))
@@ -407,7 +428,8 @@ impl XMLSimulation {
                     let max_force = imd.max_force.unwrap_or(f64::INFINITY);
                     let selection = filter_selection(&imd.particles, self.n_particles);
                     let masses = get_selection_masses_from_system(&selection, self.system);
-                    let particle_positions = get_selection_positions_from_state_positions(&selection, pos_state);
+                    let particle_positions =
+                        get_selection_positions_from_state_positions(&selection, pos_state);
                     let com = compute_com(&particle_positions, &masses);
                     let interaction_position = imd.position;
                     let diff = [
@@ -549,8 +571,10 @@ impl ToFrameData for XMLSimulation {
         frame
             .insert_index_array("particle.elements", elements)
             .unwrap();
-        
-        let atom_resindex: Vec<u32> = self.topology.atom_resindex
+
+        let atom_resindex: Vec<u32> = self
+            .topology
+            .atom_resindex
             .iter()
             .map(|e| *e as u32)
             .collect();
@@ -564,11 +588,11 @@ impl ToFrameData for XMLSimulation {
             .insert_string_array("residue.names", self.topology.resnames.clone())
             .unwrap();
         let resids: Vec<f32> = self.topology.resids.iter().map(|e| *e as f32).collect();
-        frame
-            .insert_float_array("residue.ids", resids)
-            .unwrap();
+        frame.insert_float_array("residue.ids", resids).unwrap();
 
-        let residue_chain_index: Vec<u32> = self.topology.residue_chain_index
+        let residue_chain_index: Vec<u32> = self
+            .topology
+            .residue_chain_index
             .iter()
             .map(|e| *e as u32)
             .collect();
@@ -582,17 +606,18 @@ impl ToFrameData for XMLSimulation {
             .insert_string_array("chain.names", self.topology.chain_identifiers.clone())
             .unwrap();
 
-        let (bonds, bond_orders): (Vec<[u32; 2]>, Vec<f32>) = self.topology
+        let (bonds, bond_orders): (Vec<[u32; 2]>, Vec<f32>) = self
+            .topology
             .bonds
             .iter()
             .map(|bond| ([bond.0 as u32, bond.1 as u32], bond.2))
             .unzip();
         let bonds: Vec<u32> = bonds.into_iter().flatten().collect();
         if !bonds.is_empty() {
+            frame.insert_index_array("bond.pairs", bonds).unwrap();
             frame
-                .insert_index_array("bond.pairs", bonds)
+                .insert_float_array("bond.orders", bond_orders)
                 .unwrap();
-            frame.insert_float_array("bond.orders", bond_orders).unwrap();
         }
 
         frame
@@ -636,19 +661,20 @@ impl IMD for XMLSimulation {
 }
 
 fn compute_com(positions: &[[f64; 3]], masses: &[f64]) -> [f64; 3] {
-    let (com_sum, total_mass) = positions
-        .iter()
-        .zip(masses)
-        .fold(([0.0, 0.0, 0.0], 0.0), |acc, x| {
-            (
-                [
-                    acc.0[0] + x.0[0] * x.1,
-                    acc.0[1] + x.0[1] * x.1,
-                    acc.0[2] + x.0[2] * x.1,
-                ],
-                acc.1 + x.1,
-            )
-        });
+    let (com_sum, total_mass) =
+        positions
+            .iter()
+            .zip(masses)
+            .fold(([0.0, 0.0, 0.0], 0.0), |acc, x| {
+                (
+                    [
+                        acc.0[0] + x.0[0] * x.1,
+                        acc.0[1] + x.0[1] * x.1,
+                        acc.0[2] + x.0[2] * x.1,
+                    ],
+                    acc.1 + x.1,
+                )
+            });
     [
         com_sum[0] / total_mass,
         com_sum[1] / total_mass,
@@ -745,9 +771,9 @@ fn compute_harmonic_force(diff: Coordinate, k: f64) -> Coordinate {
 }
 
 unsafe fn get_selection_masses_from_system(
-        selection: &[i32],
-        system: *mut OpenMM_System,
-    ) -> Vec<f64> {
+    selection: &[i32],
+    system: *mut OpenMM_System,
+) -> Vec<f64> {
     selection
         .iter()
         .map(|p| OpenMM_System_getParticleMass(system, *p))
@@ -755,19 +781,17 @@ unsafe fn get_selection_masses_from_system(
 }
 
 unsafe fn get_selection_positions_from_state_positions(
-        selection: &[i32],
-        pos_state: *const OpenMM_Vec3Array,
-    ) -> Vec<[f64; 3]> {
+    selection: &[i32],
+    pos_state: *const OpenMM_Vec3Array,
+) -> Vec<[f64; 3]> {
     selection
         .iter()
         .map(|p| {
-            let position =
-                OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *p), 1.0);
+            let position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *p), 1.0);
             [position.x, position.y, position.z]
         })
         .collect()
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -775,7 +799,7 @@ mod tests {
     use rstest::rstest;
     use std::collections::HashSet;
 
-    const EXP_1: f64 = 0.6065306597126334;  // exp(-0.5)
+    const EXP_1: f64 = 0.6065306597126334; // exp(-0.5)
     const UNIT: Coordinate = [0.5773502691896258; 3]; // [1, 1, 1] / |[1, 1, 1]|
 
     #[test]
@@ -796,10 +820,10 @@ mod tests {
     #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -EXP_1])]
     #[case(UNIT, [0.0, 0.0, 0.0], [-EXP_1 * UNIT[0]; 3])]
     fn test_gaussian_force(
-            #[case] position: Coordinate,
-            #[case] interaction_position: Coordinate, 
-            #[case] expected_force: Coordinate,
-        ) {
+        #[case] position: Coordinate,
+        #[case] interaction_position: Coordinate,
+        #[case] expected_force: Coordinate,
+    ) {
         let sigma = 1.0;
         let diff = [
             position[0] - interaction_position[0],
@@ -841,28 +865,30 @@ mod tests {
     #[test]
     fn test_accumulate_forces() {
         let interactions: Vec<Interaction> = vec![
-            Interaction {forces: vec![
-                InteractionForce {
-                    selection: 43,
-                    force: [1.0, 2.0, 3.0],
-                },
-                InteractionForce {
-                    selection: 12,
-                    force: [2.1, 3.2, 4.3],
-                }
-            ]},
-            Interaction {forces: vec![
-                InteractionForce {
+            Interaction {
+                forces: vec![
+                    InteractionForce {
+                        selection: 43,
+                        force: [1.0, 2.0, 3.0],
+                    },
+                    InteractionForce {
+                        selection: 12,
+                        force: [2.1, 3.2, 4.3],
+                    },
+                ],
+            },
+            Interaction {
+                forces: vec![InteractionForce {
                     selection: 2,
                     force: [3.2, 4.3, 5.4],
-                }
-            ]},
-            Interaction {forces: vec![
-                InteractionForce {
+                }],
+            },
+            Interaction {
+                forces: vec![InteractionForce {
                     selection: 43,
                     force: [4.3, 5.4, 6.5],
-                }
-            ]}
+                }],
+            },
         ];
         let accumulated = accumulate_forces(interactions);
         let mut expected = BTreeMap::new();

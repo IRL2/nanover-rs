@@ -4,7 +4,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec, BroadcasterSignal};
+use crate::broadcaster::{Broadcaster, BroadcasterSignal, Mergeable, ReceiverVec};
 use crate::proto::protocol::state::StateUpdate;
 
 pub struct StateLock {
@@ -20,12 +20,12 @@ pub struct StateBroadcaster {
 }
 
 /// Broadcast state updates to multiple consumers.
-/// 
+///
 /// The broadcaster maintains the accumulated state, accumulated updates
 /// each consumer, and the state locks.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```
 /// use std::collections::BTreeMap;
 /// use prost_types::value::Kind;
@@ -33,10 +33,10 @@ pub struct StateBroadcaster {
 /// use narupa_rs::broadcaster::Broadcaster;
 /// use narupa_rs::broadcaster::Mergeable;
 /// use narupa_rs::proto::protocol::state::StateUpdate;
-/// 
+///
 /// // Create a state broadcaster with an empty state
 /// let mut broadcaster = StateBroadcaster::new(None);
-/// 
+///
 /// // Create a consumer to receive state updates
 /// let mut receiver_A = broadcaster.get_rx();
 /// // At this point the receiver's state is the initial empty one
@@ -44,7 +44,7 @@ pub struct StateBroadcaster {
 /// assert!(receiver_A.lock().unwrap().recv() == Some(broadcaster.get_current()));
 /// // Because we poped the latest update, the receiver is now empty.
 /// assert!(receiver_A.lock().unwrap().recv() == None);
-/// 
+///
 /// // Send an update.
 /// // An update is directly a `StateUpdate` from the narupa protobuf
 /// // protocol. Building one by hand is unpleasant, though these updates
@@ -56,15 +56,15 @@ pub struct StateBroadcaster {
 /// let update = StateUpdate {changed_keys: Some(prost_types::Struct {fields: raw_update})};
 /// // We send a copy so we can reuse the update
 /// broadcaster.send(update.clone());
-/// 
+///
 /// // Now the receiver has received the update
 /// assert!(receiver_A.lock().unwrap().recv() == Some(update.clone()));
-/// 
+///
 /// // We can create other receivers.
 /// // Each receiver maintains its own accumulated update.
 /// // A new receiver starts with the full accumulated update.
 /// let receiver_B = broadcaster.get_rx();
-/// 
+///
 /// // Send another update.
 /// let mut raw_update = BTreeMap::new();
 /// let key = "foo".to_string();
@@ -73,10 +73,10 @@ pub struct StateBroadcaster {
 /// let update_2 = StateUpdate {changed_keys: Some(prost_types::Struct {fields: raw_update})};
 /// // We send a copy so we can reuse the update
 /// broadcaster.send(update_2.clone());
-/// 
+///
 /// // The first receiver only has the last update in memory.
 /// assert!(receiver_A.lock().unwrap().recv() == Some(update_2.clone()));
-/// 
+///
 /// // The second receiver has a merge of both the first and the second
 /// // update since we did not pop the first update yet.
 /// let mut merged_updates = update.clone();
@@ -187,7 +187,6 @@ fn has_lock_expired(lock: &StateLock, now: &Instant) -> bool {
 fn can_write(lock: &StateLock, now: &Instant, token: &String) -> bool {
     &lock.token == token || has_lock_expired(lock, now)
 }
-
 
 impl Broadcaster for StateBroadcaster {
     type Content = StateUpdate;

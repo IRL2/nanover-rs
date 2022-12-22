@@ -34,4 +34,3 @@ mod tests {
         assert_eq!(number, expected_number);
     }
 }
-

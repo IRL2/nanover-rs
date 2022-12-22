@@ -1,22 +1,22 @@
 extern crate clap;
 
+use narupa_rs::essd::serve_essd;
 use narupa_rs::frame::FrameData;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
-use narupa_rs::playback::PlaybackCommand;
 use narupa_rs::multiuser::RadialOrient;
-use narupa_rs::services::commands::{CommandServer, CommandService, Command};
+use narupa_rs::observer_thread::run_observer_thread;
+use narupa_rs::playback::PlaybackCommand;
+use narupa_rs::playback::PlaybackOrder;
+use narupa_rs::services::commands::{Command, CommandServer, CommandService};
 use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
-use narupa_rs::state_broadcaster::StateBroadcaster;
 use narupa_rs::simulation_thread::run_simulation_thread;
-use narupa_rs::observer_thread::run_observer_thread;
-use narupa_rs::playback::PlaybackOrder;
-use narupa_rs::essd::serve_essd;
+use narupa_rs::state_broadcaster::StateBroadcaster;
 use std::collections::HashMap;
+use std::fs::File;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
-use std::fs::File;
-use tokio::sync::mpsc::{self, Sender, Receiver};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
 
 use clap::Parser;
@@ -38,10 +38,10 @@ struct Cli {
     #[clap(short, long, value_parser, default_value_t = 30.0)]
     simulation_fps: f64,
     /// Sends a frame every STEPS dynamics steps.
-    #[clap(short='f', long, value_parser, default_value_t = 5)]
+    #[clap(short = 'f', long, value_parser, default_value_t = 5)]
     frame_interval: u32,
     /// Update the interactions every STEPS dynamics steps.
-    #[clap(short='i', long, value_parser, default_value_t = 10)]
+    #[clap(short = 'i', long, value_parser, default_value_t = 10)]
     force_interval: u32,
     /// Display simulation advancement.
     #[clap(short, long, value_parser, default_value_t = false)]
@@ -62,13 +62,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let xml_path = cli.input_xml_path;
     let address = format!("{}:{}", cli.address, cli.port);
     let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
-    let frame_interval = cli .frame_interval;
-    let force_interval = cli .force_interval;
+    let frame_interval = cli.frame_interval;
+    let force_interval = cli.force_interval;
     let verbose = cli.verbose;
     let statistics_file = cli
         .statistics
-        .map(|path| File::create(path)
-            .expect("Cannot open statistics file."));
+        .map(|path| File::create(path).expect("Cannot open statistics file."));
     let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;
 
     // We have 3 separate threads: one runs the simulation, one
@@ -79,20 +78,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (state_tx, state_rx) = std::sync::mpsc::channel();
     let (simulation_tx, simulation_rx) = std::sync::mpsc::channel();
     let empty_frame = FrameData::empty();
-    let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(empty_frame, Some(frame_tx))));
+    let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(
+        empty_frame,
+        Some(frame_tx),
+    )));
     let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(Some(state_tx))));
-    let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) = mpsc::channel(100);
+    let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) =
+        mpsc::channel(100);
 
     let mut commands: HashMap<String, Box<dyn Command>> = HashMap::new();
-    commands.insert("playback/play".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Play)));
-    commands.insert("playback/pause".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Pause)));
-    commands.insert("playback/reset".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Reset)));
-    commands.insert("playback/step".into(), Box::new(PlaybackCommand::new(playback_tx.clone(), PlaybackOrder::Step)));
-    commands.insert("multiuser/radially-orient-origins".into(), Box::new(RadialOrient::new(Arc::clone(&shared_state))));
+    commands.insert(
+        "playback/play".into(),
+        Box::new(PlaybackCommand::new(
+            playback_tx.clone(),
+            PlaybackOrder::Play,
+        )),
+    );
+    commands.insert(
+        "playback/pause".into(),
+        Box::new(PlaybackCommand::new(
+            playback_tx.clone(),
+            PlaybackOrder::Pause,
+        )),
+    );
+    commands.insert(
+        "playback/reset".into(),
+        Box::new(PlaybackCommand::new(
+            playback_tx.clone(),
+            PlaybackOrder::Reset,
+        )),
+    );
+    commands.insert(
+        "playback/step".into(),
+        Box::new(PlaybackCommand::new(
+            playback_tx.clone(),
+            PlaybackOrder::Step,
+        )),
+    );
+    commands.insert(
+        "multiuser/radially-orient-origins".into(),
+        Box::new(RadialOrient::new(Arc::clone(&shared_state))),
+    );
 
     // Observe what is happening for statistics.
     if let Some(output) = statistics_file {
-        run_observer_thread(output, statistics_interval, frame_rx, state_rx, simulation_rx);
+        run_observer_thread(
+            output,
+            statistics_interval,
+            frame_rx,
+            state_rx,
+            simulation_rx,
+        );
     };
 
     // Run the simulation thread.

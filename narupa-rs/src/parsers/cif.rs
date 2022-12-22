@@ -1,12 +1,8 @@
-use std::{
-    collections::HashMap,
-    io::BufRead,
-    str::FromStr,
-};
 use crate::parsers::chemistry::lookup_element_symbol;
 use crate::parsers::errors::*;
-use crate::parsers::molecular_system::MolecularSystem;
 use crate::parsers::line::PDBLine;
+use crate::parsers::molecular_system::MolecularSystem;
+use std::{collections::HashMap, io::BufRead, str::FromStr};
 
 #[derive(Debug)]
 enum PDBXContext {
@@ -75,8 +71,13 @@ where
                             return Err(ReadError::FormatError(FormatError::MissformatedData, lineno));
                         };
                         PDBXContext::Data(String::from(name))
-                    },
-                    _ => return Err(ReadError::FormatError(FormatError::ContentOutOfData, lineno)),
+                    }
+                    _ => {
+                        return Err(ReadError::FormatError(
+                            FormatError::ContentOutOfData,
+                            lineno,
+                        ))
+                    }
                 }
             }
             PDBXContext::Data(name) => {
@@ -97,7 +98,7 @@ where
                         } else {
                             PDBXContext::Field(name, false)
                         }
-                    },
+                    }
                     Some(first) if first.starts_with('#') => PDBXContext::Data(name),
                     _ => {
                         return Err(ReadError::FormatError(FormatError::Unexpected, lineno));
@@ -110,7 +111,7 @@ where
                     (Some(first), _) if first.starts_with('#') => {
                         loop_keys = None;
                         PDBXContext::Data(data_name)
-                    },
+                    }
                     (Some(first), Some(name)) if !first.starts_with(&name) => {
                         if first.starts_with('_') {
                             return Err(ReadError::FormatError(
@@ -132,15 +133,17 @@ where
                             "_atom_site" => {
                                 atoms.push(
                                     parse_cif_atom_line(&line, loop_keys)
-                                        .map_err(|e| ReadError::FormatError(e, lineno))?
+                                        .map_err(|e| ReadError::FormatError(e, lineno))?,
                                 );
-                            },
+                            }
                             "_struct_conn" => {
-                                if let Some(bond) = parse_cif_bond_line(&line, loop_keys).map_err(|e| ReadError::FormatError(e, lineno))? {
+                                if let Some(bond) = parse_cif_bond_line(&line, loop_keys)
+                                    .map_err(|e| ReadError::FormatError(e, lineno))?
+                                {
                                     bonds.push(bond);
                                 };
                             }
-                            _ => ()
+                            _ => (),
                         }
                         PDBXContext::Loop(data_name, name)
                     }
@@ -173,13 +176,15 @@ where
                                 parse_cif_atom_line(&line, loop_keys)
                                     .map_err(|e| ReadError::FormatError(e, lineno))?,
                             );
-                        },
+                        }
                         "_struct_conn" => {
-                            if let Some(bond) = parse_cif_bond_line(&line, loop_keys).map_err(|e| ReadError::FormatError(e, lineno))? {
+                            if let Some(bond) = parse_cif_bond_line(&line, loop_keys)
+                                .map_err(|e| ReadError::FormatError(e, lineno))?
+                            {
                                 bonds.push(bond);
                             };
                         }
-                        _ => ()
+                        _ => (),
                     }
                     PDBXContext::Loop(data_name, name)
                 }
@@ -187,8 +192,7 @@ where
             PDBXContext::Field(data_name, content_started) => {
                 if content_started && line.starts_with(';') {
                     PDBXContext::Data(data_name)
-                }
-                else if !content_started && !line.starts_with(';') {
+                } else if !content_started && !line.starts_with(';') {
                     let trimmed_line = line.trim();
                     if !trimmed_line.starts_with('\'') || !trimmed_line.ends_with('\'') {
                         return Err(ReadError::FormatError(FormatError::Unexpected, lineno));
@@ -207,30 +211,40 @@ where
 
     Ok(molecular_system
         .add_intra_residue_bonds()
-        .add_inter_residue_bonds()
-    )
+        .add_inter_residue_bonds())
 }
-
 
 fn match_bonds_to_atoms(originals: &[PreBond], atoms: &[PDBLine]) -> Vec<(usize, usize, f32)> {
     let atom_to_index: HashMap<BondedAtom, usize> = HashMap::from_iter(
-        atoms.iter().enumerate().map(|(index, atom)| (atom.into(), index))
+        atoms
+            .iter()
+            .enumerate()
+            .map(|(index, atom)| (atom.into(), index)),
     );
-    originals.iter().filter_map(|bond| {
-        let from = atom_to_index.get(&bond.0);
-        let to = atom_to_index.get(&bond.1);
-        from.zip(to).map(|pre| (*pre.0, *pre.1, 1.0))
-    }).collect()
+    originals
+        .iter()
+        .filter_map(|bond| {
+            let from = atom_to_index.get(&bond.0);
+            let to = atom_to_index.get(&bond.1);
+            from.zip(to).map(|pre| (*pre.0, *pre.1, 1.0))
+        })
+        .collect()
 }
 
-fn parse_cif_bond_line(line: &str, loop_keys: &Vec<String>) -> Result<Option<PreBond>, FormatError> {
+fn parse_cif_bond_line(
+    line: &str,
+    loop_keys: &Vec<String>,
+) -> Result<Option<PreBond>, FormatError> {
     let fields: Vec<String> = line.split_ascii_whitespace().map(String::from).collect();
     if fields.len() != loop_keys.len() {
-        return Err(FormatError::UnexpectedFieldNumber(loop_keys.len(), fields.len()));
+        return Err(FormatError::UnexpectedFieldNumber(
+            loop_keys.len(),
+            fields.len(),
+        ));
     };
     let line: HashMap<String, String> =
         HashMap::from_iter(loop_keys.iter().zip(fields).map(|(k, v)| (k.clone(), v)));
-    
+
     let from = BondedAtom {
         chain: String::from(extract_char_with_default(&line, "ptnr1_label_asym_id", ' ')),
         residue_name: extract_string(&line, "ptnr1_label_comp_id")?,
@@ -258,7 +272,10 @@ fn parse_cif_bond_line(line: &str, loop_keys: &Vec<String>) -> Result<Option<Pre
 fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
     let fields: Vec<String> = line.split_ascii_whitespace().map(String::from).collect();
     if fields.len() != loop_keys.len() {
-        return Err(FormatError::UnexpectedFieldNumber(loop_keys.len(), fields.len()));
+        return Err(FormatError::UnexpectedFieldNumber(
+            loop_keys.len(),
+            fields.len(),
+        ));
     };
     let line: HashMap<String, String> =
         HashMap::from_iter(loop_keys.iter().zip(fields).map(|(k, v)| (k.clone(), v)));
@@ -312,13 +329,12 @@ fn extract_string(line: &HashMap<String, String>, key: &str) -> Result<String, F
         .clone())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::test_ressource;
     use std::fs::File;
     use std::io::BufReader;
-    use crate::test_utils::test_ressource;
 
     /// Read a file downloaded from the PDB.
     #[test]
@@ -337,19 +353,19 @@ mod tests {
         let buffer = BufReader::new(file);
         let molecular_system = read_cif(buffer).expect("Error when parsing the file.");
         let reference = vec![
-            (0, 1, 1.0),  // 1@C1 - 1@C2
-            (0, 2, 1.0),  // 1@C1 - 1@O1
-            (1, 3, 1.0),  // 1@C2 - 1@S2
-            (3, 7, 1.0),  // 1@S2 - 2@S2
-            (4, 5, 1.0),  // 2@C1 - 2@C2
-            (4, 6, 1.0),  // 2@C1 - 2@O1
-            (5, 7, 1.0),  // 2@C2 - 2@S2
-            (8, 9, 1.0),  // 3@C1 - 3@C2
+            (0, 1, 1.0),   // 1@C1 - 1@C2
+            (0, 2, 1.0),   // 1@C1 - 1@O1
+            (1, 3, 1.0),   // 1@C2 - 1@S2
+            (3, 7, 1.0),   // 1@S2 - 2@S2
+            (4, 5, 1.0),   // 2@C1 - 2@C2
+            (4, 6, 1.0),   // 2@C1 - 2@O1
+            (5, 7, 1.0),   // 2@C2 - 2@S2
+            (8, 9, 1.0),   // 3@C1 - 3@C2
             (8, 13, 1.0),  // 3@C1 - 3@C6
             (9, 10, 1.0),  // 3@C2 - 3@C3
-            (10, 11, 1.0),  // 3@C3 - 3@C4
-            (11, 12, 1.0),  // 3@C4 - 3@C5
-            (12, 13, 1.0),  // 3@C5 - 3@C6
+            (10, 11, 1.0), // 3@C3 - 3@C4
+            (11, 12, 1.0), // 3@C4 - 3@C5
+            (12, 13, 1.0), // 3@C5 - 3@C6
         ];
         assert_eq!(molecular_system.bonds, reference);
     }

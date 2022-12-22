@@ -1,4 +1,4 @@
-use crate::broadcaster::{Broadcaster, Mergeable, ReceiverVec, BroadcasterSignal};
+use crate::broadcaster::{Broadcaster, BroadcasterSignal, Mergeable, ReceiverVec};
 use crate::frame::FrameData;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};

@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex, Weak, mpsc::Sender};
+use std::sync::{mpsc::Sender, Arc, Mutex, Weak};
 use std::time::Instant;
 
 pub type ReceiverVec<T> = Arc<Mutex<Vec<Weak<Mutex<BroadcastReceiver<T>>>>>>;
@@ -64,10 +64,10 @@ pub trait Broadcaster {
                         None => *content = Some(item.clone()),
                         Some(c) => c.merge(&item),
                     }
-                },
+                }
                 None => {
                     to_remove.push(index);
-                },
+                }
             };
         }
         for index in to_remove.into_iter().rev() {
@@ -78,7 +78,9 @@ pub trait Broadcaster {
     }
 
     fn send_broadaster_signal(&self, signal: BroadcasterSignal) {
-        if let Some(tx) = self.get_signal_tx() {tx.send(signal).unwrap()}
+        if let Some(tx) = self.get_signal_tx() {
+            tx.send(signal).unwrap()
+        }
     }
 
     /// List the receivers.
@@ -143,7 +145,11 @@ mod tests {
 
     impl DummyBroadcaster {
         pub fn new(signal_tx: Option<Sender<BroadcasterSignal>>) -> Self {
-            DummyBroadcaster { receivers: Arc::new(Mutex::new(Vec::new())), current: 0, signal_tx }
+            DummyBroadcaster {
+                receivers: Arc::new(Mutex::new(Vec::new())),
+                current: 0,
+                signal_tx,
+            }
         }
     }
 
@@ -161,9 +167,13 @@ mod tests {
         fn update_current(&mut self, other: &Self::Content) {
             self.current.merge(other);
         }
-    
+
         fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>> {
-            if let Some(tx) = &self.signal_tx {Some(tx.clone())} else {None}
+            if let Some(tx) = &self.signal_tx {
+                Some(tx.clone())
+            } else {
+                None
+            }
         }
     }
 
@@ -173,7 +183,10 @@ mod tests {
         }
     }
 
-    fn assert_num_receivers<T>(broadcaster: &T, expected: usize) where T: Broadcaster {
+    fn assert_num_receivers<T>(broadcaster: &T, expected: usize)
+    where
+        T: Broadcaster,
+    {
         assert_eq!(broadcaster.get_receivers().lock().unwrap().len(), expected);
     }
 
@@ -215,8 +228,8 @@ mod tests {
 
         broadcaster.send(0).unwrap();
         broadcaster.send(1).unwrap();
-        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
-        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
+        assert!(matches! {signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
+        assert!(matches! {signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
         assert!(signal_rx.try_recv().is_err());
     }
 
@@ -233,9 +246,8 @@ mod tests {
         drop(rx);
         broadcaster.send(0).unwrap();
 
-        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::NewReceiver(_)});
-        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
-        assert!(matches!{signal_rx.try_recv().unwrap(), BroadcasterSignal::RemoveReceiver(_)});
-
+        assert!(matches! {signal_rx.try_recv().unwrap(), BroadcasterSignal::NewReceiver(_)});
+        assert!(matches! {signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
+        assert!(matches! {signal_rx.try_recv().unwrap(), BroadcasterSignal::RemoveReceiver(_)});
     }
 }

@@ -1,11 +1,11 @@
-use std::collections::HashMap;
 use crate::proto::protocol::command::command_server;
+pub use crate::proto::protocol::command::command_server::CommandServer;
 use crate::proto::protocol::command::{
     CommandMessage, CommandReply, GetCommandsReply, GetCommandsRequest,
 };
 use prost::alloc::vec::Vec;
 use prost_types::Struct;
-pub use crate::proto::protocol::command::command_server::CommandServer;
+use std::collections::HashMap;
 
 pub trait Command: Send + Sync {
     fn run(&self, input: CommandMessage) -> CommandReply;
@@ -31,7 +31,10 @@ impl command_server::Command for CommandService {
         let command_list: Vec<CommandMessage> = self
             .commands
             .iter()
-            .map(|(name, command)| CommandMessage { name: name.clone(), arguments: command.arguments() })
+            .map(|(name, command)| CommandMessage {
+                name: name.clone(),
+                arguments: command.arguments(),
+            })
             .collect();
         let reply = GetCommandsReply {
             commands: command_list,

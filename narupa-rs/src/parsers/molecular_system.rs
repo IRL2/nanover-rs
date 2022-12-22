@@ -171,8 +171,8 @@ fn make_peptide_bond(nter: &ResidueView, cter: &ResidueView) -> Vec<(usize, usiz
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
     use rstest::fixture;
+    use rstest::rstest;
 
     /// Create a MolecularSystem with two three-peptides on separate chains.
     ///
@@ -185,16 +185,19 @@ mod tests {
         let number_of_residues = 6;
         let residues_per_chain = 3;
         let number_of_chains = 2;
-        let names_for_one_residue = make_string_vector(
-            vec!["N", "CA", "C", "O", "CB", "H", "H2", "H3", "HA", "HB1", "HB2", "HB3"]
-        );
+        let names_for_one_residue = make_string_vector(vec![
+            "N", "CA", "C", "O", "CB", "H", "H2", "H3", "HA", "HB1", "HB2", "HB3",
+        ]);
         let elements_for_one_residue = vec![7, 6, 6, 8, 6, 1, 1, 1, 1, 1, 1, 1]
-            .into_iter().map(|element| Some(element)).collect();
+            .into_iter()
+            .map(|element| Some(element))
+            .collect();
         let positions = std::iter::repeat([0.0; 3])
             .take(atoms_per_residue * number_of_residues)
             .collect();
         let resnames = std::iter::repeat(String::from("ALA"))
-            .take(number_of_residues).collect();
+            .take(number_of_residues)
+            .collect();
         let resids = (1..=number_of_residues as isize).collect();
         let chain_identifiers = make_string_vector(vec!["A", "B"]);
         MolecularSystem {
@@ -208,7 +211,6 @@ mod tests {
             chain_identifiers,
             bonds: vec![],
         }
-
     }
 
     #[rstest]
@@ -216,17 +218,17 @@ mod tests {
         let number_of_residues = 6;
         let number_of_atoms_per_residue = 12;
         let reference_for_one_residue = vec![
-            (0, 1, 1.0), // N-CA
-            (0, 5, 1.0), // N-H
-            (0, 6, 1.0), // N-H2
-            (1, 2, 1.0), // CA-C
-            (1, 4, 1.0), // CA-CB
-            (1, 8, 1.0), // CA-HA
-            (2, 3, 2.0), // C-O
-            (4, 9, 1.0), // CB-HB1
+            (0, 1, 1.0),  // N-CA
+            (0, 5, 1.0),  // N-H
+            (0, 6, 1.0),  // N-H2
+            (1, 2, 1.0),  // CA-C
+            (1, 4, 1.0),  // CA-CB
+            (1, 8, 1.0),  // CA-HA
+            (2, 3, 2.0),  // C-O
+            (4, 9, 1.0),  // CB-HB1
             (4, 10, 1.0), // CB-HB2
             (4, 11, 1.0), // CB-HB3
-            (0, 7, 1.0), // N-H3 use an extra bond in components
+            (0, 7, 1.0),  // N-H3 use an extra bond in components
         ];
         let mut reference = Vec::new();
         for residue_index in 0..number_of_residues {
@@ -270,7 +272,8 @@ mod tests {
         let number_of_chains = 2;
         let number_of_residues = 6;
         let number_of_atoms_per_residue = 12;
-        let chain_b_start_index = (number_of_residues / number_of_chains) * number_of_atoms_per_residue;
+        let chain_b_start_index =
+            (number_of_residues / number_of_chains) * number_of_atoms_per_residue;
         let reference = vec![
             (0, chain_b_start_index),
             (chain_b_start_index, two_peptides_without_bonds.atom_count()),
@@ -282,7 +285,10 @@ mod tests {
         assert_eq!(chains, reference);
     }
 
-    fn tile<T>(input: Vec<T>, number: usize) -> Vec<T> where T: Clone {
+    fn tile<T>(input: Vec<T>, number: usize) -> Vec<T>
+    where
+        T: Clone,
+    {
         input
             .iter()
             .cycle()
@@ -291,7 +297,10 @@ mod tests {
             .collect()
     }
 
-    fn repeat<T>(input: Vec<T>, number: usize) -> Vec<T> where T: Clone {
+    fn repeat<T>(input: Vec<T>, number: usize) -> Vec<T>
+    where
+        T: Clone,
+    {
         let mut output = Vec::new();
         for element in input {
             for _ in 0..number {
@@ -302,9 +311,6 @@ mod tests {
     }
 
     fn make_string_vector(input: Vec<&str>) -> Vec<String> {
-        input
-            .iter()
-            .map(|element| String::from(*element))
-            .collect()
+        input.iter().map(|element| String::from(*element)).collect()
     }
 }
