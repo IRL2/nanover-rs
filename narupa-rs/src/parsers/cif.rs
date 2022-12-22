@@ -145,11 +145,10 @@ where
                         PDBXContext::Loop(data_name, name)
                     }
                     (Some(first), _) => {
-                        let mut name_parts = first.split('.');
-                        let base_key = name_parts
-                            .next()
+                        let (base_key, sub_key) = first
+                            .split_once('.')
                             .ok_or(ReadError::FormatError(FormatError::InconsistentKey, lineno))?;
-                        let sub_key = String::from(name_parts.as_str());
+                        let sub_key = String::from(sub_key);
                         if let Some(ref mut keys) = loop_keys {
                             keys.push(sub_key);
                         } else {
