@@ -2,4 +2,5 @@
 members = [
     "narupa-rs",
     "components",
+    "pack-prost",
 ]
