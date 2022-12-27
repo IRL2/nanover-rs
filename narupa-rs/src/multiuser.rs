@@ -4,9 +4,10 @@ use crate::proto::protocol::state::StateUpdate;
 use crate::services::commands::Command;
 use crate::state_broadcaster::StateBroadcaster;
 use prost_types::value::Kind;
-use prost_types::{ListValue, Struct, Value};
+use prost_types::{Struct, Value};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use pack_prost::{Pack, UnPack};
 
 pub struct RadialOrient {
     state: Arc<Mutex<StateBroadcaster>>,
@@ -50,9 +51,7 @@ impl Command for RadialOrient {
         Some(Struct {
             fields: BTreeMap::from([(
                 String::from("radius"),
-                Value {
-                    kind: Some(Kind::NumberValue(1.0)),
-                },
+                (1.0f64).pack(),
             )]),
         })
     }
@@ -96,27 +95,13 @@ fn to_user_origin_update<'a>(
     }
 }
 
-fn number_to_value(number: &f64) -> Value {
-    Value {
-        kind: Some(Kind::NumberValue(*number)),
-    }
-}
-
-fn list_of_numbers(values: &Vec<f64>) -> Value {
-    Value {
-        kind: Some(Kind::ListValue(ListValue {
-            values: values.iter().map(number_to_value).collect(),
-        })),
-    }
-}
-
 fn orient_inner_struct_value(content: &[(&str, Vec<f64>)]) -> Value {
     Value {
         kind: Some(Kind::StructValue(Struct {
             fields: BTreeMap::from_iter(
                 content
                     .into_iter()
-                    .map(|(key, value)| (String::from(*key), list_of_numbers(value))),
+                    .map(|(key, value)| (String::from(*key), value.pack_ref())),
             ),
         })),
     }
@@ -165,7 +150,7 @@ mod tests {
         CommandMessage {
             name: String::from("command/name"),
             arguments: Some(Struct {
-                fields: BTreeMap::from([(String::from("radius"), number_to_value(&radius))]),
+                fields: BTreeMap::from([(String::from("radius"), radius.pack())]),
             }),
         }
     }

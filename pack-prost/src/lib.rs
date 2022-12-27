@@ -67,6 +67,7 @@ pub trait UnPack<T> {
 /// ```
 pub trait Pack {
     fn pack(self) -> Value;
+    fn pack_ref(&self) -> Value;
 }
 
 impl UnPack<f64> for &Value {
@@ -278,11 +279,19 @@ impl Pack for f64 {
     fn pack(self) -> Value {
         Value{ kind: Some(Kind::NumberValue(self)) }
     }
+
+    fn pack_ref(&self) -> Value {
+        Value{ kind: Some(Kind::NumberValue(self.clone())) }
+    }
 }
 
 impl Pack for f32 {
     fn pack(self) -> Value {
         Value{ kind: Some(Kind::NumberValue(self as f64)) }
+    }
+
+    fn pack_ref(&self) -> Value {
+        Value{ kind: Some(Kind::NumberValue(self.clone() as f64)) }
     }
 }
 
@@ -290,11 +299,20 @@ impl Pack for String {
     fn pack(self) -> Value {
         Value { kind: Some(Kind::StringValue(self)) }
     }
+
+    fn pack_ref(&self) -> Value {
+        Value { kind: Some(Kind::StringValue(self.clone())) }
+    }
+
 }
 
 impl Pack for &String {
     fn pack(self) -> Value {
         Value { kind: Some(Kind::StringValue(self.clone())) }
+    }
+
+    fn pack_ref(&self) -> Value {
+        Value { kind: Some(Kind::StringValue(self.to_string())) }
     }
 }
 
@@ -302,17 +320,30 @@ impl Pack for &str {
     fn pack(self) -> Value {
         Value { kind: Some(Kind::StringValue(self.to_owned())) }
     }
+
+    fn pack_ref(&self) -> Value {
+        Value { kind: Some(Kind::StringValue(self.to_string())) }
+    }
 }
 
 impl Pack for bool {
     fn pack(self) -> Value {
         Value { kind: Some(Kind::BoolValue(self)) }
     }
+
+    fn pack_ref(&self) -> Value {
+        Value { kind: Some(Kind::BoolValue(self.clone())) }
+    }
 }
 
 impl<T> Pack for Vec<T> where T: Pack {
     fn pack(self) -> Value {
         let values = self.into_iter().map(|item| item.pack()).collect();
+        Value { kind: Some(Kind::ListValue(ListValue{ values })) }
+    }
+
+    fn pack_ref(&self) -> Value {
+        let values = self.into_iter().map(|item| item.pack_ref()).collect();
         Value { kind: Some(Kind::ListValue(ListValue{ values })) }
     }
 }
