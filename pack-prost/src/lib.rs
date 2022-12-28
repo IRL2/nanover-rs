@@ -7,10 +7,10 @@ pub trait UnPack<T> {
 /// Build a Value from the object
 /// 
 /// ```
-/// use pack_prost::Pack;
+/// use pack_prost::ToProstValue;
 /// use prost_types::{Value, value::Kind};
 /// let number: f64 = 42.0;
-/// let value = number.pack();
+/// let value = number.into_prost_value();
 /// assert_eq!(value, Value{ kind: Some(Kind::NumberValue(42.0)) });
 /// ```
 /// 
@@ -18,20 +18,20 @@ pub trait UnPack<T> {
 /// cast to f64.
 /// 
 /// ```
-/// use pack_prost::Pack;
+/// use pack_prost::ToProstValue;
 /// use prost_types::{Value, value::Kind};
 /// let number: f32 = 42.0;
-/// let value = number.pack();
+/// let value = number.into_prost_value();
 /// assert_eq!(value, Value{ kind: Some(Kind::NumberValue(42.0)) });
 /// ```
 /// 
 /// Text can also be packed.
 /// 
 /// ```
-/// use pack_prost::Pack;
+/// use pack_prost::ToProstValue;
 /// use prost_types::{Value, value::Kind};
 /// let text: String = String::from("Hello!");
-/// let value = text.pack();
+/// let value = text.into_prost_value();
 /// assert_eq!(
 ///     value,
 ///     Value{ kind: Some(Kind::StringValue("Hello!".to_string())) }
@@ -39,10 +39,10 @@ pub trait UnPack<T> {
 /// ```
 /// 
 /// ```
-/// use pack_prost::Pack;
+/// use pack_prost::ToProstValue;
 /// use prost_types::{Value, value::Kind};
 /// let text: &str = "Hello!";
-/// let value = text.pack();
+/// let value = text.into_prost_value();
 /// assert_eq!(
 ///     value,
 ///     Value{ kind: Some(Kind::StringValue("Hello!".to_string())) }
@@ -52,10 +52,10 @@ pub trait UnPack<T> {
 /// Vectors can be packed as well if the type they contain can be packed.
 /// 
 /// ```
-/// use pack_prost::Pack;
+/// use pack_prost::ToProstValue;
 /// use prost_types::{Value, ListValue, value::Kind};
 /// let vector: Vec<bool> = vec![true, true, false];
-/// let value = vector.pack();
+/// let value = vector.into_prost_value();
 /// assert_eq!(
 ///     value,
 ///     Value{ kind: Some(Kind::ListValue(ListValue { values: vec![
