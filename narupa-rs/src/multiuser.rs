@@ -7,7 +7,7 @@ use prost_types::value::Kind;
 use prost_types::{Struct, Value};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use pack_prost::{Pack, UnPack};
+use pack_prost::ToProstValue;
 
 pub struct RadialOrient {
     state: Arc<Mutex<StateBroadcaster>>,
@@ -51,7 +51,7 @@ impl Command for RadialOrient {
         Some(Struct {
             fields: BTreeMap::from([(
                 String::from("radius"),
-                (1.0f64).pack(),
+                (1.0f64).into_prost_value(),
             )]),
         })
     }
@@ -101,7 +101,7 @@ fn orient_inner_struct_value(content: &[(&str, Vec<f64>)]) -> Value {
             fields: BTreeMap::from_iter(
                 content
                     .into_iter()
-                    .map(|(key, value)| (String::from(*key), value.pack_ref())),
+                    .map(|(key, value)| (String::from(*key), value.to_prost_value())),
             ),
         })),
     }
@@ -150,7 +150,7 @@ mod tests {
         CommandMessage {
             name: String::from("command/name"),
             arguments: Some(Struct {
-                fields: BTreeMap::from([(String::from("radius"), radius.pack())]),
+                fields: BTreeMap::from([(String::from("radius"), radius.into_prost_value())]),
             }),
         }
     }

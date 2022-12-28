@@ -65,9 +65,9 @@ pub trait UnPack<T> {
 ///     ] })) }
 /// );
 /// ```
-pub trait Pack {
-    fn pack(self) -> Value;
-    fn pack_ref(&self) -> Value;
+pub trait ToProstValue {
+    fn into_prost_value(self) -> Value;
+    fn to_prost_value(&self) -> Value;
 }
 
 impl UnPack<f64> for &Value {
@@ -275,75 +275,75 @@ impl<T> UnPack<Vec<T>> for Value where Value: UnPack<T> {
     }
 }
 
-impl Pack for f64 {
-    fn pack(self) -> Value {
+impl ToProstValue for f64 {
+    fn into_prost_value(self) -> Value {
         Value{ kind: Some(Kind::NumberValue(self)) }
     }
 
-    fn pack_ref(&self) -> Value {
+    fn to_prost_value(&self) -> Value {
         Value{ kind: Some(Kind::NumberValue(self.clone())) }
     }
 }
 
-impl Pack for f32 {
-    fn pack(self) -> Value {
+impl ToProstValue for f32 {
+    fn into_prost_value(self) -> Value {
         Value{ kind: Some(Kind::NumberValue(self as f64)) }
     }
 
-    fn pack_ref(&self) -> Value {
+    fn to_prost_value(&self) -> Value {
         Value{ kind: Some(Kind::NumberValue(self.clone() as f64)) }
     }
 }
 
-impl Pack for String {
-    fn pack(self) -> Value {
+impl ToProstValue for String {
+    fn into_prost_value(self) -> Value {
         Value { kind: Some(Kind::StringValue(self)) }
     }
 
-    fn pack_ref(&self) -> Value {
+    fn to_prost_value(&self) -> Value {
         Value { kind: Some(Kind::StringValue(self.clone())) }
     }
 
 }
 
-impl Pack for &String {
-    fn pack(self) -> Value {
+impl ToProstValue for &String {
+    fn into_prost_value(self) -> Value {
         Value { kind: Some(Kind::StringValue(self.clone())) }
     }
 
-    fn pack_ref(&self) -> Value {
+    fn to_prost_value(&self) -> Value {
         Value { kind: Some(Kind::StringValue(self.to_string())) }
     }
 }
 
-impl Pack for &str {
-    fn pack(self) -> Value {
+impl ToProstValue for &str {
+    fn into_prost_value(self) -> Value {
         Value { kind: Some(Kind::StringValue(self.to_owned())) }
     }
 
-    fn pack_ref(&self) -> Value {
+    fn to_prost_value(&self) -> Value {
         Value { kind: Some(Kind::StringValue(self.to_string())) }
     }
 }
 
-impl Pack for bool {
-    fn pack(self) -> Value {
+impl ToProstValue for bool {
+    fn into_prost_value(self) -> Value {
         Value { kind: Some(Kind::BoolValue(self)) }
     }
 
-    fn pack_ref(&self) -> Value {
+    fn to_prost_value(&self) -> Value {
         Value { kind: Some(Kind::BoolValue(self.clone())) }
     }
 }
 
-impl<T> Pack for Vec<T> where T: Pack {
-    fn pack(self) -> Value {
-        let values = self.into_iter().map(|item| item.pack()).collect();
+impl<T> ToProstValue for Vec<T> where T: ToProstValue {
+    fn into_prost_value(self) -> Value {
+        let values = self.into_iter().map(|item| item.into_prost_value()).collect();
         Value { kind: Some(Kind::ListValue(ListValue{ values })) }
     }
 
-    fn pack_ref(&self) -> Value {
-        let values = self.into_iter().map(|item| item.pack_ref()).collect();
+    fn to_prost_value(&self) -> Value {
+        let values = self.into_iter().map(|item| item.to_prost_value()).collect();
         Value { kind: Some(Kind::ListValue(ListValue{ values })) }
     }
 }
