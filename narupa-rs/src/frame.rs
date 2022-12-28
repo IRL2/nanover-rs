@@ -1,8 +1,9 @@
 use crate::broadcaster::Mergeable;
 use crate::proto::protocol::value_array::Values;
 use crate::proto::protocol::{FloatArray, IndexArray, StringArray, ValueArray};
-use prost_types::{value::Kind, Value};
+use prost_types::Value;
 use std::collections::HashMap;
+use pack_prost::ToProstValue;
 
 pub use crate::proto::protocol::trajectory::FrameData;
 
@@ -18,9 +19,7 @@ impl FrameData {
     }
 
     pub fn insert_number_value(&mut self, key: &str, value: f64) -> Result<(), ExistingDataError> {
-        let serialed_value = Value {
-            kind: Some(Kind::NumberValue(value)),
-        };
+        let serialed_value = value.into_prost_value();
         match self.values.insert(key.to_string(), serialed_value) {
             None => Ok(()),
             Some(_) => Err(ExistingDataError {}),
