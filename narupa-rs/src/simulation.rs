@@ -265,14 +265,12 @@ impl OpenMMSimulation {
                 (ReadState::Ignore, Ok(Event::Start(ref e)))
                     if e.name() == b"pdbx" || e.name() == b"pdb" =>
                 {
-                    println!("Start {}", str::from_utf8(e.name()).unwrap());
                     sim_builder.set_structure_type(e.name())?;
                     ReadState::CopyStructure
                 }
                 (ReadState::CopyStructure, Ok(Event::End(ref e)))
                     if e.name() == b"pdbx" || e.name() == b"pdb" =>
                 {
-                    println!("End {}", str::from_utf8(e.name()).unwrap());
                     ReadState::Ignore
                 }
                 (ReadState::CopyStructure, Ok(Event::Text(ref e))) => {
@@ -284,7 +282,6 @@ impl OpenMMSimulation {
                 (ReadState::Ignore, Ok(Event::Start(ref e)))
                     if e.name() == b"System" || e.name() == b"Integrator" =>
                 {
-                    println!("Start {}", str::from_utf8(e.name()).unwrap());
                     let target = e.name().try_into().unwrap();
                     sim_builder.start_xml_element(&target, e);
                     ReadState::CopyXML(target)
@@ -292,7 +289,6 @@ impl OpenMMSimulation {
                 (ReadState::Ignore, Ok(Event::Empty(ref e)))
                     if e.name() == b"System" || e.name() == b"Integrator" =>
                 {
-                    println!("Empty {}", str::from_utf8(e.name()).unwrap());
                     let target = e.name().try_into().unwrap();
                     sim_builder.empty_xml_element(&target, e);
                     ReadState::CopyXML(target)
@@ -304,7 +300,6 @@ impl OpenMMSimulation {
                 (ReadState::CopyXML(target), Ok(Event::End(ref e))) => {
                     sim_builder.end_xml_element(&target, e);
                     if e.name() == b"System" || e.name() == b"Integrator" {
-                        println!("End {}", str::from_utf8(e.name()).unwrap());
                         sim_builder.close_xml(&target);
                         ReadState::Ignore
                     } else {
