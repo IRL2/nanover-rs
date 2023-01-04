@@ -205,6 +205,11 @@ impl PreSimulation {
     }
 }
 
+#[derive(Debug)]
+pub enum XMLParsingError {
+
+}
+
 pub struct OpenMMSimulation {
     system: *mut OpenMM_System,
     init_pos: *mut OpenMM_Vec3Array,
@@ -219,7 +224,7 @@ pub struct OpenMMSimulation {
 }
 
 impl OpenMMSimulation {
-    pub fn new<R: Read>(input: BufReader<R>) -> Self {
+    pub fn from_xml<R: Read>(input: BufReader<R>) -> Result<Self, XMLParsingError> {
         let mut reader = Reader::from_reader(input);
         reader.trim_text(true);
         let mut buf = Vec::new();
@@ -382,7 +387,7 @@ impl OpenMMSimulation {
                 initial_state,
             }
         };
-        sim
+        Ok(sim)
     }
 
     pub fn get_platform_name(&self) -> String {

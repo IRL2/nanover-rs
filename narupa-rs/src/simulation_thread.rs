@@ -59,7 +59,7 @@ pub fn run_simulation_thread(
         // TODO: check if there isn't a throttled iterator, otherwise write one.
         let file = File::open(xml_path).unwrap();
         let file_buffer = BufReader::new(file);
-        let mut simulation = OpenMMSimulation::new(file_buffer);
+        let mut simulation = OpenMMSimulation::from_xml(file_buffer).unwrap(); // TODO: handle error
         let mut playback_state = PlaybackState::new(true);
         let interval = Duration::from_millis(simulation_interval);
         {
