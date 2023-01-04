@@ -29,7 +29,7 @@ use std::io::{BufReader, Cursor, Read};
 use std::str;
 
 use crate::frame::FrameData;
-use crate::parsers::{read_cif, read_pdb, MolecularSystem, errors::ReadError};
+use crate::parsers::{errors::ReadError, read_cif, read_pdb, MolecularSystem};
 
 type Coordinate = [f64; 3];
 type CoordMap = BTreeMap<i32, Coordinate>;
@@ -319,7 +319,12 @@ impl OpenMMSimulation {
                 // End
                 (_, Ok(Event::Eof)) => break,
                 (_, Err(e)) => return Err(XMLParsingError::XMLError(e, reader.buffer_position())),
-                (state, Ok(event)) => return Err(XMLParsingError::LogicError(format!("state {state:?} event {event:?}"), reader.buffer_position())),
+                (state, Ok(event)) => {
+                    return Err(XMLParsingError::LogicError(
+                        format!("state {state:?} event {event:?}"),
+                        reader.buffer_position(),
+                    ))
+                }
             }
         }
 
@@ -365,7 +370,10 @@ impl OpenMMSimulation {
             OpenMM_System_addForce(system, cast_as_force);
             let n_particles = n_particles as usize;
             if n_particles != n_atoms {
-                return Err(XMLParsingError::UnexpectedNumberOfParticles(n_atoms, n_particles));
+                return Err(XMLParsingError::UnexpectedNumberOfParticles(
+                    n_atoms,
+                    n_particles,
+                ));
             }
             println!("Particles in system: {n_particles}");
             let integrator =
