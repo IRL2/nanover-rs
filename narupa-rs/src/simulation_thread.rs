@@ -10,7 +10,7 @@ use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 use crate::broadcaster::Broadcaster;
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::playback::{PlaybackOrder, PlaybackState};
-use crate::simulation::{Simulation, ToFrameData, XMLSimulation, IMD};
+use crate::simulation::{Simulation, ToFrameData, OpenMMSimulation, IMD};
 use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
 
@@ -35,7 +35,7 @@ fn next_frame_stop(current_frame: u64, frame_interval: u32) -> i32 {
 
 fn apply_forces(
     state_clone: &Arc<Mutex<StateBroadcaster>>,
-    simulation: &mut XMLSimulation,
+    simulation: &mut OpenMMSimulation,
     simulation_tx: std::sync::mpsc::Sender<usize>,
 ) {
     let state_interactions = read_forces(state_clone);
@@ -59,7 +59,7 @@ pub fn run_simulation_thread(
         // TODO: check if there isn't a throttled iterator, otherwise write one.
         let file = File::open(xml_path).unwrap();
         let file_buffer = BufReader::new(file);
-        let mut simulation = XMLSimulation::new(file_buffer);
+        let mut simulation = OpenMMSimulation::new(file_buffer);
         let mut playback_state = PlaybackState::new(true);
         let interval = Duration::from_millis(simulation_interval);
         {

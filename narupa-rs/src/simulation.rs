@@ -205,7 +205,7 @@ impl PreSimulation {
     }
 }
 
-pub struct XMLSimulation {
+pub struct OpenMMSimulation {
     system: *mut OpenMM_System,
     init_pos: *mut OpenMM_Vec3Array,
     integrator: *mut OpenMM_Integrator,
@@ -218,7 +218,7 @@ pub struct XMLSimulation {
     initial_state: *mut OpenMM_State,
 }
 
-impl XMLSimulation {
+impl OpenMMSimulation {
     pub fn new<R: Read>(input: BufReader<R>) -> Self {
         let mut reader = Reader::from_reader(input);
         reader.trim_text(true);
@@ -466,7 +466,7 @@ impl XMLSimulation {
     }
 }
 
-impl Drop for XMLSimulation {
+impl Drop for OpenMMSimulation {
     fn drop(&mut self) {
         println!("Frop!");
         unsafe {
@@ -480,7 +480,7 @@ impl Drop for XMLSimulation {
     }
 }
 
-impl Simulation for XMLSimulation {
+impl Simulation for OpenMMSimulation {
     fn step(&mut self, steps: i32) {
         unsafe {
             OpenMM_Integrator_step(self.integrator, steps);
@@ -492,7 +492,7 @@ impl Simulation for XMLSimulation {
     }
 }
 
-impl ToFrameData for XMLSimulation {
+impl ToFrameData for OpenMMSimulation {
     fn to_framedata(&self) -> FrameData {
         let mut positions = Vec::<f32>::new();
         let mut box_vectors = Vec::<f32>::new();
@@ -624,7 +624,7 @@ impl ToFrameData for XMLSimulation {
     }
 }
 
-impl IMD for XMLSimulation {
+impl IMD for OpenMMSimulation {
     fn update_imd_forces(&mut self, interactions: Vec<Interaction>) -> Result<(), ()> {
         let mut forces = zeroed_out(&self.previous_particle_touched);
         let accumulated_forces = accumulate_forces(interactions);
