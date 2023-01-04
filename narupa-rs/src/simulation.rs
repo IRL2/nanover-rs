@@ -1,4 +1,5 @@
 extern crate openmm_sys;
+use thiserror::Error;
 
 use openmm_sys::{
     OpenMM_Context, OpenMM_Context_create, OpenMM_Context_destroy, OpenMM_Context_getPlatform,
@@ -28,7 +29,7 @@ use std::io::{BufReader, Cursor, Read};
 use std::str;
 
 use crate::frame::FrameData;
-use crate::parsers::{read_cif, read_pdb, MolecularSystem};
+use crate::parsers::{read_cif, read_pdb, MolecularSystem, errors::ReadError};
 
 type Coordinate = [f64; 3];
 type CoordMap = BTreeMap<i32, Coordinate>;
@@ -138,13 +139,14 @@ impl PreSimulation {
         }
     }
 
-    pub fn set_structure_type(&mut self, structure_type: &[u8]) {
+    pub fn set_structure_type(&mut self, structure_type: &[u8]) -> Result<(), XMLParsingError> {
         self.structure_type = match structure_type {
             b"pdb" => StructureType::Pdb,
             b"pdbx" => StructureType::Pdbx,
             // Cannot happen because of the condition above
-            _ => panic!("Unrecognised structure type."),
+            _ => return Err(XMLParsingError::UnknownStructureType),
         };
+        Ok(())
     }
 
     pub fn add_structure_line(&mut self, line: &[u8]) {
@@ -177,24 +179,24 @@ impl PreSimulation {
         writer.write_event(Event::Eof).unwrap();
     }
 
-    pub fn finish(self) -> (CString, CString, MolecularSystem) {
+    pub fn finish(self) -> Result<(CString, CString, MolecularSystem), XMLParsingError> {
         let system_content =
             CString::new(str::from_utf8(&self.system.into_inner().into_inner()).unwrap()).unwrap();
         let integrator_content =
             CString::new(str::from_utf8(&self.integrator.into_inner().into_inner()).unwrap())
                 .unwrap();
         let structure = match self.structure_type {
-            StructureType::None => panic!("No structure found."),
+            StructureType::None => return Err(XMLParsingError::NoStructureFound),
             StructureType::Pdb => {
                 let input = BufReader::new(Cursor::new(self.structure));
-                read_pdb(input).expect("Could not read the PDB.")
+                read_pdb(input).map_err(|error| XMLParsingError::PDBReadError(error))?
             }
             StructureType::Pdbx => {
                 let input = BufReader::new(Cursor::new(self.structure));
-                read_cif(input).expect("Could not read the PDBx.")
+                read_cif(input).map_err(|error| XMLParsingError::PDBxReadError(error))?
             }
         };
-        (system_content, integrator_content, structure)
+        Ok((system_content, integrator_content, structure))
     }
 
     fn choose_writer(&mut self, target: &XMLTarget) -> &mut Writer<Cursor<Vec<u8>>> {
@@ -205,9 +207,24 @@ impl PreSimulation {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum XMLParsingError {
-
+    #[error("Not reading the expected file format.")]
+    UnexpectedFileFormat,
+    #[error("Error at position {1}: {0:?}.")]
+    XMLError(quick_xml::Error, usize),
+    #[error("Unexpected event at position {1}: {0}.")]
+    LogicError(String, usize),
+    #[error("The number of particles in the structure ({0}) does not match the system {1}.")]
+    UnexpectedNumberOfParticles(usize, usize),
+    #[error("Unrecognised structure type.")]
+    UnknownStructureType,
+    #[error("No structure found in the file.")]
+    NoStructureFound,
+    #[error("Error while reading the embedded PDB structure: {0:?}")]
+    PDBReadError(ReadError),
+    #[error("Error while reading the embedded PDBx structure: {0:?}.")]
+    PDBxReadError(ReadError),
 }
 
 pub struct OpenMMSimulation {
@@ -241,7 +258,7 @@ impl OpenMMSimulation {
                     ReadState::Ignore
                 }
                 (ReadState::Unstarted, Ok(_)) => {
-                    panic!("Not reading the expected file format.")
+                    return Err(XMLParsingError::UnexpectedFileFormat);
                 }
 
                 // Structure
@@ -249,7 +266,7 @@ impl OpenMMSimulation {
                     if e.name() == b"pdbx" || e.name() == b"pdb" =>
                 {
                     println!("Start {}", str::from_utf8(e.name()).unwrap());
-                    sim_builder.set_structure_type(e.name());
+                    sim_builder.set_structure_type(e.name())?;
                     ReadState::CopyStructure
                 }
                 (ReadState::CopyStructure, Ok(Event::End(ref e)))
@@ -263,7 +280,7 @@ impl OpenMMSimulation {
                     ReadState::CopyStructure
                 }
 
-                // Structure and Integrator XML
+                // System and Integrator XML
                 (ReadState::Ignore, Ok(Event::Start(ref e)))
                     if e.name() == b"System" || e.name() == b"Integrator" =>
                 {
@@ -301,15 +318,12 @@ impl OpenMMSimulation {
 
                 // End
                 (_, Ok(Event::Eof)) => break,
-                (_, Err(e)) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
-                (state, Ok(event)) => panic!(
-                    "Unexpected event at position {}: state {state:?} event {event:?}",
-                    reader.buffer_position()
-                ),
+                (_, Err(e)) => return Err(XMLParsingError::XMLError(e, reader.buffer_position())),
+                (state, Ok(event)) => return Err(XMLParsingError::LogicError(format!("state {state:?} event {event:?}"), reader.buffer_position())),
             }
         }
 
-        let (system_content, integrator_content, structure) = sim_builder.finish();
+        let (system_content, integrator_content, structure) = sim_builder.finish()?;
 
         let n_atoms = structure.atom_count();
         println!("Particles in the structure: {n_atoms}");
@@ -351,7 +365,7 @@ impl OpenMMSimulation {
             OpenMM_System_addForce(system, cast_as_force);
             let n_particles = n_particles as usize;
             if n_particles != n_atoms {
-                panic!("The number of particles in the structure does not match the system.");
+                return Err(XMLParsingError::UnexpectedNumberOfParticles(n_atoms, n_particles));
             }
             println!("Particles in system: {n_particles}");
             let integrator =
