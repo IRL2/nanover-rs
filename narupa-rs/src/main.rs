@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
+use std::process::ExitCode;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
 
@@ -55,8 +56,7 @@ struct Cli {
     name: String,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
     // Read the user arguments.
     let cli = Cli::parse();
     let xml_path = cli.input_xml_path;
@@ -144,7 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         verbose,
         playback_rx,
         simulation_tx,
-    );
+    )?;
 
     // Advertise the server with ESSD
     println!("Advertise the server with ESSD");
@@ -165,4 +165,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .unwrap();
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> ExitCode {
+    let run_status = main_to_wrap().await;
+    match run_status {
+        Err(error) => {
+            println!("{error}");
+            ExitCode::FAILURE
+        }
+        Ok(_) => ExitCode::SUCCESS
+    }
 }

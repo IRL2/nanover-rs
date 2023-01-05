@@ -240,6 +240,16 @@ pub struct OpenMMSimulation {
     initial_state: *mut OpenMM_State,
 }
 
+// Warning! Here we say that it is OK to send the simulation
+// around threads. This is so we can create the simulation in
+// one thread, get the errors in that thread, and  actually run
+// the simulation in another thread (see simulation_thread.rs).
+// While it should be fine for this specific use case, implementing
+// `Send` here also means we can pass a simulation to multiple threads
+// and that would be DANGEROUS!
+// See https://stackoverflow.com/questions/50258359/can-a-struct-containing-a-raw-pointer-implement-send-and-be-ffi-safe
+unsafe impl Send for OpenMMSimulation {}
+
 impl OpenMMSimulation {
     pub fn from_xml<R: Read>(input: BufReader<R>) -> Result<Self, XMLParsingError> {
         let mut reader = Reader::from_reader(input);

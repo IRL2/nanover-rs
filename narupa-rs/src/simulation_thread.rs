@@ -1,16 +1,17 @@
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{self, BufReader};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
+use thiserror::Error;
 
 use crate::broadcaster::Broadcaster;
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::playback::{PlaybackOrder, PlaybackState};
-use crate::simulation::{Simulation, ToFrameData, OpenMMSimulation, IMD};
+use crate::simulation::{Simulation, ToFrameData, OpenMMSimulation, IMD, XMLParsingError};
 use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
 
@@ -44,6 +45,14 @@ fn apply_forces(
     simulation.update_imd_forces(imd_interactions).unwrap();
 }
 
+#[derive(Error, Debug)]
+pub enum SimulationSetupError {
+    #[error("Cannot open the input file: {0}")]
+    InputFileIOError(#[from] io::Error),
+    #[error("Cannot parse the input file: {0}")]
+    CannotParse(#[from] XMLParsingError),
+}
+
 pub fn run_simulation_thread(
     xml_path: String,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
@@ -54,12 +63,12 @@ pub fn run_simulation_thread(
     verbose: bool,
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
-) {
+) -> Result<(), SimulationSetupError> {
+    let file = File::open(xml_path)?;
+    let file_buffer = BufReader::new(file);
+    let mut simulation = OpenMMSimulation::from_xml(file_buffer)?;
+
     tokio::task::spawn_blocking(move || {
-        // TODO: check if there isn't a throttled iterator, otherwise write one.
-        let file = File::open(xml_path).unwrap();
-        let file_buffer = BufReader::new(file);
-        let mut simulation = OpenMMSimulation::from_xml(file_buffer).unwrap(); // TODO: handle error
         let mut playback_state = PlaybackState::new(true);
         let interval = Duration::from_millis(simulation_interval);
         {
@@ -124,4 +133,6 @@ pub fn run_simulation_thread(
             }
         }
     });
+
+    Ok(())
 }
