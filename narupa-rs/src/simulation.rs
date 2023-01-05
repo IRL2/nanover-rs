@@ -6,7 +6,7 @@ use openmm_sys::{
     OpenMM_Context_getState, OpenMM_Context_setPositions, OpenMM_Context_setState,
     OpenMM_CustomExternalForce, OpenMM_CustomExternalForce_addParticle,
     OpenMM_CustomExternalForce_addPerParticleParameter, OpenMM_CustomExternalForce_create,
-    OpenMM_CustomExternalForce_destroy, OpenMM_CustomExternalForce_setParticleParameters,
+    OpenMM_CustomExternalForce_setParticleParameters,
     OpenMM_CustomExternalForce_updateParametersInContext, OpenMM_DoubleArray_create,
     OpenMM_DoubleArray_set, OpenMM_Force, OpenMM_Integrator, OpenMM_Integrator_destroy,
     OpenMM_Integrator_step, OpenMM_Platform_getName, OpenMM_Platform_getNumPlatforms,
@@ -506,7 +506,6 @@ impl Drop for OpenMMSimulation {
             OpenMM_Context_destroy(self.context);
             OpenMM_Integrator_destroy(self.integrator);
             OpenMM_System_destroy(self.system);
-            OpenMM_CustomExternalForce_destroy(self.imd_force);
             OpenMM_State_destroy(self.initial_state);
         }
     }
