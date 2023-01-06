@@ -37,7 +37,7 @@ pub trait Broadcaster {
     ///
     /// Send the `BroacasterSignal::NewReceiver` signal.
     fn get_rx(&mut self) -> Arc<Mutex<BroadcastReceiver<Self::Content>>> {
-        self.send_broadaster_signal(BroadcasterSignal::NewReceiver(Instant::now()));
+        self.send_broadaster_signal(BroadcasterSignal::NewReceiver(Instant::now())).unwrap();
         let current = self.get_current();
         let receiver = Arc::new(Mutex::new(BroadcastReceiver::new(current)));
         let clone = Arc::downgrade(&receiver);
@@ -50,7 +50,7 @@ pub trait Broadcaster {
     /// Sends the `BroadcasterSignal::Send` signal every time. Sends also the
     /// `BroadcasterSignal::RemoveReceiver` for each receiver that gets removed.
     fn send(&mut self, item: Self::Content) -> Result<(), ()> {
-        self.send_broadaster_signal(BroadcasterSignal::Send(Instant::now()));
+        self.send_broadaster_signal(BroadcasterSignal::Send(Instant::now()))?;
         let mut to_remove: Vec<usize> = Vec::new();
         self.update_current(&item);
         let receivers = self.get_receivers();
@@ -71,16 +71,17 @@ pub trait Broadcaster {
             };
         }
         for index in to_remove.into_iter().rev() {
-            self.send_broadaster_signal(BroadcasterSignal::RemoveReceiver(Instant::now()));
+            self.send_broadaster_signal(BroadcasterSignal::RemoveReceiver(Instant::now()))?;
             receivers_locked.remove(index);
         }
         Ok(())
     }
 
-    fn send_broadaster_signal(&self, signal: BroadcasterSignal) {
+    fn send_broadaster_signal(&self, signal: BroadcasterSignal) -> Result<(), ()> {
         if let Some(tx) = self.get_signal_tx() {
-            tx.send(signal).unwrap()
+            tx.send(signal).map_err(|_| ())?;
         }
+        Ok(())
     }
 
     /// List the receivers.

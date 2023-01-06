@@ -15,6 +15,7 @@ use narupa_rs::state_broadcaster::StateBroadcaster;
 use std::collections::HashMap;
 use std::fs::File;
 use std::net::ToSocketAddrs;
+use std::error::Error as StdError;
 use std::sync::{Arc, Mutex};
 use std::process::ExitCode;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -157,24 +158,41 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
     let server = Trajectory::new(Arc::clone(&frame_source));
     let command_service = CommandService::new(commands);
     let state_service = StateService::new(Arc::clone(&shared_state));
-    Server::builder()
-        .add_service(TrajectoryServiceServer::new(server))
-        .add_service(CommandServer::new(command_service))
-        .add_service(StateServer::new(state_service))
-        .serve(socket_address)
-        .await
-        .unwrap();
+    tokio::task::spawn(
+        Server::builder()
+            .add_service(TrajectoryServiceServer::new(server))
+            .add_service(CommandServer::new(command_service))
+            .add_service(StateServer::new(state_service))
+            .serve(socket_address)
+    )
+    .await??;
+
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let run_status = main_to_wrap().await;
-    match run_status {
-        Err(error) => {
-            println!("{error}");
-            ExitCode::FAILURE
-        }
-        Ok(_) => ExitCode::SUCCESS
-    }
+    let Err(ref error) = run_status else {
+        return ExitCode::SUCCESS;
+    };
+
+    // The Display trait from tonic's errors is not very expressive for the
+    // end user. We need to dig out the underlying error.
+    let maybe_transport_error = error.downcast_ref::<tonic::transport::Error>();
+    let maybe_source_error = match maybe_transport_error {
+        None => None,
+        Some(transport_error) => transport_error.source(),
+    };
+    let maybe_hyper_error = match maybe_source_error {
+        None => None,
+        Some(source_error) => source_error.downcast_ref::<hyper::Error>(),
+    };
+    if let Some(hyper_error) = maybe_hyper_error {
+        println!("{hyper_error}");
+        return ExitCode::FAILURE;
+    };
+
+    println!("{error}");
+    ExitCode::FAILURE
 }

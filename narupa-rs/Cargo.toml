@@ -21,6 +21,7 @@ pack-prost = {path = "../pack-prost"}
 uuid = { version = "1.2.2", features = ["v4", "fast-rng"] }
 network-interface = "0.1.5"
 thiserror = "1.0.38"
+hyper = "0.14.23"
 
 [build-dependencies]
 tonic-build = "0.7.2"
