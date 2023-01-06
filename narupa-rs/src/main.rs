@@ -21,8 +21,13 @@ use std::sync::{Arc, Mutex};
 use std::process::ExitCode;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
+use thiserror::Error;
 
 use clap::Parser;
+
+#[derive(Error, Debug)]
+#[error("The statistic file cannot be open.")]
+struct CannotOpenStatisticFile;
 
 /// A Narupa IMD server.
 #[derive(Parser)]
@@ -68,7 +73,9 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
     let verbose = cli.verbose;
     let statistics_file = cli
         .statistics
-        .map(|path| File::create(path).expect("Cannot open statistics file."));
+        .map(|path| File::create(path))
+        .transpose()
+        .map_err(|_| CannotOpenStatisticFile)?;
     let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;
     let socket_address = SocketAddr::new(cli.address, cli.port);
 
