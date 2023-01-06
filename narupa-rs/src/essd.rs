@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::time;
 
-pub async fn serve_essd(name: String, port: usize) {
+pub async fn serve_essd(name: String, port: u16) {
     let mut interval = time::interval(Duration::from_secs_f32(0.5));
     let id = uuid::Uuid::new_v4();
 

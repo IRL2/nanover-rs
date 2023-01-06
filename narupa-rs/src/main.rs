@@ -14,7 +14,8 @@ use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::state_broadcaster::StateBroadcaster;
 use std::collections::HashMap;
 use std::fs::File;
-use std::net::ToSocketAddrs;
+use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::error::Error as StdError;
 use std::sync::{Arc, Mutex};
 use std::process::ExitCode;
@@ -32,10 +33,10 @@ struct Cli {
     input_xml_path: String,
     /// IP address to bind.
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
-    address: String,
+    address: IpAddr,
     /// Port the server will listen.
     #[clap(short, long, value_parser, default_value_t = 38801)]
-    port: usize,
+    port: u16,
     /// Throtle the simulation at this rate.
     #[clap(short, long, value_parser, default_value_t = 30.0)]
     simulation_fps: f64,
@@ -61,7 +62,6 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
     // Read the user arguments.
     let cli = Cli::parse();
     let xml_path = cli.input_xml_path;
-    let address = format!("{}:{}", cli.address, cli.port);
     let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
     let frame_interval = cli.frame_interval;
     let force_interval = cli.force_interval;
@@ -70,6 +70,7 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
         .statistics
         .map(|path| File::create(path).expect("Cannot open statistics file."));
     let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;
+    let socket_address = SocketAddr::new(cli.address, cli.port);
 
     // We have 3 separate threads: one runs the simulation, one
     // runs the GRPC server, and one observes what is happening
@@ -153,7 +154,6 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run the GRPC server on the main thread.
     println!("Let's go!");
-    let socket_address = address.to_socket_addrs().unwrap().next().unwrap();
     println!("Listening to {socket_address}");
     let server = Trajectory::new(Arc::clone(&frame_source));
     let command_service = CommandService::new(commands);
