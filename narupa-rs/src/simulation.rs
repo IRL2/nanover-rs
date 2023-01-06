@@ -1,11 +1,12 @@
 extern crate openmm_sys;
+use thiserror::Error;
 
 use openmm_sys::{
     OpenMM_Context, OpenMM_Context_create, OpenMM_Context_destroy, OpenMM_Context_getPlatform,
     OpenMM_Context_getState, OpenMM_Context_setPositions, OpenMM_Context_setState,
     OpenMM_CustomExternalForce, OpenMM_CustomExternalForce_addParticle,
     OpenMM_CustomExternalForce_addPerParticleParameter, OpenMM_CustomExternalForce_create,
-    OpenMM_CustomExternalForce_destroy, OpenMM_CustomExternalForce_setParticleParameters,
+    OpenMM_CustomExternalForce_setParticleParameters,
     OpenMM_CustomExternalForce_updateParametersInContext, OpenMM_DoubleArray_create,
     OpenMM_DoubleArray_set, OpenMM_Force, OpenMM_Integrator, OpenMM_Integrator_destroy,
     OpenMM_Integrator_step, OpenMM_Platform_getName, OpenMM_Platform_getNumPlatforms,
@@ -28,7 +29,7 @@ use std::io::{BufReader, Cursor, Read};
 use std::str;
 
 use crate::frame::FrameData;
-use crate::parsers::{read_cif, read_pdb, MolecularSystem};
+use crate::parsers::{errors::ReadError, read_cif, read_pdb, MolecularSystem};
 
 type Coordinate = [f64; 3];
 type CoordMap = BTreeMap<i32, Coordinate>;
@@ -138,13 +139,14 @@ impl PreSimulation {
         }
     }
 
-    pub fn set_structure_type(&mut self, structure_type: &[u8]) {
+    pub fn set_structure_type(&mut self, structure_type: &[u8]) -> Result<(), XMLParsingError> {
         self.structure_type = match structure_type {
             b"pdb" => StructureType::Pdb,
             b"pdbx" => StructureType::Pdbx,
             // Cannot happen because of the condition above
-            _ => panic!("Unrecognised structure type."),
+            _ => return Err(XMLParsingError::UnknownStructureType),
         };
+        Ok(())
     }
 
     pub fn add_structure_line(&mut self, line: &[u8]) {
@@ -177,24 +179,24 @@ impl PreSimulation {
         writer.write_event(Event::Eof).unwrap();
     }
 
-    pub fn finish(self) -> (CString, CString, MolecularSystem) {
+    pub fn finish(self) -> Result<(CString, CString, MolecularSystem), XMLParsingError> {
         let system_content =
             CString::new(str::from_utf8(&self.system.into_inner().into_inner()).unwrap()).unwrap();
         let integrator_content =
             CString::new(str::from_utf8(&self.integrator.into_inner().into_inner()).unwrap())
                 .unwrap();
         let structure = match self.structure_type {
-            StructureType::None => panic!("No structure found."),
+            StructureType::None => return Err(XMLParsingError::NoStructureFound),
             StructureType::Pdb => {
                 let input = BufReader::new(Cursor::new(self.structure));
-                read_pdb(input).expect("Could not read the PDB.")
+                read_pdb(input).map_err(|error| XMLParsingError::PDBReadError(error))?
             }
             StructureType::Pdbx => {
                 let input = BufReader::new(Cursor::new(self.structure));
-                read_cif(input).expect("Could not read the PDBx.")
+                read_cif(input).map_err(|error| XMLParsingError::PDBxReadError(error))?
             }
         };
-        (system_content, integrator_content, structure)
+        Ok((system_content, integrator_content, structure))
     }
 
     fn choose_writer(&mut self, target: &XMLTarget) -> &mut Writer<Cursor<Vec<u8>>> {
@@ -205,7 +207,27 @@ impl PreSimulation {
     }
 }
 
-pub struct XMLSimulation {
+#[derive(Error, Debug)]
+pub enum XMLParsingError {
+    #[error("Not reading the expected file format.")]
+    UnexpectedFileFormat,
+    #[error("Error at position {1}: {0:?}.")]
+    XMLError(quick_xml::Error, usize),
+    #[error("Unexpected event at position {1}: {0}.")]
+    LogicError(String, usize),
+    #[error("The number of particles in the structure ({0}) does not match the system {1}.")]
+    UnexpectedNumberOfParticles(usize, usize),
+    #[error("Unrecognised structure type.")]
+    UnknownStructureType,
+    #[error("No structure found in the file.")]
+    NoStructureFound,
+    #[error("Error while reading the embedded PDB structure: {0:?}")]
+    PDBReadError(ReadError),
+    #[error("Error while reading the embedded PDBx structure: {0:?}.")]
+    PDBxReadError(ReadError),
+}
+
+pub struct OpenMMSimulation {
     system: *mut OpenMM_System,
     init_pos: *mut OpenMM_Vec3Array,
     integrator: *mut OpenMM_Integrator,
@@ -218,8 +240,18 @@ pub struct XMLSimulation {
     initial_state: *mut OpenMM_State,
 }
 
-impl XMLSimulation {
-    pub fn new<R: Read>(input: BufReader<R>) -> Self {
+// Warning! Here we say that it is OK to send the simulation
+// around threads. This is so we can create the simulation in
+// one thread, get the errors in that thread, and  actually run
+// the simulation in another thread (see simulation_thread.rs).
+// While it should be fine for this specific use case, implementing
+// `Send` here also means we can pass a simulation to multiple threads
+// and that would be DANGEROUS!
+// See https://stackoverflow.com/questions/50258359/can-a-struct-containing-a-raw-pointer-implement-send-and-be-ffi-safe
+unsafe impl Send for OpenMMSimulation {}
+
+impl OpenMMSimulation {
+    pub fn from_xml<R: Read>(input: BufReader<R>) -> Result<Self, XMLParsingError> {
         let mut reader = Reader::from_reader(input);
         reader.trim_text(true);
         let mut buf = Vec::new();
@@ -236,21 +268,19 @@ impl XMLSimulation {
                     ReadState::Ignore
                 }
                 (ReadState::Unstarted, Ok(_)) => {
-                    panic!("Not reading the expected file format.")
+                    return Err(XMLParsingError::UnexpectedFileFormat);
                 }
 
                 // Structure
                 (ReadState::Ignore, Ok(Event::Start(ref e)))
                     if e.name() == b"pdbx" || e.name() == b"pdb" =>
                 {
-                    println!("Start {}", str::from_utf8(e.name()).unwrap());
-                    sim_builder.set_structure_type(e.name());
+                    sim_builder.set_structure_type(e.name())?;
                     ReadState::CopyStructure
                 }
                 (ReadState::CopyStructure, Ok(Event::End(ref e)))
                     if e.name() == b"pdbx" || e.name() == b"pdb" =>
                 {
-                    println!("End {}", str::from_utf8(e.name()).unwrap());
                     ReadState::Ignore
                 }
                 (ReadState::CopyStructure, Ok(Event::Text(ref e))) => {
@@ -258,11 +288,10 @@ impl XMLSimulation {
                     ReadState::CopyStructure
                 }
 
-                // Structure and Integrator XML
+                // System and Integrator XML
                 (ReadState::Ignore, Ok(Event::Start(ref e)))
                     if e.name() == b"System" || e.name() == b"Integrator" =>
                 {
-                    println!("Start {}", str::from_utf8(e.name()).unwrap());
                     let target = e.name().try_into().unwrap();
                     sim_builder.start_xml_element(&target, e);
                     ReadState::CopyXML(target)
@@ -270,7 +299,6 @@ impl XMLSimulation {
                 (ReadState::Ignore, Ok(Event::Empty(ref e)))
                     if e.name() == b"System" || e.name() == b"Integrator" =>
                 {
-                    println!("Empty {}", str::from_utf8(e.name()).unwrap());
                     let target = e.name().try_into().unwrap();
                     sim_builder.empty_xml_element(&target, e);
                     ReadState::CopyXML(target)
@@ -282,7 +310,6 @@ impl XMLSimulation {
                 (ReadState::CopyXML(target), Ok(Event::End(ref e))) => {
                     sim_builder.end_xml_element(&target, e);
                     if e.name() == b"System" || e.name() == b"Integrator" {
-                        println!("End {}", str::from_utf8(e.name()).unwrap());
                         sim_builder.close_xml(&target);
                         ReadState::Ignore
                     } else {
@@ -296,15 +323,17 @@ impl XMLSimulation {
 
                 // End
                 (_, Ok(Event::Eof)) => break,
-                (_, Err(e)) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
-                (state, Ok(event)) => panic!(
-                    "Unexpected event at position {}: state {state:?} event {event:?}",
-                    reader.buffer_position()
-                ),
+                (_, Err(e)) => return Err(XMLParsingError::XMLError(e, reader.buffer_position())),
+                (state, Ok(event)) => {
+                    return Err(XMLParsingError::LogicError(
+                        format!("state {state:?} event {event:?}"),
+                        reader.buffer_position(),
+                    ))
+                }
             }
         }
 
-        let (system_content, integrator_content, structure) = sim_builder.finish();
+        let (system_content, integrator_content, structure) = sim_builder.finish()?;
 
         let n_atoms = structure.atom_count();
         println!("Particles in the structure: {n_atoms}");
@@ -346,7 +375,10 @@ impl XMLSimulation {
             OpenMM_System_addForce(system, cast_as_force);
             let n_particles = n_particles as usize;
             if n_particles != n_atoms {
-                panic!("The number of particles in the structure does not match the system.");
+                return Err(XMLParsingError::UnexpectedNumberOfParticles(
+                    n_atoms,
+                    n_particles,
+                ));
             }
             println!("Particles in system: {n_particles}");
             let integrator =
@@ -382,7 +414,7 @@ impl XMLSimulation {
                 initial_state,
             }
         };
-        sim
+        Ok(sim)
     }
 
     pub fn get_platform_name(&self) -> String {
@@ -466,7 +498,7 @@ impl XMLSimulation {
     }
 }
 
-impl Drop for XMLSimulation {
+impl Drop for OpenMMSimulation {
     fn drop(&mut self) {
         println!("Frop!");
         unsafe {
@@ -474,13 +506,12 @@ impl Drop for XMLSimulation {
             OpenMM_Context_destroy(self.context);
             OpenMM_Integrator_destroy(self.integrator);
             OpenMM_System_destroy(self.system);
-            OpenMM_CustomExternalForce_destroy(self.imd_force);
             OpenMM_State_destroy(self.initial_state);
         }
     }
 }
 
-impl Simulation for XMLSimulation {
+impl Simulation for OpenMMSimulation {
     fn step(&mut self, steps: i32) {
         unsafe {
             OpenMM_Integrator_step(self.integrator, steps);
@@ -492,7 +523,7 @@ impl Simulation for XMLSimulation {
     }
 }
 
-impl ToFrameData for XMLSimulation {
+impl ToFrameData for OpenMMSimulation {
     fn to_framedata(&self) -> FrameData {
         let mut positions = Vec::<f32>::new();
         let mut box_vectors = Vec::<f32>::new();
@@ -624,7 +655,7 @@ impl ToFrameData for XMLSimulation {
     }
 }
 
-impl IMD for XMLSimulation {
+impl IMD for OpenMMSimulation {
     fn update_imd_forces(&mut self, interactions: Vec<Interaction>) -> Result<(), ()> {
         let mut forces = zeroed_out(&self.previous_particle_touched);
         let accumulated_forces = accumulate_forces(interactions);

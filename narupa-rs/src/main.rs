@@ -14,12 +14,20 @@ use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::state_broadcaster::StateBroadcaster;
 use std::collections::HashMap;
 use std::fs::File;
-use std::net::ToSocketAddrs;
+use std::net::IpAddr;
+use std::net::SocketAddr;
+use std::error::Error as StdError;
 use std::sync::{Arc, Mutex};
+use std::process::ExitCode;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
+use thiserror::Error;
 
 use clap::Parser;
+
+#[derive(Error, Debug)]
+#[error("The statistic file cannot be open.")]
+struct CannotOpenStatisticFile;
 
 /// A Narupa IMD server.
 #[derive(Parser)]
@@ -30,10 +38,10 @@ struct Cli {
     input_xml_path: String,
     /// IP address to bind.
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
-    address: String,
+    address: IpAddr,
     /// Port the server will listen.
     #[clap(short, long, value_parser, default_value_t = 38801)]
-    port: usize,
+    port: u16,
     /// Throtle the simulation at this rate.
     #[clap(short, long, value_parser, default_value_t = 30.0)]
     simulation_fps: f64,
@@ -55,20 +63,21 @@ struct Cli {
     name: String,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
     // Read the user arguments.
     let cli = Cli::parse();
     let xml_path = cli.input_xml_path;
-    let address = format!("{}:{}", cli.address, cli.port);
     let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
     let frame_interval = cli.frame_interval;
     let force_interval = cli.force_interval;
     let verbose = cli.verbose;
     let statistics_file = cli
         .statistics
-        .map(|path| File::create(path).expect("Cannot open statistics file."));
+        .map(|path| File::create(path))
+        .transpose()
+        .map_err(|_| CannotOpenStatisticFile)?;
     let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;
+    let socket_address = SocketAddr::new(cli.address, cli.port);
 
     // We have 3 separate threads: one runs the simulation, one
     // runs the GRPC server, and one observes what is happening
@@ -144,7 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         verbose,
         playback_rx,
         simulation_tx,
-    );
+    )?;
 
     // Advertise the server with ESSD
     println!("Advertise the server with ESSD");
@@ -152,17 +161,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run the GRPC server on the main thread.
     println!("Let's go!");
-    let socket_address = address.to_socket_addrs().unwrap().next().unwrap();
     println!("Listening to {socket_address}");
     let server = Trajectory::new(Arc::clone(&frame_source));
     let command_service = CommandService::new(commands);
     let state_service = StateService::new(Arc::clone(&shared_state));
-    Server::builder()
-        .add_service(TrajectoryServiceServer::new(server))
-        .add_service(CommandServer::new(command_service))
-        .add_service(StateServer::new(state_service))
-        .serve(socket_address)
-        .await
-        .unwrap();
+    tokio::task::spawn(
+        Server::builder()
+            .add_service(TrajectoryServiceServer::new(server))
+            .add_service(CommandServer::new(command_service))
+            .add_service(StateServer::new(state_service))
+            .serve(socket_address)
+    )
+    .await??;
+
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> ExitCode {
+    let run_status = main_to_wrap().await;
+    let Err(ref error) = run_status else {
+        return ExitCode::SUCCESS;
+    };
+
+    // The Display trait from tonic's errors is not very expressive for the
+    // end user. We need to dig out the underlying error.
+    let maybe_transport_error = error.downcast_ref::<tonic::transport::Error>();
+    let maybe_source_error = match maybe_transport_error {
+        None => None,
+        Some(transport_error) => transport_error.source(),
+    };
+    let maybe_hyper_error = match maybe_source_error {
+        None => None,
+        Some(source_error) => source_error.downcast_ref::<hyper::Error>(),
+    };
+    if let Some(hyper_error) = maybe_hyper_error {
+        println!("{hyper_error}");
+        return ExitCode::FAILURE;
+    };
+
+    println!("{error}");
+    ExitCode::FAILURE
 }

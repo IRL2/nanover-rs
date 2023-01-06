@@ -1,16 +1,17 @@
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{self, BufReader};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
+use thiserror::Error;
 
 use crate::broadcaster::Broadcaster;
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::playback::{PlaybackOrder, PlaybackState};
-use crate::simulation::{Simulation, ToFrameData, XMLSimulation, IMD};
+use crate::simulation::{Simulation, ToFrameData, OpenMMSimulation, IMD, XMLParsingError};
 use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
 
@@ -35,13 +36,21 @@ fn next_frame_stop(current_frame: u64, frame_interval: u32) -> i32 {
 
 fn apply_forces(
     state_clone: &Arc<Mutex<StateBroadcaster>>,
-    simulation: &mut XMLSimulation,
+    simulation: &mut OpenMMSimulation,
     simulation_tx: std::sync::mpsc::Sender<usize>,
 ) {
     let state_interactions = read_forces(state_clone);
     let imd_interactions = simulation.compute_forces(&state_interactions);
     simulation_tx.send(imd_interactions.len()).unwrap();
     simulation.update_imd_forces(imd_interactions).unwrap();
+}
+
+#[derive(Error, Debug)]
+pub enum SimulationSetupError {
+    #[error("Cannot open the input file: {0}")]
+    InputFileIOError(#[from] io::Error),
+    #[error("Cannot parse the input file: {0}")]
+    CannotParse(#[from] XMLParsingError),
 }
 
 pub fn run_simulation_thread(
@@ -54,20 +63,21 @@ pub fn run_simulation_thread(
     verbose: bool,
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
-) {
+) -> Result<(), SimulationSetupError> {
+    let file = File::open(xml_path)?;
+    let file_buffer = BufReader::new(file);
+    let mut simulation = OpenMMSimulation::from_xml(file_buffer)?;
+
     tokio::task::spawn_blocking(move || {
-        // TODO: check if there isn't a throttled iterator, otherwise write one.
-        let file = File::open(xml_path).unwrap();
-        let file_buffer = BufReader::new(file);
-        let mut simulation = XMLSimulation::new(file_buffer);
         let mut playback_state = PlaybackState::new(true);
         let interval = Duration::from_millis(simulation_interval);
         {
-            sim_clone
+            if let Err(_) = sim_clone
                 .lock()
                 .unwrap()
-                .send(simulation.to_topology_framedata())
-                .unwrap();
+                .send(simulation.to_topology_framedata()) {
+                    return;
+                }
         }
         println!("Platform: {}", simulation.get_platform_name());
         println!("Simulation interval: {simulation_interval}");
@@ -104,7 +114,7 @@ pub fn run_simulation_thread(
                 if do_frames {
                     let frame = simulation.to_framedata();
                     let mut source = sim_clone.lock().unwrap();
-                    source.send(frame).unwrap();
+                    if let Err(_) = source.send(frame) {return};
                 }
                 if do_forces {
                     apply_forces(&state_clone, &mut simulation, simulation_tx.clone());
@@ -124,4 +134,6 @@ pub fn run_simulation_thread(
             }
         }
     });
+
+    Ok(())
 }
