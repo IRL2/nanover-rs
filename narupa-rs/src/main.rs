@@ -22,6 +22,9 @@ use std::process::ExitCode;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
 use thiserror::Error;
+use log::{error, info};
+use env_logger::Builder;
+use log::LevelFilter;
 
 use clap::Parser;
 
@@ -156,12 +159,11 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     // Advertise the server with ESSD
-    println!("Advertise the server with ESSD");
+    info!("Advertise the server with ESSD");
     tokio::task::spawn(serve_essd(cli.name, cli.port));
 
     // Run the GRPC server on the main thread.
-    println!("Let's go!");
-    println!("Listening to {socket_address}");
+    info!("Listening to {socket_address}");
     let server = Trajectory::new(Arc::clone(&frame_source));
     let command_service = CommandService::new(commands);
     let state_service = StateService::new(Arc::clone(&shared_state));
@@ -179,6 +181,16 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    if std::env::var("RUST_LOG").is_ok() {
+        env_logger::init();
+    } else {
+        let mut builder = Builder::new();
+        builder
+            .filter_module("narupa_rs", LevelFilter::Info)
+            .format_target(false)
+            .init();
+    }
+
     let run_status = main_to_wrap().await;
     let Err(ref error) = run_status else {
         return ExitCode::SUCCESS;
@@ -196,10 +208,10 @@ async fn main() -> ExitCode {
         Some(source_error) => source_error.downcast_ref::<hyper::Error>(),
     };
     if let Some(hyper_error) = maybe_hyper_error {
-        println!("{hyper_error}");
+        error!("{hyper_error}");
         return ExitCode::FAILURE;
     };
 
-    println!("{error}");
+    error!("{error}");
     ExitCode::FAILURE
 }
