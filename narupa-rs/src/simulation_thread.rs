@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 use thiserror::Error;
+use log::{info, debug};
 
 use crate::broadcaster::Broadcaster;
 use crate::frame_broadcaster::FrameBroadcaster;
@@ -79,9 +80,9 @@ pub fn run_simulation_thread(
                     return;
                 }
         }
-        println!("Platform: {}", simulation.get_platform_name());
-        println!("Simulation interval: {simulation_interval}");
-        println!("Start simulating");
+        info!("Platform: {}", simulation.get_platform_name());
+        info!("Simulation interval: {simulation_interval}");
+        info!("Start simulating");
         let mut current_simulation_frame: u64 = 0;
         loop {
             let now = time::Instant::now();
@@ -126,7 +127,7 @@ pub fn run_simulation_thread(
                     None => Duration::from_millis(0),
                 };
                 if verbose {
-                    println!(
+                    debug!(
                         "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}"
                     );
                 };

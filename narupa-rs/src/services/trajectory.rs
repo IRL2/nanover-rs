@@ -5,6 +5,7 @@ use crate::proto::protocol::trajectory::{
     trajectory_service_server::TrajectoryService, GetFrameRequest, GetFrameResponse,
 };
 use futures::Stream;
+use log::debug;
 use std::sync::{Arc, Mutex};
 use std::{pin::Pin, time::Duration};
 use tokio::sync::mpsc;
@@ -49,7 +50,7 @@ impl TrajectoryService for Trajectory {
         &self,
         request: tonic::Request<GetFrameRequest>,
     ) -> Result<tonic::Response<Self::SubscribeLatestFramesStream>, tonic::Status> {
-        println!("Hello there!");
+        debug!("New client subscribed to the frames!");
         let interval = (request.into_inner().frame_interval * 1000.0) as u64;
         let receiver = self.frame_source.lock().unwrap().get_rx();
         let responses = FrameResponseIterator {
@@ -72,7 +73,7 @@ impl TrajectoryService for Trajectory {
                     }
                 }
             }
-            println!("\tclient disconnected");
+            debug!("Client disconnected from the frames.");
         });
         let output_stream = ReceiverStream::new(rx);
         Ok(Response::new(

@@ -1,4 +1,5 @@
 extern crate openmm_sys;
+use log::{debug, warn};
 use thiserror::Error;
 
 use openmm_sys::{
@@ -336,24 +337,24 @@ impl OpenMMSimulation {
         let (system_content, integrator_content, structure) = sim_builder.finish()?;
 
         let n_atoms = structure.atom_count();
-        println!("Particles in the structure: {n_atoms}");
+        debug!("Particles in the structure: {n_atoms}");
 
         let sim = unsafe {
-            println!("Entering the unsafe section");
+            debug!("Entering the unsafe section");
 
-            println!("Loading plugins");
+            debug!("Loading plugins");
             match env::var("OPENMM_PLUGIN_DIR") {
                 Ok(dirname) => {
                     let lib_directory = CString::new(dirname).unwrap();
                     OpenMM_Platform_loadPluginsFromDirectory(lib_directory.into_raw());
                 }
                 Err(_) => {
-                    println!("No plugin to load, set OPENMM_PLUGIN_DIR");
+                    warn!("No plugin to load, set OPENMM_PLUGIN_DIR");
                 }
             }
 
             let n_platform = OpenMM_Platform_getNumPlatforms();
-            println!("Number of platforms registered: {n_platform}");
+            debug!("Number of platforms registered: {n_platform}");
 
             let init_pos = OpenMM_Vec3Array_create(n_atoms.try_into().unwrap());
             for (i, atom) in structure.positions.iter().enumerate() {
@@ -365,10 +366,10 @@ impl OpenMMSimulation {
                 };
                 OpenMM_Vec3Array_set(init_pos, i.try_into().unwrap(), position);
             }
-            println!("Coordinate array built");
+            debug!("Coordinate array built");
 
             let system = OpenMM_XmlSerializer_deserializeSystem(system_content.as_ptr());
-            println!("System read");
+            debug!("System read");
             let n_particles = OpenMM_System_getNumParticles(system);
             let imd_force = Self::add_imd_force(n_particles);
             let cast_as_force = imd_force as *mut OpenMM_Force;
@@ -380,10 +381,10 @@ impl OpenMMSimulation {
                     n_particles,
                 ));
             }
-            println!("Particles in system: {n_particles}");
+            debug!("Particles in system: {n_particles}");
             let integrator =
                 OpenMM_XmlSerializer_deserializeIntegrator(integrator_content.as_ptr());
-            println!("Integrator read");
+            debug!("Integrator read");
             let context = OpenMM_Context_create(system, integrator);
             OpenMM_Context_setPositions(context, init_pos);
 
@@ -500,7 +501,7 @@ impl OpenMMSimulation {
 
 impl Drop for OpenMMSimulation {
     fn drop(&mut self) {
-        println!("Frop!");
+        debug!("Dropping the simulation");
         unsafe {
             OpenMM_Vec3Array_destroy(self.init_pos);
             OpenMM_Context_destroy(self.context);
