@@ -18,7 +18,7 @@ pub async fn serve_essd(name: String, port: u16) {
             let Some(broadcast_address) = address.broadcast() else {continue};
 
             let server_address = address.ip();
-            let message = format!("{{\"name\": \"{name}\", \"address\": \"{server_address}\", \"port\": {port}, \"id\": \"{id}\", \"essd_version\": \"1.0.0\", \"services\": {{\"imd\": {port}, \"trajectory\": {port}}}}}");
+            let message = format!("{{\"name\": \"{name}\", \"address\": \"{server_address}\", \"port\": {port}, \"id\": \"{id}\", \"essd_version\": \"1.0.0\", \"services\": {{\"imd\": {port}, \"trajectory\": {port}, \"multiplayer\": {port}}}}}");
             let message = message.as_bytes();
             socket
                 .send_to(message, format!("{broadcast_address}:54545"))
