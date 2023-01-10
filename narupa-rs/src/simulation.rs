@@ -1,5 +1,5 @@
 extern crate openmm_sys;
-use log::{debug, warn};
+use log::{debug, warn, trace};
 use thiserror::Error;
 
 use openmm_sys::{
@@ -506,6 +506,7 @@ impl OpenMMSimulation {
         unsafe {
             OpenMM_Context_setState(self.context, self.initial_state);
         }
+        trace!("Simulation state reset.")
     }
 }
 
