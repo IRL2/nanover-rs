@@ -610,9 +610,11 @@ impl ToFrameData for OpenMMSimulation {
             .iter()
             .map(|e| e.unwrap_or(0) as u32)
             .collect();
-        frame
-            .insert_index_array("particle.elements", elements)
-            .unwrap();
+        if elements.iter().any(|element| *element != 0) {
+            frame
+                .insert_index_array("particle.elements", elements)
+                .unwrap();
+        }
 
         let atom_resindex: Vec<u32> = self
             .topology
