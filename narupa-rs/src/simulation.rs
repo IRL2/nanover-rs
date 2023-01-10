@@ -12,7 +12,10 @@ use openmm_sys::{
     OpenMM_DoubleArray_set, OpenMM_Force, OpenMM_Integrator, OpenMM_Integrator_destroy,
     OpenMM_Integrator_step, OpenMM_Platform_getName, OpenMM_Platform_getNumPlatforms,
     OpenMM_Platform_loadPluginsFromDirectory, OpenMM_State,
-    OpenMM_State_DataType_OpenMM_State_Positions, OpenMM_State_destroy,
+    OpenMM_State_DataType_OpenMM_State_Positions, OpenMM_State_DataType_OpenMM_State_Velocities,
+    OpenMM_State_DataType_OpenMM_State_Forces, OpenMM_State_DataType_OpenMM_State_Energy,
+    OpenMM_State_DataType_OpenMM_State_Parameters, OpenMM_State_DataType_OpenMM_State_ParameterDerivatives,
+    OpenMM_State_destroy,
     OpenMM_State_getPeriodicBoxVectors, OpenMM_State_getPositions, OpenMM_System,
     OpenMM_System_addForce, OpenMM_System_destroy, OpenMM_System_getNumParticles,
     OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create,
@@ -390,7 +393,14 @@ impl OpenMMSimulation {
 
             let initial_state = OpenMM_Context_getState(
                 context,
-                OpenMM_State_DataType_OpenMM_State_Positions as i32,
+                (
+                    OpenMM_State_DataType_OpenMM_State_Positions
+                    & OpenMM_State_DataType_OpenMM_State_Velocities
+                    & OpenMM_State_DataType_OpenMM_State_Forces
+                    & OpenMM_State_DataType_OpenMM_State_Energy
+                    & OpenMM_State_DataType_OpenMM_State_Parameters
+                    & OpenMM_State_DataType_OpenMM_State_ParameterDerivatives
+                ) as i32,
                 0,
             );
 
