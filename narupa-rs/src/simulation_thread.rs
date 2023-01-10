@@ -64,6 +64,7 @@ pub fn run_simulation_thread(
     verbose: bool,
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
+    auto_reset: bool,
 ) -> Result<(), SimulationSetupError> {
     let file = File::open(xml_path)?;
     let file_buffer = BufReader::new(file);
@@ -126,11 +127,15 @@ pub fn run_simulation_thread(
                     Some(d) => d,
                     None => Duration::from_millis(0),
                 };
+                let energy = simulation.get_total_energy();
                 if verbose {
                     debug!(
-                        "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}"
+                        "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}. Total energy {energy:.2} kJ/mol."
                     );
                 };
+                if auto_reset && !energy.is_finite() {
+                    simulation.reset();
+                }
                 thread::sleep(time_left);
             }
         }

@@ -156,6 +156,7 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
         verbose,
         playback_rx,
         simulation_tx,
+        true,
     )?;
 
     // Advertise the server with ESSD

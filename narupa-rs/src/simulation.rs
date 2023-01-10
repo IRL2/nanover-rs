@@ -508,6 +508,24 @@ impl OpenMMSimulation {
         }
         trace!("Simulation state reset.")
     }
+
+    pub fn get_total_energy(&self) -> f64 {
+        let kinetic_energy;
+        let potential_energy;
+
+        unsafe {
+            let state = OpenMM_Context_getState(
+                self.context,
+                OpenMM_State_DataType_OpenMM_State_Energy as i32,
+                0,
+            );
+            kinetic_energy = OpenMM_State_getKineticEnergy(state);
+            potential_energy = OpenMM_State_getPotentialEnergy(state);
+            OpenMM_State_destroy(state);
+        }
+
+        kinetic_energy + potential_energy
+    }
 }
 
 impl Drop for OpenMMSimulation {
