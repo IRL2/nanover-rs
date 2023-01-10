@@ -395,11 +395,11 @@ impl OpenMMSimulation {
                 context,
                 (
                     OpenMM_State_DataType_OpenMM_State_Positions
-                    & OpenMM_State_DataType_OpenMM_State_Velocities
-                    & OpenMM_State_DataType_OpenMM_State_Forces
-                    & OpenMM_State_DataType_OpenMM_State_Energy
-                    & OpenMM_State_DataType_OpenMM_State_Parameters
-                    & OpenMM_State_DataType_OpenMM_State_ParameterDerivatives
+                    | OpenMM_State_DataType_OpenMM_State_Velocities
+                    | OpenMM_State_DataType_OpenMM_State_Forces
+                    | OpenMM_State_DataType_OpenMM_State_Energy
+                    | OpenMM_State_DataType_OpenMM_State_Parameters
+                    | OpenMM_State_DataType_OpenMM_State_ParameterDerivatives
                 ) as i32,
                 0,
             );
