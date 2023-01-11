@@ -32,7 +32,7 @@ pub struct StateBroadcaster {
 /// use narupa_rs::state_broadcaster::StateBroadcaster;
 /// use narupa_rs::broadcaster::Broadcaster;
 /// use narupa_rs::broadcaster::Mergeable;
-/// use narupa_rs::proto::protocol::state::StateUpdate;
+/// use narupa_proto::state::StateUpdate;
 ///
 /// // Create a state broadcaster with an empty state
 /// let mut broadcaster = StateBroadcaster::new(None);
