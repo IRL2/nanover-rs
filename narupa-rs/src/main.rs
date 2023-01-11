@@ -1,7 +1,7 @@
 extern crate clap;
 
 use narupa_rs::essd::serve_essd;
-use narupa_rs::frame::FrameData;
+use narupa_proto::frame::FrameData;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
 use narupa_rs::multiuser::RadialOrient;
 use narupa_rs::observer_thread::run_observer_thread;

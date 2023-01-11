@@ -1,6 +1,6 @@
 use crate::broadcaster::{BroadcastReceiver, Broadcaster};
-use crate::proto::protocol::state::state_server::State;
-use crate::proto::protocol::state::{
+use narupa_proto::state::state_server::State;
+use narupa_proto::state::{
     StateUpdate, SubscribeStateUpdatesRequest, UpdateLocksRequest, UpdateLocksResponse,
     UpdateStateRequest, UpdateStateResponse,
 };
@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Response, Status};
 
-pub use crate::proto::protocol::state::state_server::StateServer;
+pub use narupa_proto::state::state_server::StateServer;
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<StateUpdate, tonic::Status>> + Send + Sync>>;
 

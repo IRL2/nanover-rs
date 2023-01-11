@@ -32,7 +32,7 @@ use std::ffi::{CStr, CString};
 use std::io::{BufReader, Cursor, Read};
 use std::str;
 
-use crate::frame::FrameData;
+use narupa_proto::frame::FrameData;
 use crate::parsers::{errors::ReadError, read_cif, read_pdb, MolecularSystem};
 
 type Coordinate = [f64; 3];
@@ -557,9 +557,9 @@ impl ToFrameData for OpenMMSimulation {
     fn to_framedata(&self) -> FrameData {
         let mut positions = Vec::<f32>::new();
         let mut box_vectors = Vec::<f32>::new();
-        let mut potential_energy;
-        let mut kinetic_energy;
-        let mut total_energy;
+        let potential_energy;
+        let kinetic_energy;
+        let total_energy;
         unsafe {
             let state = OpenMM_Context_getState(
                 self.context,

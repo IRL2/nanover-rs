@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::broadcaster::{Broadcaster, BroadcasterSignal, Mergeable, ReceiverVec};
-use crate::proto::protocol::state::StateUpdate;
+use narupa_proto::state::StateUpdate;
 
 pub struct StateLock {
     token: String,
@@ -32,7 +32,7 @@ pub struct StateBroadcaster {
 /// use narupa_rs::state_broadcaster::StateBroadcaster;
 /// use narupa_rs::broadcaster::Broadcaster;
 /// use narupa_rs::broadcaster::Mergeable;
-/// use narupa_rs::proto::protocol::state::StateUpdate;
+/// use narupa_proto::state::StateUpdate;
 ///
 /// // Create a state broadcaster with an empty state
 /// let mut broadcaster = StateBroadcaster::new(None);
