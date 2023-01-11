@@ -116,12 +116,6 @@ impl StateBroadcaster {
         let (requested_removals, requested_adds): (Vec<(String, Option<Duration>)>, Vec<(String, Option<Duration>)>) = requested_updates
             .into_iter()
             .partition(|(_, value)| value.is_none());
-            //.filter_map(|kv| match kv.1 {
-            //    None => Some(kv.0),
-            //    Some(_) => None,
-            //})
-            //.collect();
-        //let requested_removals = requested_removals.into_iter().map(|(key, value)| key);
 
         for (key, _) in requested_removals {
             match self.locks.get(&key) {
