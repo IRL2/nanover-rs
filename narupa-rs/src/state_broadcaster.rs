@@ -3,10 +3,12 @@ use std::collections::{btree_map, BTreeMap};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use log::trace;
 
 use crate::broadcaster::{Broadcaster, BroadcasterSignal, Mergeable, ReceiverVec};
 use narupa_proto::state::StateUpdate;
 
+#[derive(Debug)]
 pub struct StateLock {
     token: String,
     timeout: Option<Instant>,
@@ -109,25 +111,24 @@ impl StateBroadcaster {
     ) -> Result<(), ()> {
         let now = Instant::now();
 
-        let requested_removals: Vec<&String> = requested_updates
-            .iter()
-            .filter_map(|kv| match kv.1 {
-                None => Some(kv.0),
-                Some(_) => None,
-            })
-            .collect();
+        trace!("Atomic lock update {requested_updates:?}");
 
-        for key in requested_removals {
-            match self.locks.get(key) {
+        let (requested_removals, requested_adds): (Vec<(String, Option<Duration>)>, Vec<(String, Option<Duration>)>) = requested_updates
+            .into_iter()
+            .partition(|(_, value)| value.is_none());
+
+        for (key, _) in requested_removals {
+            match self.locks.get(&key) {
                 Some(lock) if can_write(lock, &now, &token) => {
-                    self.locks.remove(key);
+                    trace!("Remove lock {key}");
+                    self.locks.remove(&key);
                 }
                 _ => {}
             }
         }
 
         let mut updates: BTreeMap<String, StateLock> = BTreeMap::new();
-        for (key, duration) in requested_updates {
+        for (key, duration) in requested_adds {
             match self.locks.get(&key) {
                 Some(lock) if !can_write(lock, &now, &token) => {
                     // There is a lock and we do not own it.
@@ -135,6 +136,7 @@ impl StateBroadcaster {
                     return Err(());
                 }
                 _ => {
+                    trace!("Adding lock {key}");
                     let timeout = duration.map(|d| now + d);
                     updates.insert(
                         key,
@@ -142,11 +144,12 @@ impl StateBroadcaster {
                             token: token.clone(),
                             timeout,
                         },
-                    )
+                    );
                 }
             };
         }
         self.locks.append(&mut updates);
+        trace!("Current locks {:?}", self.locks);
 
         Ok(())
     }
