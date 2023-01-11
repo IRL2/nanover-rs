@@ -557,9 +557,9 @@ impl ToFrameData for OpenMMSimulation {
     fn to_framedata(&self) -> FrameData {
         let mut positions = Vec::<f32>::new();
         let mut box_vectors = Vec::<f32>::new();
-        let mut potential_energy;
-        let mut kinetic_energy;
-        let mut total_energy;
+        let potential_energy;
+        let kinetic_energy;
+        let total_energy;
         unsafe {
             let state = OpenMM_Context_getState(
                 self.context,
