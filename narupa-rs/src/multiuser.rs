@@ -1,6 +1,6 @@
 use crate::broadcaster::Broadcaster;
-use crate::proto::protocol::command::{CommandMessage, CommandReply};
-use crate::proto::protocol::state::StateUpdate;
+use narupa_proto::command::{CommandMessage, CommandReply};
+use narupa_proto::protocol::state::StateUpdate;
 use crate::services::commands::Command;
 use crate::state_broadcaster::StateBroadcaster;
 use prost_types::value::Kind;

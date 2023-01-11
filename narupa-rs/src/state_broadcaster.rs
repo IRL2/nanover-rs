@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::broadcaster::{Broadcaster, BroadcasterSignal, Mergeable, ReceiverVec};
-use crate::proto::protocol::state::StateUpdate;
+use narupa_proto::state::StateUpdate;
 
 pub struct StateLock {
     token: String,

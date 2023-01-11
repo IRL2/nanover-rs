@@ -1,5 +1,5 @@
 use crate::broadcaster::{Broadcaster, BroadcasterSignal, Mergeable, ReceiverVec};
-use crate::frame::FrameData;
+use narupa_proto::frame::FrameData;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 

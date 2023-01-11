@@ -3,4 +3,6 @@ members = [
     "narupa-rs",
     "components",
     "pack-prost",
+    "narupa-proto",
 ]
+resolver = "2"

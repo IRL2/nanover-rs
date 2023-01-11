@@ -1,6 +1,6 @@
-use crate::proto::protocol::command::command_server;
-pub use crate::proto::protocol::command::command_server::CommandServer;
-use crate::proto::protocol::command::{
+use narupa_proto::command::command_server;
+pub use narupa_proto::command::command_server::CommandServer;
+use narupa_proto::command::{
     CommandMessage, CommandReply, GetCommandsReply, GetCommandsRequest,
 };
 use log::debug;

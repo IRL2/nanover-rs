@@ -1,7 +1,7 @@
 use crate::broadcaster::{BroadcastReceiver, Broadcaster};
-use crate::frame::FrameData;
+use narupa_proto::frame::FrameData;
 use crate::frame_broadcaster::FrameBroadcaster;
-use crate::proto::protocol::trajectory::{
+use narupa_proto::trajectory::{
     trajectory_service_server::TrajectoryService, GetFrameRequest, GetFrameResponse,
 };
 use futures::Stream;
@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Response, Status};
 
-pub use crate::proto::protocol::trajectory::trajectory_service_server::TrajectoryServiceServer;
+pub use narupa_proto::trajectory::trajectory_service_server::TrajectoryServiceServer;
 
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<GetFrameResponse, Status>> + Send + Sync>>;
 

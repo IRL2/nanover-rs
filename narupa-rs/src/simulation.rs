@@ -32,7 +32,7 @@ use std::ffi::{CStr, CString};
 use std::io::{BufReader, Cursor, Read};
 use std::str;
 
-use crate::frame::FrameData;
+use narupa_proto::frame::FrameData;
 use crate::parsers::{errors::ReadError, read_cif, read_pdb, MolecularSystem};
 
 type Coordinate = [f64; 3];

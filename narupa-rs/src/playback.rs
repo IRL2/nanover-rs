@@ -1,4 +1,4 @@
-use crate::proto::protocol::command::{CommandMessage, CommandReply};
+use narupa_proto::command::{CommandMessage, CommandReply};
 use crate::services::commands::Command;
 use prost_types::Struct;
 use tokio::sync::mpsc::Sender;
