@@ -16,6 +16,7 @@ use std::{
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Response, Status};
+use log::trace;
 
 pub use crate::proto::protocol::state::state_server::StateServer;
 
@@ -111,6 +112,8 @@ impl State for StateService {
         let inner_request = request.into_inner();
         let success_response = Ok(Response::new(UpdateLocksResponse { success: true }));
 
+        trace!("update_locks {inner_request:?}");
+
         // This is an undocumented behavior in the python version:
         // the lock_keys attribute of the request can be None, but
         // this is not handled by the python version of te server.
@@ -128,7 +131,7 @@ impl State for StateService {
             match value.kind {
                 // Protobuf values can be empty without being null.
                 // Here, we conflate a lack of value and a null value.
-                None => requested_updates.insert(key.clone(), None),
+                None | Some(Kind::NullValue(_)) => requested_updates.insert(key.clone(), None),
 
                 Some(Kind::NumberValue(seconds)) => {
                     requested_updates.insert(key.clone(), Some(Duration::from_secs_f64(seconds)))
