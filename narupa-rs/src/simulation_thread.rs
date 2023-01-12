@@ -1,13 +1,13 @@
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::{self, BufReader, BufRead, Read};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 use thiserror::Error;
-use log::{info, debug};
+use log::info;
 
 use crate::broadcaster::Broadcaster;
 use crate::frame_broadcaster::FrameBroadcaster;
@@ -15,6 +15,11 @@ use crate::playback::{PlaybackOrder, PlaybackState};
 use crate::simulation::{Simulation, ToFrameData, OpenMMSimulation, IMD, XMLParsingError};
 use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
+
+pub enum XMLBuffer<'a> {
+    FileBuffer(BufReader<File>),
+    BytesBuffer(BufReader<&'a [u8]>),
+}
 
 fn next_stop(current_frame: u64, frame_interval: u32, force_interval: u32) -> (i32, bool, bool) {
     let frame_interval: u64 = frame_interval as u64;
@@ -55,7 +60,7 @@ pub enum SimulationSetupError {
 }
 
 pub fn run_simulation_thread(
-    xml_path: String,
+    xml_buffer: XMLBuffer,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
     state_clone: Arc<Mutex<StateBroadcaster>>,
     simulation_interval: u64,
@@ -65,10 +70,11 @@ pub fn run_simulation_thread(
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
     auto_reset: bool,
-) -> Result<(), SimulationSetupError> {
-    let file = File::open(xml_path)?;
-    let file_buffer = BufReader::new(file);
-    let mut simulation = OpenMMSimulation::from_xml(file_buffer)?;
+)  -> Result<(), SimulationSetupError> {
+    let mut simulation = match xml_buffer {
+        XMLBuffer::FileBuffer(buffer) => OpenMMSimulation::from_xml(buffer)?,
+        XMLBuffer::BytesBuffer(buffer) => OpenMMSimulation::from_xml(buffer)?,
+    };
 
     tokio::task::spawn_blocking(move || {
         let mut playback_state = PlaybackState::new(true);
@@ -129,7 +135,7 @@ pub fn run_simulation_thread(
                 };
                 let energy = simulation.get_total_energy();
                 if verbose {
-                    debug!(
+                    info!(
                         "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}. Total energy {energy:.2} kJ/mol."
                     );
                 };

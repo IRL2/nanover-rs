@@ -10,6 +10,7 @@ use narupa_rs::playback::PlaybackOrder;
 use narupa_rs::services::commands::{Command, CommandServer, CommandService};
 use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
+use narupa_rs::simulation_thread::XMLBuffer;
 use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::state_broadcaster::StateBroadcaster;
 use std::collections::HashMap;
@@ -19,6 +20,7 @@ use std::net::SocketAddr;
 use std::error::Error as StdError;
 use std::sync::{Arc, Mutex};
 use std::process::ExitCode;
+use std::io::BufReader;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
 use thiserror::Error;
@@ -37,8 +39,8 @@ struct CannotOpenStatisticFile;
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     /// The path to the Narupa XML file describing the simulation to run.
-    #[clap(value_parser, default_value = "17-ala.xml")]
-    input_xml_path: String,
+    #[clap(value_parser)]
+    input_xml_path: Option<String>,
     /// IP address to bind.
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
     address: IpAddr,
@@ -51,12 +53,18 @@ struct Cli {
     /// Sends a frame every STEPS dynamics steps.
     #[clap(short = 'f', long, value_parser, default_value_t = 5)]
     frame_interval: u32,
+    /// Show the simulation progression and some performance data.
+    #[clap(long, value_parser, default_value_t = false)]
+    progression: bool,
     /// Update the interactions every STEPS dynamics steps.
     #[clap(short = 'i', long, value_parser, default_value_t = 10)]
     force_interval: u32,
-    /// Display simulation advancement.
+    /// Display more information about what the software does.
     #[clap(short, long, value_parser, default_value_t = false)]
     verbose: bool,
+    /// Be very verbose about what the software does.
+    #[clap(short, long, value_parser, default_value_t = false)]
+    trace: bool,
     #[clap(long, value_parser)]
     statistics: Option<String>,
     #[clap(long, value_parser, default_value_t = 4.0)]
@@ -66,14 +74,13 @@ struct Cli {
     name: String,
 }
 
-async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
+async fn main_to_wrap(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // Read the user arguments.
-    let cli = Cli::parse();
     let xml_path = cli.input_xml_path;
     let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
     let frame_interval = cli.frame_interval;
     let force_interval = cli.force_interval;
-    let verbose = cli.verbose;
+    let verbose = cli.progression;
     let statistics_file = cli
         .statistics
         .map(|path| File::create(path))
@@ -146,8 +153,15 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
+    let xml_buffer = if let Some(path) = xml_path {
+        let xml_file = File::open(path)?;
+        XMLBuffer::FileBuffer(BufReader::new(xml_file))
+    } else {
+        let bytes = include_bytes!("../17-ala.xml");
+        XMLBuffer::BytesBuffer(BufReader::new(bytes))
+    };
     run_simulation_thread(
-        xml_path,
+        xml_buffer,
         sim_clone,
         state_clone,
         simulation_interval,
@@ -182,17 +196,23 @@ async fn main_to_wrap() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let cli = Cli::parse();
+
     if std::env::var("RUST_LOG").is_ok() {
         env_logger::init();
     } else {
+        let mut verbosity_level = LevelFilter::Info;
+        if cli.verbose {verbosity_level = LevelFilter::Debug};
+        if cli.trace {verbosity_level = LevelFilter::Trace};
+
         let mut builder = Builder::new();
         builder
-            .filter_module("narupa_rs", LevelFilter::Info)
+            .filter_module("narupa_rs", verbosity_level)
             .format_target(false)
             .init();
     }
 
-    let run_status = main_to_wrap().await;
+    let run_status = main_to_wrap(cli).await;
     let Err(ref error) = run_status else {
         return ExitCode::SUCCESS;
     };
