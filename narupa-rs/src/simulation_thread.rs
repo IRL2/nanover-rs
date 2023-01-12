@@ -7,7 +7,7 @@ use std::time::Duration;
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 use thiserror::Error;
-use log::{info, debug};
+use log::info;
 
 use crate::broadcaster::Broadcaster;
 use crate::frame_broadcaster::FrameBroadcaster;
@@ -129,7 +129,7 @@ pub fn run_simulation_thread(
                 };
                 let energy = simulation.get_total_energy();
                 if verbose {
-                    debug!(
+                    info!(
                         "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}. Total energy {energy:.2} kJ/mol."
                     );
                 };
