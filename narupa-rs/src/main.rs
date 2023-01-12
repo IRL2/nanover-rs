@@ -1,5 +1,6 @@
 extern crate clap;
 
+use futures::TryFutureExt;
 use narupa_rs::essd::serve_essd;
 use narupa_proto::frame::FrameData;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
@@ -75,6 +76,15 @@ struct Cli {
 }
 
 async fn main_to_wrap(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+        // Your handler here
+        info!("Closing the server. Goodbye!");
+        cancel_tx.send(()).unwrap();
+    });
+
     // Read the user arguments.
     let xml_path = cli.input_xml_path;
     let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
@@ -177,6 +187,7 @@ async fn main_to_wrap(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     info!("Advertise the server with ESSD");
     tokio::task::spawn(serve_essd(cli.name, cli.port));
 
+
     // Run the GRPC server on the main thread.
     info!("Listening to {socket_address}");
     let server = Trajectory::new(Arc::clone(&frame_source));
@@ -187,7 +198,7 @@ async fn main_to_wrap(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             .add_service(TrajectoryServiceServer::new(server))
             .add_service(CommandServer::new(command_service))
             .add_service(StateServer::new(state_service))
-            .serve(socket_address)
+            .serve_with_shutdown(socket_address, cancel_rx.unwrap_or_else(|_| ()))
     )
     .await??;
 
