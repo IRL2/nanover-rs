@@ -10,6 +10,7 @@ use narupa_rs::playback::PlaybackOrder;
 use narupa_rs::services::commands::{Command, CommandServer, CommandService};
 use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
+use narupa_rs::simulation_thread::XMLBuffer;
 use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::state_broadcaster::StateBroadcaster;
 use std::collections::HashMap;
@@ -19,6 +20,7 @@ use std::net::SocketAddr;
 use std::error::Error as StdError;
 use std::sync::{Arc, Mutex};
 use std::process::ExitCode;
+use std::io::BufReader;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
 use thiserror::Error;
@@ -37,8 +39,8 @@ struct CannotOpenStatisticFile;
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     /// The path to the Narupa XML file describing the simulation to run.
-    #[clap(value_parser, default_value = "17-ala.xml")]
-    input_xml_path: String,
+    #[clap(value_parser)]
+    input_xml_path: Option<String>,
     /// IP address to bind.
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
     address: IpAddr,
@@ -151,8 +153,15 @@ async fn main_to_wrap(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
+    let xml_buffer = if let Some(path) = xml_path {
+        let xml_file = File::open(path)?;
+        XMLBuffer::FileBuffer(BufReader::new(xml_file))
+    } else {
+        let bytes = include_bytes!("../17-ala.xml");
+        XMLBuffer::BytesBuffer(BufReader::new(bytes))
+    };
     run_simulation_thread(
-        xml_path,
+        xml_buffer,
         sim_clone,
         state_clone,
         simulation_interval,
