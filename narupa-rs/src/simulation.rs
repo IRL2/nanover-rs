@@ -193,11 +193,11 @@ impl PreSimulation {
             StructureType::None => return Err(XMLParsingError::NoStructureFound),
             StructureType::Pdb => {
                 let input = BufReader::new(Cursor::new(self.structure));
-                read_pdb(input).map_err(|error| XMLParsingError::PDBReadError(error))?
+                read_pdb(input).map_err(XMLParsingError::PDBReadError)?
             }
             StructureType::Pdbx => {
                 let input = BufReader::new(Cursor::new(self.structure));
-                read_cif(input).map_err(|error| XMLParsingError::PDBxReadError(error))?
+                read_cif(input).map_err(XMLParsingError::PDBxReadError)?
             }
         };
         Ok((system_content, integrator_content, structure))

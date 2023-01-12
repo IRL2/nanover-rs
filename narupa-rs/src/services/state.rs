@@ -96,8 +96,7 @@ impl State for StateService {
             }
             Some(update) => {
                 let mut state = self.shared_state.lock().unwrap();
-                let can_update = state.send_with_locks(update, &token).is_ok();
-                can_update
+                state.send_with_locks(update, &token).is_ok()
             }
         };
         Ok(Response::new(UpdateStateResponse {

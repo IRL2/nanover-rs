@@ -281,7 +281,7 @@ impl ToProstValue for f64 {
     }
 
     fn to_prost_value(&self) -> Value {
-        Value{ kind: Some(Kind::NumberValue(self.clone())) }
+        Value{ kind: Some(Kind::NumberValue(*self)) }
     }
 }
 
@@ -291,7 +291,7 @@ impl ToProstValue for f32 {
     }
 
     fn to_prost_value(&self) -> Value {
-        Value{ kind: Some(Kind::NumberValue(self.clone() as f64)) }
+        Value{ kind: Some(Kind::NumberValue(*self as f64)) }
     }
 }
 
@@ -332,7 +332,7 @@ impl ToProstValue for bool {
     }
 
     fn to_prost_value(&self) -> Value {
-        Value { kind: Some(Kind::BoolValue(self.clone())) }
+        Value { kind: Some(Kind::BoolValue(*self)) }
     }
 }
 
@@ -343,7 +343,7 @@ impl<T> ToProstValue for Vec<T> where T: ToProstValue {
     }
 
     fn to_prost_value(&self) -> Value {
-        let values = self.into_iter().map(|item| item.to_prost_value()).collect();
+        let values = self.iter().map(|item| item.to_prost_value()).collect();
         Value { kind: Some(Kind::ListValue(ListValue{ values })) }
     }
 }
