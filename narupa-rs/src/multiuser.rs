@@ -89,7 +89,7 @@ fn to_user_origin_update<'a>(
     StateUpdate {
         changed_keys: Some(Struct {
             fields: BTreeMap::from_iter(
-                input.map(|(key, value)| (String::from(key), orient_inner_struct_value(&value))),
+                input.map(|(key, value)| (key, orient_inner_struct_value(&value))),
             ),
         }),
     }
@@ -100,7 +100,7 @@ fn orient_inner_struct_value(content: &[(&str, Vec<f64>)]) -> Value {
         kind: Some(Kind::StructValue(Struct {
             fields: BTreeMap::from_iter(
                 content
-                    .into_iter()
+                    .iter()
                     .map(|(key, value)| (String::from(*key), value.to_prost_value())),
             ),
         })),

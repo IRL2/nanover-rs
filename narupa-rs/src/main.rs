@@ -83,7 +83,7 @@ async fn main_to_wrap(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let verbose = cli.progression;
     let statistics_file = cli
         .statistics
-        .map(|path| File::create(path))
+        .map(File::create)
         .transpose()
         .map_err(|_| CannotOpenStatisticFile)?;
     let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;

@@ -80,10 +80,11 @@ pub fn run_simulation_thread(
         let mut playback_state = PlaybackState::new(true);
         let interval = Duration::from_millis(simulation_interval);
         {
-            if let Err(_) = sim_clone
+            if sim_clone
                 .lock()
                 .unwrap()
-                .send(simulation.to_topology_framedata()) {
+                .send(simulation.to_topology_framedata())
+                .is_err() {
                     return;
                 }
         }
@@ -122,7 +123,7 @@ pub fn run_simulation_thread(
                 if do_frames {
                     let frame = simulation.to_framedata();
                     let mut source = sim_clone.lock().unwrap();
-                    if let Err(_) = source.send(frame) {return};
+                    if source.send(frame).is_err() {return};
                 }
                 if do_forces {
                     apply_forces(&state_clone, &mut simulation, simulation_tx.clone());

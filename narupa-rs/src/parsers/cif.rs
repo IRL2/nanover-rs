@@ -309,7 +309,7 @@ where
     N: FromStr,
 {
     line.get(key)
-        .ok_or(FormatError::MissingField(String::from(key)))?
+        .ok_or_else(|| FormatError::MissingField(String::from(key)))?
         .parse::<N>()
         .or(Err(FormatError::FieldFormat(error)))
 }
@@ -325,7 +325,7 @@ fn extract_char_with_default(line: &HashMap<String, String>, key: &str, default:
 fn extract_string(line: &HashMap<String, String>, key: &str) -> Result<String, FormatError> {
     Ok(line
         .get(key)
-        .ok_or(FormatError::MissingField(String::from(key)))?
+        .ok_or_else(|| FormatError::MissingField(String::from(key)))?
         .clone())
 }
 
