@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fs::File;
-use std::io::{self, BufReader, BufRead, Read};
+use std::io::{self, BufReader};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{thread, time};
