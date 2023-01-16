@@ -1,12 +1,11 @@
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
-use thiserror::Error;
 use log::info;
 
 use crate::broadcaster::Broadcaster;
@@ -51,14 +50,6 @@ fn apply_forces(
     simulation.update_imd_forces(imd_interactions).unwrap();
 }
 
-#[derive(Error, Debug)]
-pub enum SimulationSetupError {
-    #[error("Cannot open the input file: {0}")]
-    InputFileIOError(#[from] io::Error),
-    #[error("Cannot parse the input file: {0}")]
-    CannotParse(#[from] XMLParsingError),
-}
-
 pub fn run_simulation_thread(
     xml_buffer: XMLBuffer,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
@@ -70,7 +61,7 @@ pub fn run_simulation_thread(
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
     auto_reset: bool,
-)  -> Result<(), SimulationSetupError> {
+)  -> Result<(), XMLParsingError> {
     let mut simulation = match xml_buffer {
         XMLBuffer::FileBuffer(buffer) => OpenMMSimulation::from_xml(buffer)?,
         XMLBuffer::BytesBuffer(buffer) => OpenMMSimulation::from_xml(buffer)?,

@@ -11,6 +11,7 @@ use narupa_rs::playback::PlaybackOrder;
 use narupa_rs::services::commands::{Command, CommandServer, CommandService};
 use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
+use narupa_rs::simulation::XMLParsingError;
 use narupa_rs::simulation_thread::XMLBuffer;
 use narupa_rs::simulation_thread::run_simulation_thread;
 use narupa_rs::state_broadcaster::StateBroadcaster;
@@ -22,6 +23,7 @@ use std::error::Error as StdError;
 use std::sync::{Arc, Mutex};
 use std::process::ExitCode;
 use std::io::BufReader;
+use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
 use thiserror::Error;
@@ -34,6 +36,12 @@ use clap::Parser;
 #[derive(Error, Debug)]
 #[error("The statistic file cannot be open.")]
 struct CannotOpenStatisticFile;
+unsafe impl Send for CannotOpenStatisticFile {}
+impl From<CannotOpenStatisticFile> for Box<dyn std::error::Error + Send> {
+    fn from(_value: CannotOpenStatisticFile) -> Self {
+        Box::new(CannotOpenStatisticFile)
+    }
+}
 
 /// A Narupa IMD server.
 #[derive(Parser)]
@@ -75,8 +83,27 @@ struct Cli {
     name: String,
 }
 
-async fn main_to_wrap(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+#[derive(Error, Debug)]
+enum AppError {
+    #[error("Cannot open the input file.")]
+    CannotOpenInputFile(#[from] std::io::Error),
+    #[error("Cannot parse input file.")]
+    CannotParseInputFile(#[from] XMLParsingError),
+    #[error("Cannot open statistics file.")]
+    CannotOpenStatisticFile,
+    #[error("Server cannot establish connection.")]
+    TransportError(#[from] tonic::transport::Error),
+    #[error("Internal server error.")]
+    JoinError(#[from] tokio::task::JoinError),
+}
 
+impl From<CannotOpenStatisticFile> for AppError {
+    fn from(_value: CannotOpenStatisticFile) -> Self {
+        AppError::CannotOpenStatisticFile
+    }
+}
+
+async fn main_to_wrap(cli: Cli) -> Result<(), AppError> {
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
@@ -205,8 +232,7 @@ async fn main_to_wrap(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     let cli = Cli::parse();
 
     if std::env::var("RUST_LOG").is_ok() {
@@ -223,14 +249,21 @@ async fn main() -> ExitCode {
             .init();
     }
 
-    let run_status = main_to_wrap(cli).await;
+    let runtime = Runtime::new().expect("Unable to create Runtime");
+    let _enter = runtime.enter();
+    let run_status: Result<(), AppError> = std::thread::scope(|scope| {scope.spawn(|| runtime.block_on(main_to_wrap(cli))).join()}).unwrap();
     let Err(ref error) = run_status else {
         return ExitCode::SUCCESS;
     };
 
     // The Display trait from tonic's errors is not very expressive for the
     // end user. We need to dig out the underlying error.
-    let maybe_transport_error = error.downcast_ref::<tonic::transport::Error>();
+    let maybe_transport_error = if let AppError::TransportError(transport_error) = error {
+        Some(transport_error)
+    } else {
+        None
+    };
+    //let maybe_transport_error = error.downcast_ref::<tonic::transport::Error>();
     let maybe_source_error = match maybe_transport_error {
         None => None,
         Some(transport_error) => transport_error.source(),
