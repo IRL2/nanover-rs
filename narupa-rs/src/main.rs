@@ -1,8 +1,11 @@
 extern crate clap;
 
+use env_logger::Builder;
 use futures::TryFutureExt;
-use narupa_rs::essd::serve_essd;
+use log::LevelFilter;
+use log::{error, info};
 use narupa_proto::frame::FrameData;
+use narupa_rs::essd::serve_essd;
 use narupa_rs::frame_broadcaster::FrameBroadcaster;
 use narupa_rs::multiuser::RadialOrient;
 use narupa_rs::observer_thread::run_observer_thread;
@@ -12,24 +15,21 @@ use narupa_rs::services::commands::{Command, CommandServer, CommandService};
 use narupa_rs::services::state::{StateServer, StateService};
 use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use narupa_rs::simulation::XMLParsingError;
-use narupa_rs::simulation_thread::XMLBuffer;
 use narupa_rs::simulation_thread::run_simulation_thread;
+use narupa_rs::simulation_thread::XMLBuffer;
 use narupa_rs::state_broadcaster::StateBroadcaster;
 use std::collections::HashMap;
+use std::error::Error as StdError;
 use std::fs::File;
+use std::io::BufReader;
 use std::net::IpAddr;
 use std::net::SocketAddr;
-use std::error::Error as StdError;
-use std::sync::{Arc, Mutex};
 use std::process::ExitCode;
-use std::io::BufReader;
+use std::sync::{Arc, Mutex};
+use thiserror::Error;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
-use thiserror::Error;
-use log::{error, info};
-use env_logger::Builder;
-use log::LevelFilter;
 
 use clap::Parser;
 
@@ -214,7 +214,6 @@ async fn main_to_wrap(cli: Cli) -> Result<(), AppError> {
     info!("Advertise the server with ESSD");
     tokio::task::spawn(serve_essd(cli.name, cli.port));
 
-
     // Run the GRPC server on the main thread.
     info!("Listening to {socket_address}");
     let server = Trajectory::new(Arc::clone(&frame_source));
@@ -225,7 +224,7 @@ async fn main_to_wrap(cli: Cli) -> Result<(), AppError> {
             .add_service(TrajectoryServiceServer::new(server))
             .add_service(CommandServer::new(command_service))
             .add_service(StateServer::new(state_service))
-            .serve_with_shutdown(socket_address, cancel_rx.unwrap_or_else(|_| ()))
+            .serve_with_shutdown(socket_address, cancel_rx.unwrap_or_else(|_| ())),
     )
     .await??;
 
@@ -239,8 +238,12 @@ fn main() -> ExitCode {
         env_logger::init();
     } else {
         let mut verbosity_level = LevelFilter::Info;
-        if cli.verbose {verbosity_level = LevelFilter::Debug};
-        if cli.trace {verbosity_level = LevelFilter::Trace};
+        if cli.verbose {
+            verbosity_level = LevelFilter::Debug
+        };
+        if cli.trace {
+            verbosity_level = LevelFilter::Trace
+        };
 
         let mut builder = Builder::new();
         builder
@@ -251,7 +254,9 @@ fn main() -> ExitCode {
 
     let runtime = Runtime::new().expect("Unable to create Runtime");
     let _enter = runtime.enter();
-    let run_status: Result<(), AppError> = std::thread::scope(|scope| {scope.spawn(|| runtime.block_on(main_to_wrap(cli))).join()}).unwrap();
+    let run_status: Result<(), AppError> =
+        std::thread::scope(|scope| scope.spawn(|| runtime.block_on(main_to_wrap(cli))).join())
+            .unwrap();
     let Err(ref error) = run_status else {
         return ExitCode::SUCCESS;
     };
