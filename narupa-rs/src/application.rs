@@ -1,33 +1,28 @@
 extern crate clap;
 
-use env_logger::Builder;
 use futures::TryFutureExt;
-use log::LevelFilter;
 use log::{error, info};
 use narupa_proto::frame::FrameData;
-use narupa_rs::essd::serve_essd;
-use narupa_rs::frame_broadcaster::FrameBroadcaster;
-use narupa_rs::multiuser::RadialOrient;
-use narupa_rs::observer_thread::run_observer_thread;
-use narupa_rs::playback::PlaybackCommand;
-use narupa_rs::playback::PlaybackOrder;
-use narupa_rs::services::commands::{Command, CommandServer, CommandService};
-use narupa_rs::services::state::{StateServer, StateService};
-use narupa_rs::services::trajectory::{Trajectory, TrajectoryServiceServer};
-use narupa_rs::simulation::XMLParsingError;
-use narupa_rs::simulation_thread::run_simulation_thread;
-use narupa_rs::simulation_thread::XMLBuffer;
-use narupa_rs::state_broadcaster::StateBroadcaster;
+use crate::essd::serve_essd;
+use crate::frame_broadcaster::FrameBroadcaster;
+use crate::multiuser::RadialOrient;
+use crate::observer_thread::run_observer_thread;
+use crate::playback::PlaybackCommand;
+use crate::playback::PlaybackOrder;
+use crate::services::commands::{Command, CommandServer, CommandService};
+use crate::services::state::{StateServer, StateService};
+use crate::services::trajectory::{Trajectory, TrajectoryServiceServer};
+use crate::simulation::XMLParsingError;
+use crate::simulation_thread::run_simulation_thread;
+use crate::simulation_thread::XMLBuffer;
+use crate::state_broadcaster::StateBroadcaster;
 use std::collections::HashMap;
-use std::error::Error as StdError;
 use std::fs::File;
 use std::io::BufReader;
 use std::net::IpAddr;
 use std::net::SocketAddr;
-use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
-use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
 
@@ -46,45 +41,45 @@ impl From<CannotOpenStatisticFile> for Box<dyn std::error::Error + Send> {
 /// A Narupa IMD server.
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
-struct Cli {
+pub struct Cli {
     /// The path to the Narupa XML file describing the simulation to run.
     #[clap(value_parser)]
-    input_xml_path: Option<String>,
+    pub input_xml_path: Option<String>,
     /// IP address to bind.
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
-    address: IpAddr,
+    pub address: IpAddr,
     /// Port the server will listen.
     #[clap(short, long, value_parser, default_value_t = 38801)]
-    port: u16,
+    pub port: u16,
     /// Throtle the simulation at this rate.
     #[clap(short, long, value_parser, default_value_t = 30.0)]
-    simulation_fps: f64,
+    pub simulation_fps: f64,
     /// Sends a frame every STEPS dynamics steps.
     #[clap(short = 'f', long, value_parser, default_value_t = 5)]
-    frame_interval: u32,
+    pub frame_interval: u32,
     /// Show the simulation progression and some performance data.
     #[clap(long, value_parser, default_value_t = false)]
-    progression: bool,
+    pub progression: bool,
     /// Update the interactions every STEPS dynamics steps.
     #[clap(short = 'i', long, value_parser, default_value_t = 10)]
-    force_interval: u32,
+    pub force_interval: u32,
     /// Display more information about what the software does.
     #[clap(short, long, value_parser, default_value_t = false)]
-    verbose: bool,
+    pub verbose: bool,
     /// Be very verbose about what the software does.
     #[clap(short, long, value_parser, default_value_t = false)]
-    trace: bool,
+    pub trace: bool,
     #[clap(long, value_parser)]
-    statistics: Option<String>,
+    pub statistics: Option<String>,
     #[clap(long, value_parser, default_value_t = 4.0)]
-    statistics_fps: f64,
+    pub statistics_fps: f64,
     /// Server name to advertise for autoconnect.
     #[clap(short, long, value_parser, default_value = "Narupa-RS iMD Server")]
-    name: String,
+    pub name: String,
 }
 
 #[derive(Error, Debug)]
-enum AppError {
+pub enum AppError {
     #[error("Cannot open the input file.")]
     CannotOpenInputFile(#[from] std::io::Error),
     #[error("Cannot parse input file.")]
@@ -103,7 +98,7 @@ impl From<CannotOpenStatisticFile> for AppError {
     }
 }
 
-async fn main_to_wrap(cli: Cli) -> Result<(), AppError> {
+pub async fn main_to_wrap(cli: Cli) -> Result<(), AppError> {
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
@@ -229,59 +224,4 @@ async fn main_to_wrap(cli: Cli) -> Result<(), AppError> {
     .await??;
 
     Ok(())
-}
-
-fn main() -> ExitCode {
-    let cli = Cli::parse();
-
-    if std::env::var("RUST_LOG").is_ok() {
-        env_logger::init();
-    } else {
-        let mut verbosity_level = LevelFilter::Info;
-        if cli.verbose {
-            verbosity_level = LevelFilter::Debug
-        };
-        if cli.trace {
-            verbosity_level = LevelFilter::Trace
-        };
-
-        let mut builder = Builder::new();
-        builder
-            .filter_module("narupa_rs", verbosity_level)
-            .format_target(false)
-            .init();
-    }
-
-    let runtime = Runtime::new().expect("Unable to create Runtime");
-    let _enter = runtime.enter();
-    let run_status: Result<(), AppError> =
-        std::thread::scope(|scope| scope.spawn(|| runtime.block_on(main_to_wrap(cli))).join())
-            .unwrap();
-    let Err(ref error) = run_status else {
-        return ExitCode::SUCCESS;
-    };
-
-    // The Display trait from tonic's errors is not very expressive for the
-    // end user. We need to dig out the underlying error.
-    let maybe_transport_error = if let AppError::TransportError(transport_error) = error {
-        Some(transport_error)
-    } else {
-        None
-    };
-    //let maybe_transport_error = error.downcast_ref::<tonic::transport::Error>();
-    let maybe_source_error = match maybe_transport_error {
-        None => None,
-        Some(transport_error) => transport_error.source(),
-    };
-    let maybe_hyper_error = match maybe_source_error {
-        None => None,
-        Some(source_error) => source_error.downcast_ref::<hyper::Error>(),
-    };
-    if let Some(hyper_error) = maybe_hyper_error {
-        error!("{hyper_error}");
-        return ExitCode::FAILURE;
-    };
-
-    error!("{error}");
-    ExitCode::FAILURE
 }
