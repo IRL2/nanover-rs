@@ -194,7 +194,7 @@ async fn main_to_wrap(cli: Cli) -> Result<(), AppError> {
         let xml_file = File::open(path)?;
         XMLBuffer::FileBuffer(BufReader::new(xml_file))
     } else {
-        let bytes = include_bytes!("../17-ala.xml");
+        let bytes = include_bytes!("../../17-ala.xml");
         XMLBuffer::BytesBuffer(BufReader::new(bytes))
     };
     run_simulation_thread(
@@ -248,6 +248,7 @@ fn main() -> ExitCode {
         let mut builder = Builder::new();
         builder
             .filter_module("narupa_rs", verbosity_level)
+            .filter_module("narupa_cli", verbosity_level)
             .format_target(false)
             .init();
     }

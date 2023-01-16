@@ -38,3 +38,6 @@ features= ["minimal"]
 
 [dev-dependencies]
 rstest = "0.15.0"
+
+[[bin]]
+name = "narupa-cli"
