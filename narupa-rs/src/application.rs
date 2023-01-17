@@ -78,6 +78,25 @@ pub struct Cli {
     pub name: String,
 }
 
+impl Default for Cli {
+    fn default() -> Self {
+        Cli {
+            input_xml_path: None,
+            address: IpAddr::from([0, 0, 0, 0]),
+            port: 38801,
+            simulation_fps: 30.0,
+            frame_interval: 5,
+            force_interval: 10,
+            progression: false,
+            verbose: false,
+            trace: false,
+            statistics: None,
+            statistics_fps: 4.0,
+            name: "Narupa-RS iMD Server".to_owned(),
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("Cannot open the input file.")]
