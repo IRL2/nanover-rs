@@ -88,7 +88,7 @@ impl MyEguiApp {
                 if ui.button("Browse files").clicked() {
                     if let Some(path) = rfd::FileDialog::new().add_filter("Narupa XML", &["xml"]).pick_file() {
                         self.input_path = Some(path.display().to_string());
-                        println!("File picked: {:?}", path);
+                        self.input_type = InputSelection::FileInput;
                     };
                 };
             });
