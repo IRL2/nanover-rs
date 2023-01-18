@@ -101,7 +101,11 @@ impl MyEguiApp {
             (InputSelection::FileInput, Some(_)) => true,
             _ => false,
         };
-        let button = egui::widgets::Button::new("Run!");
+        let text = match &self.input_type {
+            InputSelection::DefaultInput => "Run demonstration input!",
+            InputSelection::FileInput => "Run the selected file!",
+        };
+        let button = egui::widgets::Button::new(text);
         if ui.add_enabled(ready, button).clicked() {
             self.start_server();
         }
