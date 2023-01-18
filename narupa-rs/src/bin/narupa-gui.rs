@@ -42,12 +42,18 @@ impl Server {
             tx.send(()).ok();
         };
     }
+
+    pub fn close(mut self) -> Result<(), AppError> {
+        self.stop();
+        self.thread.join().unwrap()
+    }
 }
 
 struct MyEguiApp {
     input_type: InputSelection,
     input_path: Option<String>,
     server: Option<Server>,
+    error: Option<String>,
 }
 
 impl Default for MyEguiApp {
@@ -56,6 +62,7 @@ impl Default for MyEguiApp {
             input_type: InputSelection::DefaultInput,
             input_path: None,
             server: None,
+            error: None,
         }
     }
 }
@@ -106,7 +113,15 @@ impl MyEguiApp {
         }
     }
 
+    fn error_message(&mut self, ui: &mut egui::Ui) {
+        self.collect_error();
+        let Some(ref error) = self.error else {return};
+        let error_text = egui::RichText::new(error).color(egui::Color32::RED).strong();
+        ui.label(error_text);
+    }
+
     fn start_server(&mut self) {
+        self.clear_error();
         let mut arguments = Cli::default();
         if let InputSelection::FileInput = self.input_type {
             arguments.input_xml_path = self.input_path.clone()
@@ -132,12 +147,29 @@ impl MyEguiApp {
     fn is_idle(&self) -> bool {
         !self.is_running()
     }
+
+    fn server_has_issue(&self) -> bool {
+        self.server.is_some() && self.is_idle()
+    }
+
+    fn collect_error(&mut self) {
+        if self.server_has_issue() {
+            let Some(server) = self.server.take() else {return};
+            let Err(error) = server.close() else {return};
+            self.error = Some(format!("{error}"));
+        }
+    }
+
+    fn clear_error(&mut self) {
+        self.error = None;
+    }
 }
 
 impl eframe::App for MyEguiApp {
    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Narupa server");
+            self.error_message(ui);
             if self.is_idle() {
                 self.input_selection(ui);
                 self.run_button(ui);
