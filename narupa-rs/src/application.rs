@@ -117,15 +117,7 @@ impl From<CannotOpenStatisticFile> for AppError {
     }
 }
 
-pub async fn main_to_wrap(cli: Cli) -> Result<(), AppError> {
-    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.unwrap();
-        // Your handler here
-        info!("Closing the server. Goodbye!");
-        cancel_tx.send(()).unwrap();
-    });
-
+pub async fn main_to_wrap(cli: Cli, cancel_rx: tokio::sync::oneshot::Receiver<()>) -> Result<(), AppError> {
     // Read the user arguments.
     let xml_path = cli.input_xml_path;
     let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;

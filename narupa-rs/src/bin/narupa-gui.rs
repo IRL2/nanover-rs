@@ -15,10 +15,39 @@ fn main() {
     eframe::run_native("Narupa-RS server", native_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))));
 }
 
+struct Server {
+    thread: std::thread::JoinHandle<Result<(), AppError>>,
+    cancel_tx: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+impl Server {
+    pub fn new(arguments: Cli) -> Self {
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let runtime = Runtime::new().expect("Unable to create Runtime");
+        let _enter = runtime.enter();
+        let handle = std::thread::spawn(move || runtime.block_on(main_to_wrap(arguments, cancel_rx)));
+        Server {thread: handle, cancel_tx: Some(cancel_tx)}
+    }
+
+    pub fn is_running(&self) -> bool {
+        !self.thread.is_finished()
+    }
+
+    pub fn stop(&mut self) {
+        // We should be able to stop the server several time. Calling this
+        // method means we want the server to be stopped, not that we want
+        // that specific call to stop the server. Therefore, we can ignore
+        // the send failing or the transmitter being None.
+        if let Some(tx) = self.cancel_tx.take() {
+            tx.send(()).ok();
+        };
+    }
+}
+
 struct MyEguiApp {
     input_type: InputSelection,
     input_path: Option<String>,
-    server_thread: Option<std::thread::JoinHandle<Result<(), AppError>>>,
+    server: Option<Server>,
 }
 
 impl Default for MyEguiApp {
@@ -26,7 +55,7 @@ impl Default for MyEguiApp {
         Self {
             input_type: InputSelection::DefaultInput,
             input_path: None,
-            server_thread: None,
+            server: None,
         }
     }
 }
@@ -71,22 +100,33 @@ impl MyEguiApp {
         }
     }
 
+    fn stop_button(&mut self, ui: &mut egui::Ui) {
+        if ui.button("Stop server").clicked() {
+            self.stop_server();
+        }
+    }
+
     fn start_server(&mut self) {
         let mut arguments = Cli::default();
         if let InputSelection::FileInput = self.input_type {
             arguments.input_xml_path = self.input_path.clone()
         };
-        let runtime = Runtime::new().expect("Unable to create Runtime");
-        let _enter = runtime.enter();
-        let handle = std::thread::spawn(move || runtime.block_on(main_to_wrap(arguments)));
-        self.server_thread = Some(handle)
+        let server = Server::new(arguments);
+        self.server = Some(server)
+    }
+
+    fn stop_server(&mut self) {
+        let Some(mut server) = self.server.take() else {
+            return;
+        };
+        server.stop();
     }
 
     fn is_running(&self) -> bool {
-        let Some(ref thread_handle) = self.server_thread else {
+        let Some(ref server) = self.server else {
             return false;
         };
-        !thread_handle.is_finished()
+        server.is_running()
     }
 
     fn is_idle(&self) -> bool {
@@ -103,6 +143,7 @@ impl eframe::App for MyEguiApp {
                 self.run_button(ui);
             } else {
                 ui.label("Server is running.");
+                self.stop_button(ui);
             }
         });
     }
