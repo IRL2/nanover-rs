@@ -78,6 +78,8 @@ struct MyEguiApp {
     input_path: Option<String>,
     server: Option<Server>,
     error: Option<String>,
+    log_level: LevelFilter,
+    show_progression: bool,
 }
 
 impl Default for MyEguiApp {
@@ -87,6 +89,8 @@ impl Default for MyEguiApp {
             input_path: None,
             server: None,
             error: None,
+            log_level: LevelFilter::Info,
+            show_progression: false,
         }
     }
 }
@@ -149,6 +153,23 @@ impl MyEguiApp {
         ui.label(error_text);
     }
 
+    fn verbosity_selector(&mut self, ui: &mut egui::Ui, progression: bool) {
+        let stroke = egui::Stroke{width: 1.0, color: egui::Color32::WHITE};
+        egui::Frame::none().stroke(stroke).inner_margin(10.0).show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.label("Verbosity");
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut self.log_level, LevelFilter::Info, "Normal");
+                    ui.radio_value(&mut self.log_level, LevelFilter::Debug, "Verbose");
+                    ui.radio_value(&mut self.log_level, LevelFilter::Trace, "Super verbose");
+                });
+                if progression {
+                    ui.checkbox(&mut self.show_progression, "Show simulation progression");
+                };
+            })
+        });
+    }
+
     fn log_window(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
@@ -157,7 +178,9 @@ impl MyEguiApp {
             .show(ui, |ui| {
                 let logs = LOG_VECTOR.lock().unwrap();
                 logs.iter().for_each(|(level, message)| {
-                    ui.label(format!("[{level}] {message}"));
+                    if level <= &self.log_level {
+                        ui.label(format!("[{level}] {message}"));
+                    }
                 });
             });
     }
@@ -165,6 +188,7 @@ impl MyEguiApp {
     fn start_server(&mut self) {
         self.clear_error();
         let mut arguments = Cli::default();
+        arguments.progression = self.show_progression;
         if let InputSelection::FileInput = self.input_type {
             arguments.input_xml_path = self.input_path.clone()
         };
@@ -214,9 +238,11 @@ impl eframe::App for MyEguiApp {
             self.error_message(ui);
             if self.is_idle() {
                 self.input_selection(ui);
+                self.verbosity_selector(ui, true);
                 self.run_button(ui);
             } else {
                 ui.label("Server is running.");
+                self.verbosity_selector(ui, false);
                 self.stop_button(ui);
                 self.log_window(ui);
                 ctx.request_repaint();
