@@ -1,18 +1,43 @@
 use eframe::egui;
-use log::LevelFilter;
+use log::{LevelFilter, SetLoggerError};
 use tokio::runtime::Runtime;
 use narupa_rs::application::{main_to_wrap, Cli, AppError};
-use env_logger::Builder;
+use std::sync::Mutex;
 
 fn main() {
-    let mut builder = Builder::new();
-    builder
-        .filter_module("narupa_rs", LevelFilter::Debug)
-        .filter_module("narupa_gui", LevelFilter::Debug)
-        .format_target(false)
-        .init();
+    init_logging().expect("Could not setup logging.");
     let native_options = eframe::NativeOptions::default();
     eframe::run_native("Narupa-RS server", native_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))));
+}
+
+
+static LOG_VECTOR: Mutex<Vec<(log::Level, String)>> = Mutex::new(Vec::new());
+static UI_LOGGER: UILogger = UILogger;
+
+struct UILogger;
+
+impl log::Log for UILogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Debug
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) && record.target().starts_with("narupa") {
+            let mut logs = LOG_VECTOR.lock().unwrap();
+            logs.push((record.level(), record.args().to_string()));
+            println!("[{}] {}", record.level(), record.args());
+        }
+    }
+
+    fn flush(&self) {
+        let mut logs = LOG_VECTOR.lock().unwrap();
+        logs.clear();
+    }
+}
+
+fn init_logging() -> Result<(), SetLoggerError> {
+    log::set_logger(&UI_LOGGER)
+        .map(|()| log::set_max_level(LevelFilter::Debug))
 }
 
 struct Server {
@@ -107,6 +132,7 @@ impl MyEguiApp {
         };
         let button = egui::widgets::Button::new(text);
         if ui.add_enabled(ready, button).clicked() {
+            log::logger().flush();
             self.start_server();
         }
     }
@@ -122,6 +148,18 @@ impl MyEguiApp {
         let Some(ref error) = self.error else {return};
         let error_text = egui::RichText::new(error).color(egui::Color32::RED).strong();
         ui.label(error_text);
+    }
+
+    fn log_window(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical()
+            .auto_shrink([true, true])
+            .max_height(ui.available_height())
+            .show(ui, |ui| {
+                let logs = LOG_VECTOR.lock().unwrap();
+                logs.iter().for_each(|(level, message)| {
+                    ui.label(format!("[{level}] {message}"));
+                });
+            });
     }
 
     fn start_server(&mut self) {
@@ -180,6 +218,7 @@ impl eframe::App for MyEguiApp {
             } else {
                 ui.label("Server is running.");
                 self.stop_button(ui);
+                self.log_window(ui);
             }
         });
     }
