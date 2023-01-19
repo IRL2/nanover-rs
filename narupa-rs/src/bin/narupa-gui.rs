@@ -1,7 +1,7 @@
 use eframe::egui;
 use log::{LevelFilter, SetLoggerError};
 use narupa_rs::application::{main_to_wrap, AppError, Cli};
-use std::sync::Mutex;
+use std::{sync::Mutex, num::ParseIntError};
 use tokio::runtime::Runtime;
 
 fn main() {
@@ -86,6 +86,8 @@ struct MyEguiApp {
     error: Option<String>,
     log_level: LevelFilter,
     show_progression: bool,
+    server_name: String,
+    port: String,
 }
 
 impl Default for MyEguiApp {
@@ -97,6 +99,8 @@ impl Default for MyEguiApp {
             error: None,
             log_level: LevelFilter::Info,
             show_progression: false,
+            server_name: "Narupa server".to_string(),
+            port: "38801".to_string(),
         }
     }
 }
@@ -152,13 +156,13 @@ impl MyEguiApp {
             (InputSelection::FileInput, Some(_)) => true,
             _ => false,
         };
+        let ready = ready && self.port_is_valid();
         let text = match &self.input_type {
             InputSelection::DefaultInput => "Run demonstration input!",
             InputSelection::FileInput => "Run the selected file!",
         };
         let button = egui::widgets::Button::new(text);
         if ui.add_enabled(ready, button).clicked() {
-            log::logger().flush();
             self.start_server();
         }
     }
@@ -201,6 +205,25 @@ impl MyEguiApp {
             });
     }
 
+    fn network_parameters(&mut self, ui: &mut egui::Ui) {
+        let mut header = egui::RichText::new("Network");
+        if !self.port_is_valid() {
+            header = header.color(egui::Color32::RED);
+        }
+        egui::CollapsingHeader::new(header)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Server name");
+                    ui.text_edit_singleline(&mut self.server_name);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Port");
+                    let text_color = if self.port_is_valid() {None} else {Some(egui::Color32::RED)};
+                    egui::TextEdit::singleline(&mut self.port).text_color_opt(text_color).show(ui);
+                });
+            });
+    }
+
     fn log_window(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
@@ -218,10 +241,29 @@ impl MyEguiApp {
 }
 
 impl MyEguiApp {
+    fn convert_port(&self) -> Result<u16, ParseIntError> {
+        self.port.parse()
+    }
+
+    fn port_is_valid(&self) -> bool {
+        self.convert_port().is_ok()
+    }
+}
+
+impl MyEguiApp {
     fn start_server(&mut self) {
+        log::logger().flush();
         self.clear_error();
+
+        let Ok(port) = self.convert_port() else {
+            self.error = Some("Invalid port provided.".to_string());
+            return;
+        };
+
         let mut arguments = Cli::default();
         arguments.progression = self.show_progression;
+        arguments.port = port;
+        arguments.name = self.server_name.clone();
         if let InputSelection::FileInput = self.input_type {
             arguments.input_xml_path = self.input_path.clone()
         };
@@ -274,6 +316,7 @@ impl eframe::App for MyEguiApp {
             if self.is_idle() {
                 self.input_selection(ui);
                 self.verbosity_selector(ui, true);
+                self.network_parameters(ui);
                 self.run_button(ui);
             } else {
                 ui.label("Server is running.");
