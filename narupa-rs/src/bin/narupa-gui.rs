@@ -25,7 +25,6 @@ impl log::Log for UILogger {
         if self.enabled(record.metadata()) && record.target().starts_with("narupa") {
             let mut logs = LOG_VECTOR.lock().unwrap();
             logs.push((record.level(), record.args().to_string()));
-            println!("[{}] {}", record.level(), record.args());
         }
     }
 
@@ -219,6 +218,7 @@ impl eframe::App for MyEguiApp {
                 ui.label("Server is running.");
                 self.stop_button(ui);
                 self.log_window(ui);
+                ctx.request_repaint();
             }
         });
     }
