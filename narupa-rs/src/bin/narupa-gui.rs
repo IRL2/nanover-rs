@@ -1,15 +1,18 @@
 use eframe::egui;
 use log::{LevelFilter, SetLoggerError};
-use tokio::runtime::Runtime;
-use narupa_rs::application::{main_to_wrap, Cli, AppError};
+use narupa_rs::application::{main_to_wrap, AppError, Cli};
 use std::sync::Mutex;
+use tokio::runtime::Runtime;
 
 fn main() {
     init_logging().expect("Could not setup logging.");
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native("Narupa-RS server", native_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))));
+    eframe::run_native(
+        "Narupa-RS server",
+        native_options,
+        Box::new(|cc| Box::new(MyEguiApp::new(cc))),
+    );
 }
-
 
 static LOG_VECTOR: Mutex<Vec<(log::Level, String)>> = Mutex::new(Vec::new());
 static UI_LOGGER: UILogger = UILogger;
@@ -35,8 +38,7 @@ impl log::Log for UILogger {
 }
 
 fn init_logging() -> Result<(), SetLoggerError> {
-    log::set_logger(&UI_LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::Debug))
+    log::set_logger(&UI_LOGGER).map(|()| log::set_max_level(LevelFilter::Debug))
 }
 
 struct Server {
@@ -49,8 +51,12 @@ impl Server {
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         let runtime = Runtime::new().expect("Unable to create Runtime");
         let _enter = runtime.enter();
-        let handle = std::thread::spawn(move || runtime.block_on(main_to_wrap(arguments, cancel_rx)));
-        Server {thread: handle, cancel_tx: Some(cancel_tx)}
+        let handle =
+            std::thread::spawn(move || runtime.block_on(main_to_wrap(arguments, cancel_rx)));
+        Server {
+            thread: handle,
+            cancel_tx: Some(cancel_tx),
+        }
     }
 
     pub fn is_running(&self) -> bool {
@@ -105,16 +111,33 @@ impl MyEguiApp {
     }
 
     fn input_selection(&mut self, ui: &mut egui::Ui) {
-        let mut file_picked = if let Some(ref path) = self.input_path {path.clone()} else {"".to_owned()};
+        let mut file_picked = if let Some(ref path) = self.input_path {
+            path.clone()
+        } else {
+            "".to_owned()
+        };
         ui.vertical(|ui| {
-            ui.horizontal(|ui| ui.radio_value(&mut self.input_type, InputSelection::DefaultInput, "Demonstration input"));
             ui.horizontal(|ui| {
-                ui.radio_value(&mut self.input_type, InputSelection::FileInput, "File input");
+                ui.radio_value(
+                    &mut self.input_type,
+                    InputSelection::DefaultInput,
+                    "Demonstration input",
+                )
+            });
+            ui.horizontal(|ui| {
+                ui.radio_value(
+                    &mut self.input_type,
+                    InputSelection::FileInput,
+                    "File input",
+                );
                 if ui.text_edit_singleline(&mut file_picked).changed() {
                     self.input_path = Some(file_picked);
                 };
                 if ui.button("Browse files").clicked() {
-                    if let Some(path) = rfd::FileDialog::new().add_filter("Narupa XML", &["xml"]).pick_file() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Narupa XML", &["xml"])
+                        .pick_file()
+                    {
                         self.input_path = Some(path.display().to_string());
                         self.input_type = InputSelection::FileInput;
                     };
@@ -149,25 +172,33 @@ impl MyEguiApp {
     fn error_message(&mut self, ui: &mut egui::Ui) {
         self.collect_error();
         let Some(ref error) = self.error else {return};
-        let error_text = egui::RichText::new(error).color(egui::Color32::RED).strong();
+        let error_text = egui::RichText::new(error)
+            .color(egui::Color32::RED)
+            .strong();
         ui.label(error_text);
     }
 
     fn verbosity_selector(&mut self, ui: &mut egui::Ui, progression: bool) {
-        let stroke = egui::Stroke{width: 1.0, color: egui::Color32::WHITE};
-        egui::Frame::none().stroke(stroke).inner_margin(10.0).show(ui, |ui| {
-            ui.vertical(|ui| {
-                ui.label("Verbosity");
-                ui.horizontal(|ui| {
-                    ui.radio_value(&mut self.log_level, LevelFilter::Info, "Normal");
-                    ui.radio_value(&mut self.log_level, LevelFilter::Debug, "Verbose");
-                    ui.radio_value(&mut self.log_level, LevelFilter::Trace, "Super verbose");
-                });
-                if progression {
-                    ui.checkbox(&mut self.show_progression, "Show simulation progression");
-                };
-            })
-        });
+        let stroke = egui::Stroke {
+            width: 1.0,
+            color: egui::Color32::WHITE,
+        };
+        egui::Frame::none()
+            .stroke(stroke)
+            .inner_margin(10.0)
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.label("Verbosity");
+                    ui.horizontal(|ui| {
+                        ui.radio_value(&mut self.log_level, LevelFilter::Info, "Normal");
+                        ui.radio_value(&mut self.log_level, LevelFilter::Debug, "Verbose");
+                        ui.radio_value(&mut self.log_level, LevelFilter::Trace, "Super verbose");
+                    });
+                    if progression {
+                        ui.checkbox(&mut self.show_progression, "Show simulation progression");
+                    };
+                })
+            });
     }
 
     fn log_window(&mut self, ui: &mut egui::Ui) {
@@ -184,7 +215,9 @@ impl MyEguiApp {
                 });
             });
     }
+}
 
+impl MyEguiApp {
     fn start_server(&mut self) {
         self.clear_error();
         let mut arguments = Cli::default();
@@ -217,7 +250,9 @@ impl MyEguiApp {
     fn server_has_issue(&self) -> bool {
         self.server.is_some() && self.is_idle()
     }
+}
 
+impl MyEguiApp {
     fn collect_error(&mut self) {
         if self.server_has_issue() {
             let Some(server) = self.server.take() else {return};
@@ -232,7 +267,7 @@ impl MyEguiApp {
 }
 
 impl eframe::App for MyEguiApp {
-   fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Narupa server");
             self.error_message(ui);
