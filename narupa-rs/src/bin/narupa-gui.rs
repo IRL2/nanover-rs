@@ -200,7 +200,8 @@ impl MyEguiApp {
 
     fn network_parameters(&mut self, ui: &mut egui::Ui) {
         let mut header = egui::RichText::new("Network");
-        if !self.port_is_valid() {
+        let port_is_valid = self.port_is_valid();
+        if !port_is_valid {
             header = header.color(egui::Color32::RED);
         }
         egui::CollapsingHeader::new(header)
@@ -210,9 +211,16 @@ impl MyEguiApp {
                     ui.text_edit_singleline(&mut self.server_name);
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Port");
-                    let text_color = if self.port_is_valid() {None} else {Some(egui::Color32::RED)};
+                    if port_is_valid {
+                        ui.label("Port");
+                    } else {
+                        ui.label(egui::RichText::new("Port").color(egui::Color32::RED));
+                    }
+                    let text_color = if port_is_valid {None} else {Some(egui::Color32::RED)};
                     egui::TextEdit::singleline(&mut self.port).text_color_opt(text_color).show(ui);
+                    if ui.button("Set to default").clicked() {
+                        self.port = "38801".to_string();
+                    }
                 });
             });
     }
