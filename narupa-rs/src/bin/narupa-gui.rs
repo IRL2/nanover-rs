@@ -151,6 +151,7 @@ impl MyEguiApp {
 
     fn log_window(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
+            .stick_to_bottom(true)
             .auto_shrink([true, true])
             .max_height(ui.available_height())
             .show(ui, |ui| {
