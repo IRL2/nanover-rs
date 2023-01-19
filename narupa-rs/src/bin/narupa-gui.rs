@@ -183,16 +183,9 @@ impl MyEguiApp {
     }
 
     fn verbosity_selector(&mut self, ui: &mut egui::Ui, progression: bool) {
-        let stroke = egui::Stroke {
-            width: 1.0,
-            color: egui::Color32::WHITE,
-        };
-        egui::Frame::none()
-            .stroke(stroke)
-            .inner_margin(10.0)
+        egui::CollapsingHeader::new("Verbosity")
             .show(ui, |ui| {
                 ui.vertical(|ui| {
-                    ui.label("Verbosity");
                     ui.horizontal(|ui| {
                         ui.radio_value(&mut self.log_level, LevelFilter::Info, "Normal");
                         ui.radio_value(&mut self.log_level, LevelFilter::Debug, "Verbose");
