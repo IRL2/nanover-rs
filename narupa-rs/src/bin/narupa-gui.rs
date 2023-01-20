@@ -1,7 +1,7 @@
 use eframe::egui;
 use log::{LevelFilter, SetLoggerError};
 use narupa_rs::application::{main_to_wrap, AppError, Cli};
-use std::{sync::Mutex, num::ParseIntError};
+use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}};
 use tokio::runtime::Runtime;
 
 fn main() {
@@ -80,6 +80,7 @@ impl Server {
 }
 
 struct MyEguiApp {
+    reference: Cli,
     input_type: InputSelection,
     input_path: Option<String>,
     server: Option<Server>,
@@ -88,19 +89,27 @@ struct MyEguiApp {
     show_progression: bool,
     server_name: String,
     port: String,
+    simulation_fps: String,
+    frame_interval: String,
+    force_interval: String,
 }
 
 impl Default for MyEguiApp {
     fn default() -> Self {
+        let reference = Cli::default();
         Self {
+            reference: Cli::default(),
             input_type: InputSelection::DefaultInput,
             input_path: None,
             server: None,
             error: None,
             log_level: LevelFilter::Info,
-            show_progression: false,
-            server_name: "Narupa server".to_string(),
-            port: "38801".to_string(),
+            show_progression: reference.progression,
+            server_name: reference.name,
+            port: format!("{}", reference.port),
+            simulation_fps: format!("{}", reference.simulation_fps),
+            frame_interval: format!("{}", reference.frame_interval),
+            force_interval: format!("{}", reference.force_interval),
         }
     }
 }
@@ -156,7 +165,9 @@ impl MyEguiApp {
             (InputSelection::FileInput, Some(_)) => true,
             _ => false,
         };
-        let ready = ready && self.port_is_valid();
+        let ready = ready
+            && self.port_is_valid()
+            && self.simulation_parameters_are_valid();
         let text = match &self.input_type {
             InputSelection::DefaultInput => "Run demonstration input!",
             InputSelection::FileInput => "Run the selected file!",
@@ -219,9 +230,63 @@ impl MyEguiApp {
                     let text_color = if port_is_valid {None} else {Some(egui::Color32::RED)};
                     egui::TextEdit::singleline(&mut self.port).text_color_opt(text_color).show(ui);
                     if ui.button("Set to default").clicked() {
-                        self.port = "38801".to_string();
+                        self.port = self.reference.port.to_string();
                     }
                 });
+            });
+    }
+
+    fn simulation_parameters(&mut self, ui: &mut egui::Ui) {
+        let mut header = egui::RichText::new("Simulation");
+        if !self.simulation_parameters_are_valid() {
+            header = header.color(egui::Color32::RED);
+        };
+        egui::CollapsingHeader::new(header)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let text_color;
+                    if self.simulation_fps_is_valid() {
+                        ui.label("Simulation FPS");
+                        text_color = None;
+                    } else {
+                        ui.label(egui::RichText::new("Simulation FPS").color(egui::Color32::RED));
+                        text_color = Some(egui::Color32::RED);
+                    }
+                    egui::TextEdit::singleline(&mut self.simulation_fps).text_color_opt(text_color).show(ui);
+                    if ui.button("Set to default").clicked() {
+                        self.simulation_fps = self.reference.simulation_fps.to_string();
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    let text_color;
+                    if self.frame_interval_is_valid() {
+                        ui.label("Frame interval");
+                        text_color = None;
+                    } else {
+                        ui.label(egui::RichText::new("Frame interval").color(egui::Color32::RED));
+                        text_color = Some(egui::Color32::RED);
+                    }
+                    egui::TextEdit::singleline(&mut self.frame_interval).text_color_opt(text_color).show(ui);
+                    if ui.button("Set to default").clicked() {
+                        self.frame_interval = self.reference.frame_interval.to_string();
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    let text_color;
+                    if self.force_interval_is_valid() {
+                        ui.label("Force interval");
+                        text_color = None;
+                    } else {
+                        ui.label(egui::RichText::new("Force interval").color(egui::Color32::RED));
+                        text_color = Some(egui::Color32::RED);
+                    }
+                    egui::TextEdit::singleline(&mut self.force_interval).text_color_opt(text_color).show(ui);
+                    if ui.button("Set to default").clicked() {
+                        self.force_interval = self.reference.force_interval.to_string();
+                    }
+                })
             });
     }
 
@@ -249,17 +314,44 @@ impl MyEguiApp {
     fn port_is_valid(&self) -> bool {
         self.convert_port().is_ok()
     }
+
+    fn convert_simulation_fps(&self) -> Result<f64, ParseFloatError> {
+        self.simulation_fps.parse()
+    }
+
+    fn simulation_fps_is_valid(&self) -> bool {
+        self.convert_simulation_fps().is_ok()
+    }
+    
+    fn convert_frame_interval(&self) -> Result<u32, ParseIntError> {
+        self.frame_interval.parse()
+    }
+
+    fn frame_interval_is_valid(&self) -> bool {
+        self.convert_frame_interval().is_ok()
+    }
+
+    fn convert_force_interval(&self) -> Result<u32, ParseIntError> {
+        self.force_interval.parse()
+    }
+
+    fn force_interval_is_valid(&self) -> bool {
+        self.convert_force_interval().is_ok()
+    }
+
+    fn simulation_parameters_are_valid(&self) -> bool {
+        self.simulation_fps_is_valid()
+        && self.frame_interval_is_valid()
+        && self.force_interval_is_valid()
+    }
 }
 
 impl MyEguiApp {
-    fn start_server(&mut self) {
-        log::logger().flush();
-        self.clear_error();
-
-        let Ok(port) = self.convert_port() else {
-            self.error = Some("Invalid port provided.".to_string());
-            return;
-        };
+    fn build_arguments(&self) -> Result<Cli, ()> {
+        let port = self.convert_port().map_err(|_| ())?;
+        let simulation_fps = self.convert_simulation_fps().map_err(|_| ())?;
+        let frame_interval = self.convert_frame_interval().map_err(|_| ())?;
+        let force_interval = self.convert_force_interval().map_err(|_| ())?;
 
         let mut arguments = Cli::default();
         arguments.progression = self.show_progression;
@@ -268,6 +360,22 @@ impl MyEguiApp {
         if let InputSelection::FileInput = self.input_type {
             arguments.input_xml_path = self.input_path.clone()
         };
+        arguments.simulation_fps = simulation_fps;
+        arguments.frame_interval = frame_interval;
+        arguments.force_interval = force_interval;
+
+        Ok(arguments)
+    }
+
+    fn start_server(&mut self) {
+        log::logger().flush();
+        self.clear_error();
+
+        let Ok(arguments) = self.build_arguments() else {
+            self.error = Some("An invalid argument was provided. Check red fields.".to_string());
+            return;
+        };
+
         let server = Server::new(arguments);
         self.server = Some(server)
     }
@@ -318,6 +426,7 @@ impl eframe::App for MyEguiApp {
                 self.input_selection(ui);
                 self.verbosity_selector(ui, true);
                 self.network_parameters(ui);
+                self.simulation_parameters(ui);
                 self.run_button(ui);
             } else {
                 ui.label("Server is running.");
