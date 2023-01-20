@@ -92,6 +92,9 @@ struct MyEguiApp {
     simulation_fps: String,
     frame_interval: String,
     force_interval: String,
+    record_statistics: bool,
+    statistics: Option<String>,
+    statistics_fps: String,
 }
 
 impl Default for MyEguiApp {
@@ -110,6 +113,9 @@ impl Default for MyEguiApp {
             simulation_fps: format!("{}", reference.simulation_fps),
             frame_interval: format!("{}", reference.frame_interval),
             force_interval: format!("{}", reference.force_interval),
+            record_statistics: false,
+            statistics: reference.statistics,
+            statistics_fps: format!("{}", reference.statistics_fps),
         }
     }
 }
@@ -167,7 +173,8 @@ impl MyEguiApp {
         };
         let ready = ready
             && self.port_is_valid()
-            && self.simulation_parameters_are_valid();
+            && self.simulation_parameters_are_valid()
+            && self.recording_paramaters_are_valid();
         let text = match &self.input_type {
             InputSelection::DefaultInput => "Run demonstration input!",
             InputSelection::FileInput => "Run the selected file!",
@@ -293,6 +300,58 @@ impl MyEguiApp {
             });
     }
 
+    fn recording_paramaters(&mut self, ui: &mut egui::Ui) {
+        let mut statistics_path = if let Some(ref path) = self.statistics {
+            path.clone()
+        } else {
+            "".to_string()
+        };
+
+        let mut header = egui::RichText::new("Recording");
+        if !self.recording_paramaters_are_valid() {
+            header = header.color(egui::Color32::RED);
+        };
+        egui::CollapsingHeader::new(header)
+            .show(ui, |ui| {
+                ui.checkbox(&mut self.record_statistics, "Record statistics");
+                ui.horizontal(|ui| {
+                    let text_field = egui::TextEdit::singleline(&mut statistics_path);
+                    let label = if self.statistics_is_valid() {
+                        egui::Label::new("Statistics file:")
+                    } else {
+                        egui::Label::new(egui::RichText::new("Statistics file:").color(egui::Color32::RED))
+                    };
+                    ui.add_enabled(self.record_statistics, label);
+                    if ui.add_enabled(self.record_statistics, text_field).changed() {
+                        self.statistics = Some(statistics_path);
+                    };
+                    if ui.add_enabled(self.record_statistics, egui::Button::new("Select file")).clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .save_file()
+                        {
+                            self.statistics = Some(path.display().to_string());
+                        };
+                    }
+                });
+                ui.horizontal(|ui| {
+                    let text_color;
+                    let label = if self.statistics_fps_is_valid() {
+                        text_color = None;
+                        egui::Label::new("Statistics FPS")
+                    } else {
+                        text_color = Some(egui::Color32::RED);
+                        egui::Label::new(egui::RichText::new("Statistics FPS:").color(egui::Color32::RED))
+                    };
+                    let text_edit = egui::TextEdit::singleline(&mut self.statistics_fps).text_color_opt(text_color);
+                    ui.add_enabled(self.record_statistics, label);
+                    ui.add_enabled(self.record_statistics, text_edit);
+                    if ui.add_enabled(self.record_statistics, egui::Button::new("Set to default")).clicked() {
+                        self.statistics_fps = format!("{}", self.reference.statistics_fps);
+                    }
+                })
+            });
+    }
+
     fn log_window(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
@@ -347,6 +406,29 @@ impl MyEguiApp {
         && self.frame_interval_is_valid()
         && self.force_interval_is_valid()
     }
+
+    fn convert_statistics_fps(&self) -> Result<f64, ParseFloatError> {
+        self.statistics_fps.parse()
+    }
+
+    fn statistics_fps_is_valid(&self) -> bool {
+        self.convert_statistics_fps().is_ok()
+    }
+
+    fn statistics_is_valid(&self) -> bool {
+        if self.record_statistics {
+            let Some(ref path) = self.statistics else {
+                return false;
+            };
+            !path.is_empty()
+        } else {
+            true
+        }
+    }
+
+    fn recording_paramaters_are_valid(&self) -> bool {
+        !self.record_statistics || (self.statistics_fps_is_valid() && self.statistics_is_valid())
+    }
 }
 
 impl MyEguiApp {
@@ -366,6 +448,15 @@ impl MyEguiApp {
         arguments.simulation_fps = simulation_fps;
         arguments.frame_interval = frame_interval;
         arguments.force_interval = force_interval;
+
+        if self.record_statistics {
+            let Some(ref statistics) = self.statistics else {
+                return Err(());
+            };
+            arguments.statistics = Some(statistics.clone());
+        } else {
+            arguments.statistics = None;
+        };
 
         Ok(arguments)
     }
@@ -430,6 +521,7 @@ impl eframe::App for MyEguiApp {
                 self.verbosity_selector(ui, true);
                 self.network_parameters(ui);
                 self.simulation_parameters(ui);
+                self.recording_paramaters(ui);
                 self.run_button(ui);
             } else {
                 ui.label("Server is running.");
