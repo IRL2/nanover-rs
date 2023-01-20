@@ -25,6 +25,9 @@ thiserror = "1.0.38"
 hyper = "0.14.23"
 log = "0.4.17"
 env_logger = "0.10.0"
+egui = "0.20.1"
+eframe = "0.20.1"
+rfd = "0.10.0"
 
 [build-dependencies]
 tonic-build = "0.7.2"
@@ -41,3 +44,6 @@ rstest = "0.15.0"
 
 [[bin]]
 name = "narupa-cli"
+
+[[bin]]
+name = "narupa-gui"

@@ -78,6 +78,25 @@ pub struct Cli {
     pub name: String,
 }
 
+impl Default for Cli {
+    fn default() -> Self {
+        Cli {
+            input_xml_path: None,
+            address: IpAddr::from([0, 0, 0, 0]),
+            port: 38801,
+            simulation_fps: 30.0,
+            frame_interval: 5,
+            force_interval: 10,
+            progression: false,
+            verbose: false,
+            trace: false,
+            statistics: None,
+            statistics_fps: 4.0,
+            name: "Narupa-RS iMD Server".to_owned(),
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("Cannot open the input file.")]
@@ -98,15 +117,7 @@ impl From<CannotOpenStatisticFile> for AppError {
     }
 }
 
-pub async fn main_to_wrap(cli: Cli) -> Result<(), AppError> {
-    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.unwrap();
-        // Your handler here
-        info!("Closing the server. Goodbye!");
-        cancel_tx.send(()).unwrap();
-    });
-
+pub async fn main_to_wrap(cli: Cli, cancel_rx: tokio::sync::oneshot::Receiver<()>) -> Result<(), AppError> {
     // Read the user arguments.
     let xml_path = cli.input_xml_path;
     let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
