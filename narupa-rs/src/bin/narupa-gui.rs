@@ -220,6 +220,9 @@ impl MyEguiApp {
                 ui.horizontal(|ui| {
                     ui.label("Server name");
                     ui.text_edit_singleline(&mut self.server_name);
+                    if ui.button("Set to default").clicked() {
+                        self.server_name = self.reference.name.clone();
+                    }
                 });
                 ui.horizontal(|ui| {
                     if port_is_valid {
