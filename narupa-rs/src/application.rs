@@ -30,6 +30,7 @@ use std::time::Duration;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::oneshot;
 use tonic::transport::Server;
 
 use clap::Parser;
@@ -48,11 +49,13 @@ pub struct CancellationReceivers {
     server: tokio::sync::oneshot::Receiver<()>,
     trajectory: tokio::sync::oneshot::Receiver<()>,
     state: tokio::sync::oneshot::Receiver<()>,
+    traj_service: tokio::sync::oneshot::Receiver<()>,
+    state_service: tokio::sync::oneshot::Receiver<()>,
 }
 
 impl CancellationReceivers {
-    pub fn unpack(self) -> (tokio::sync::oneshot::Receiver<()>, tokio::sync::oneshot::Receiver<()>, tokio::sync::oneshot::Receiver<()>) {
-        (self.server, self.trajectory, self.state)
+    pub fn unpack(self) -> (oneshot::Receiver<()>, oneshot::Receiver<()>, oneshot::Receiver<()>, oneshot::Receiver<()>, oneshot::Receiver<()>) {
+        (self.server, self.trajectory, self.state, self.traj_service, self.state_service)
     }
 }
 
@@ -60,6 +63,8 @@ pub struct CancellationSenders {
     server: tokio::sync::oneshot::Sender<()>,
     trajectory: tokio::sync::oneshot::Sender<()>,
     state: tokio::sync::oneshot::Sender<()>,
+    traj_service: tokio::sync::oneshot::Sender<()>,
+    state_service: tokio::sync::oneshot::Sender<()>,
 }
 
 impl CancellationSenders {
@@ -67,6 +72,8 @@ impl CancellationSenders {
         self.server.send(())?;
         self.trajectory.send(())?;
         self.state.send(())?;
+        self.traj_service.send(())?;
+        self.state_service.send(())?;
         Ok(())
     }
 }
@@ -75,9 +82,23 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
     let (server_tx, server_rx) = tokio::sync::oneshot::channel();
     let (trajectory_tx, trajectory_rx) = tokio::sync::oneshot::channel();
     let (state_tx, state_rx) = tokio::sync::oneshot::channel();
+    let (traj_service_tx, traj_service_rx) = tokio::sync::oneshot::channel();
+    let (state_service_tx, state_service_rx) = tokio::sync::oneshot::channel();
     (
-        CancellationSenders { server: server_tx, trajectory: trajectory_tx, state: state_tx},
-        CancellationReceivers { server: server_rx, trajectory: trajectory_rx, state: state_rx},
+        CancellationSenders {
+            server: server_tx,
+            trajectory: trajectory_tx,
+            state: state_tx,
+            traj_service: traj_service_tx,
+            state_service: state_service_tx,
+        },
+        CancellationReceivers {
+            server: server_rx,
+            trajectory: trajectory_rx,
+            state: state_rx,
+            traj_service: traj_service_rx,
+            state_service: state_service_rx,
+        },
     )
 }
 
@@ -275,7 +296,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
         );
     };
 
-    let (cancel_server_rx, cancel_trajectory_rx, cancel_state_rx) = cancel_rx.unpack();
+    let (cancel_server_rx, cancel_trajectory_rx, cancel_state_rx, cancel_traj_serv_rx, cancel_state_serv_rx) = cancel_rx.unpack();
     let syncronous_start = Instant::now();
     if let Some(path) = cli.trajectory {
         let file = tokio::fs::File::create(path)
@@ -321,9 +342,9 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
 
     // Run the GRPC server on the main thread.
     info!("Listening to {socket_address}");
-    let server = Trajectory::new(Arc::clone(&frame_source));
+    let server = Trajectory::new(Arc::clone(&frame_source), cancel_traj_serv_rx);
     let command_service = CommandService::new(commands);
-    let state_service = StateService::new(Arc::clone(&shared_state));
+    let state_service = StateService::new(Arc::clone(&shared_state), cancel_state_serv_rx);
     tokio::task::spawn(
         Server::builder()
             .add_service(TrajectoryServiceServer::new(server))
