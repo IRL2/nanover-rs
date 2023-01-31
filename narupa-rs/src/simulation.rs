@@ -639,6 +639,9 @@ impl ToFrameData for OpenMMSimulation {
             .insert_number_value("particle.count", (n_particles) as f64)
             .unwrap();
 
+        frame
+            .insert_string_array("particle.names", self.topology.names.clone())
+            .unwrap();
         let elements: Vec<u32> = self
             .topology
             .elements
@@ -658,7 +661,7 @@ impl ToFrameData for OpenMMSimulation {
             .map(|e| *e as u32)
             .collect();
         frame
-            .insert_number_value("residue.count", atom_resindex.len() as f64)
+            .insert_number_value("residue.count", self.topology.resids.len() as f64)
             .unwrap();
         frame
             .insert_index_array("particle.residues", atom_resindex)

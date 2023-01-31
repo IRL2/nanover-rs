@@ -95,6 +95,8 @@ struct MyEguiApp {
     record_statistics: bool,
     statistics: Option<String>,
     statistics_fps: String,
+    record_trajectory: bool,
+    trajectory: Option<String>,
 }
 
 impl Default for MyEguiApp {
@@ -116,6 +118,8 @@ impl Default for MyEguiApp {
             record_statistics: false,
             statistics: reference.statistics,
             statistics_fps: format!("{}", reference.statistics_fps),
+            record_trajectory: false,
+            trajectory: None,
         }
     }
 }
@@ -152,7 +156,7 @@ impl MyEguiApp {
                 if ui.text_edit_singleline(&mut file_picked).changed() {
                     self.input_path = Some(file_picked);
                 };
-                if ui.button("Browse files").clicked() {
+                if ui.button("Select files").clicked() {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("Narupa XML", &["xml"])
                         .pick_file()
@@ -306,6 +310,11 @@ impl MyEguiApp {
         } else {
             "".to_string()
         };
+        let mut trajectory_path = if let Some(ref path) = self.trajectory {
+            path.clone()
+        } else {
+            "".to_string()
+        };
 
         let mut header = egui::RichText::new("Recording");
         if !self.recording_paramaters_are_valid() {
@@ -325,11 +334,12 @@ impl MyEguiApp {
                     if ui.add_enabled(self.record_statistics, text_field).changed() {
                         self.statistics = Some(statistics_path);
                     };
-                    if ui.add_enabled(self.record_statistics, egui::Button::new("Select file")).clicked() {
+                    if ui.add(egui::Button::new("Select file")).clicked() {
                         if let Some(path) = rfd::FileDialog::new()
                             .save_file()
                         {
                             self.statistics = Some(path.display().to_string());
+                            self.record_statistics = true;
                         };
                     }
                 });
@@ -348,7 +358,28 @@ impl MyEguiApp {
                     if ui.add_enabled(self.record_statistics, egui::Button::new("Set to default")).clicked() {
                         self.statistics_fps = format!("{}", self.reference.statistics_fps);
                     }
-                })
+                });
+                ui.checkbox(&mut self.record_trajectory, "Record trajectory");
+                ui.horizontal(|ui| {
+                    let text_field = egui::TextEdit::singleline(&mut trajectory_path);
+                    let label = if self.trajectory_is_valid() {
+                        egui::Label::new("Trajectory file:")
+                    } else {
+                        egui::Label::new(egui::RichText::new("Trajectory file:").color(egui::Color32::RED))
+                    };
+                    ui.add_enabled(self.record_trajectory, label);
+                    if ui.add_enabled(self.record_trajectory, text_field).changed() {
+                        self.trajectory = Some(trajectory_path);
+                    };
+                    if ui.add(egui::Button::new("Select file")).clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .save_file()
+                        {
+                            self.trajectory = Some(path.display().to_string());
+                            self.record_trajectory = true;
+                        };
+                    }
+                });
             });
     }
 
@@ -426,8 +457,20 @@ impl MyEguiApp {
         }
     }
 
+    fn trajectory_is_valid(&self) -> bool {
+        if self.record_trajectory {
+            let Some(ref path) = self.trajectory else {
+                return false;
+            };
+            !path.is_empty()
+        } else {
+            true
+        }
+    }
     fn recording_paramaters_are_valid(&self) -> bool {
-        !self.record_statistics || (self.statistics_fps_is_valid() && self.statistics_is_valid())
+        (!self.record_statistics || (self.statistics_fps_is_valid() && self.statistics_is_valid()))
+        &&
+        (!self.record_trajectory || self.trajectory_is_valid())
     }
 }
 
@@ -457,6 +500,15 @@ impl MyEguiApp {
         } else {
             arguments.statistics = None;
         };
+
+        if self.record_trajectory {
+            let Some(ref trajectory) = self.trajectory else {
+                return Err(());
+            };
+            arguments.trajectory = Some(trajectory.clone());
+        } else {
+            arguments.trajectory = None;
+        }
 
         Ok(arguments)
     }

@@ -3,6 +3,10 @@ extern crate clap;
 use futures::TryFutureExt;
 use log::{error, info};
 use narupa_proto::frame::FrameData;
+use prost::Message;
+use tokio::io::AsyncWriteExt;
+use crate::broadcaster::BroadcastReceiver;
+use crate::broadcaster::Broadcaster;
 use crate::essd::serve_essd;
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::multiuser::RadialOrient;
@@ -22,6 +26,8 @@ use std::io::BufReader;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use std::time::Instant;
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::Server;
@@ -76,6 +82,9 @@ pub struct Cli {
     /// Server name to advertise for autoconnect.
     #[clap(short, long, value_parser, default_value = "Narupa-RS iMD Server")]
     pub name: String,
+    /// Record the trajecory
+    #[clap(long, value_parser)]
+    pub trajectory: Option<String>,
 }
 
 impl Default for Cli {
@@ -93,6 +102,7 @@ impl Default for Cli {
             statistics: None,
             statistics_fps: 4.0,
             name: "Narupa-RS iMD Server".to_owned(),
+            trajectory: None,
         }
     }
 }
@@ -109,11 +119,36 @@ pub enum AppError {
     TransportError(#[from] tonic::transport::Error),
     #[error("Internal server error.")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("Cannot open the trajectory file.")]
+    CannotOpenTrajectoryFile(std::io::Error),
 }
 
 impl From<CannotOpenStatisticFile> for AppError {
     fn from(_value: CannotOpenStatisticFile) -> Self {
         AppError::CannotOpenStatisticFile
+    }
+}
+
+async fn record_trajectory(receiver: Arc<Mutex<BroadcastReceiver<FrameData>>>, mut output: tokio::fs::File) -> std::io::Result<()>{
+    let duration = Duration::from_millis(33);
+    let mut interval = tokio::time::interval(duration);
+    let start = Instant::now();
+    loop {
+        interval.tick().await;
+        let Some(frame) = receiver.lock().unwrap().recv()  else {
+            continue;
+        };
+        let timestamp = Instant::now().saturating_duration_since(start).as_micros();
+        let mut now_bytes = timestamp.to_le_bytes();
+        println!("Timestamp: {timestamp} As bytes: {now_bytes:?}");
+        let mut buffer:Vec<u8> = Vec::new();
+        frame.encode(&mut buffer)?;
+        // println!("Frame: {buffer:?}");
+        let mut frame_byte_size = (buffer.len() as u64).to_le_bytes();
+        println!("Size: {} As bytes: {frame_byte_size:?}", buffer.len());
+        output.write_all(&mut now_bytes).await?;
+        output.write_all(&mut frame_byte_size).await?;
+        output.write_all(&mut buffer).await?;
     }
 }
 
@@ -192,6 +227,14 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: tokio::sync::oneshot::Receiver<()
             simulation_rx,
         );
     };
+
+    if let Some(path) = cli.trajectory {
+        let file = tokio::fs::File::create(path)
+            .await
+            .map_err(|err| AppError::CannotOpenTrajectoryFile(err))?;
+        let receiver = frame_source.lock().unwrap().get_rx();
+        tokio::spawn(record_trajectory(receiver, file));
+    }
 
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
