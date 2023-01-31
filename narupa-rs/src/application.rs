@@ -1,7 +1,7 @@
 extern crate clap;
 
 use futures::TryFutureExt;
-use log::{error, info};
+use log::{error, info, trace};
 use narupa_proto::frame::FrameData;
 use prost::Message;
 use tokio::io::AsyncWriteExt;
@@ -44,6 +44,44 @@ impl From<CannotOpenStatisticFile> for Box<dyn std::error::Error + Send> {
     }
 }
 
+pub struct CancellationReceivers {
+    server: tokio::sync::oneshot::Receiver<()>,
+    trajectory: tokio::sync::oneshot::Receiver<()>,
+    state: tokio::sync::oneshot::Receiver<()>,
+}
+
+impl CancellationReceivers {
+    pub fn unpack(self) -> (tokio::sync::oneshot::Receiver<()>, tokio::sync::oneshot::Receiver<()>, tokio::sync::oneshot::Receiver<()>) {
+        (self.server, self.trajectory, self.state)
+    }
+}
+
+pub struct CancellationSenders {
+    server: tokio::sync::oneshot::Sender<()>,
+    trajectory: tokio::sync::oneshot::Sender<()>,
+    state: tokio::sync::oneshot::Sender<()>,
+}
+
+impl CancellationSenders {
+    pub fn send(self) -> Result<(), ()> {
+        self.server.send(())?;
+        self.trajectory.send(())?;
+        self.state.send(())?;
+        Ok(())
+    }
+}
+
+pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
+    let (server_tx, server_rx) = tokio::sync::oneshot::channel();
+    let (trajectory_tx, trajectory_rx) = tokio::sync::oneshot::channel();
+    let (state_tx, state_rx) = tokio::sync::oneshot::channel();
+    (
+        CancellationSenders { server: server_tx, trajectory: trajectory_tx, state: state_tx},
+        CancellationReceivers { server: server_rx, trajectory: trajectory_rx, state: state_rx},
+    )
+}
+
+
 /// A Narupa IMD server.
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -85,6 +123,9 @@ pub struct Cli {
     /// Record the trajecory
     #[clap(long, value_parser)]
     pub trajectory: Option<String>,
+    /// Record the updates from the shared state
+    #[clap(long, value_parser)]
+    pub state: Option<String>,
 }
 
 impl Default for Cli {
@@ -103,6 +144,7 @@ impl Default for Cli {
             statistics_fps: 4.0,
             name: "Narupa-RS iMD Server".to_owned(),
             trajectory: None,
+            state: None,
         }
     }
 }
@@ -129,30 +171,35 @@ impl From<CannotOpenStatisticFile> for AppError {
     }
 }
 
-async fn record_trajectory(receiver: Arc<Mutex<BroadcastReceiver<FrameData>>>, mut output: tokio::fs::File) -> std::io::Result<()>{
+async fn record_broadcaster<T>(start: Instant, receiver: Arc<Mutex<BroadcastReceiver<T>>>, mut output: tokio::fs::File, mut cancel_rx: tokio::sync::oneshot::Receiver<()>, id: usize) -> std::io::Result<()> where T: Message {
     let duration = Duration::from_millis(33);
     let mut interval = tokio::time::interval(duration);
-    let start = Instant::now();
     loop {
+        match cancel_rx.try_recv() {
+            Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => break,
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {},
+        };
         interval.tick().await;
         let Some(frame) = receiver.lock().unwrap().recv()  else {
             continue;
         };
         let timestamp = Instant::now().saturating_duration_since(start).as_micros();
         let mut now_bytes = timestamp.to_le_bytes();
-        println!("Timestamp: {timestamp} As bytes: {now_bytes:?}");
         let mut buffer:Vec<u8> = Vec::new();
         frame.encode(&mut buffer)?;
         // println!("Frame: {buffer:?}");
         let mut frame_byte_size = (buffer.len() as u64).to_le_bytes();
-        println!("Size: {} As bytes: {frame_byte_size:?}", buffer.len());
         output.write_all(&mut now_bytes).await?;
         output.write_all(&mut frame_byte_size).await?;
         output.write_all(&mut buffer).await?;
+        trace!("Record {id}");
     }
+
+    println!("Terminate recorder {id}");
+    Ok(())
 }
 
-pub async fn main_to_wrap(cli: Cli, cancel_rx: tokio::sync::oneshot::Receiver<()>) -> Result<(), AppError> {
+pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<(), AppError> {
     // Read the user arguments.
     let xml_path = cli.input_xml_path;
     let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
@@ -228,12 +275,21 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: tokio::sync::oneshot::Receiver<()
         );
     };
 
+    let (cancel_server_rx, cancel_trajectory_rx, cancel_state_rx) = cancel_rx.unpack();
+    let syncronous_start = Instant::now();
     if let Some(path) = cli.trajectory {
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|err| AppError::CannotOpenTrajectoryFile(err))?;
         let receiver = frame_source.lock().unwrap().get_rx();
-        tokio::spawn(record_trajectory(receiver, file));
+        tokio::spawn(record_broadcaster(syncronous_start.clone(), receiver, file, cancel_trajectory_rx, 0));
+    }
+    if let Some(path) = cli.state {
+        let file = tokio::fs::File::create(path)
+            .await
+            .map_err(|err| AppError::CannotOpenTrajectoryFile(err))?;
+        let receiver = shared_state.lock().unwrap().get_rx();
+        tokio::spawn(record_broadcaster(syncronous_start.clone(), receiver, file, cancel_state_rx, 1));
     }
 
     // Run the simulation thread.
@@ -273,7 +329,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: tokio::sync::oneshot::Receiver<()
             .add_service(TrajectoryServiceServer::new(server))
             .add_service(CommandServer::new(command_service))
             .add_service(StateServer::new(state_service))
-            .serve_with_shutdown(socket_address, cancel_rx.unwrap_or_else(|_| ())),
+            .serve_with_shutdown(socket_address, cancel_server_rx.unwrap_or_else(|_| ())),
     )
     .await??;
 

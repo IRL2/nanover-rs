@@ -1,6 +1,6 @@
 use eframe::egui;
 use log::{LevelFilter, SetLoggerError};
-use narupa_rs::application::{main_to_wrap, AppError, Cli};
+use narupa_rs::application::{main_to_wrap, AppError, Cli, cancellation_channels, CancellationSenders};
 use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}};
 use tokio::runtime::Runtime;
 
@@ -43,12 +43,12 @@ fn init_logging() -> Result<(), SetLoggerError> {
 
 struct Server {
     thread: std::thread::JoinHandle<Result<(), AppError>>,
-    cancel_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    cancel_tx: Option<CancellationSenders>,
 }
 
 impl Server {
     pub fn new(arguments: Cli) -> Self {
-        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let (cancel_tx, cancel_rx) = cancellation_channels();
         let runtime = Runtime::new().expect("Unable to create Runtime");
         let _enter = runtime.enter();
         let handle =
@@ -69,7 +69,7 @@ impl Server {
         // that specific call to stop the server. Therefore, we can ignore
         // the send failing or the transmitter being None.
         if let Some(tx) = self.cancel_tx.take() {
-            tx.send(()).ok();
+            tx.send().ok();
         };
     }
 
@@ -97,6 +97,8 @@ struct MyEguiApp {
     statistics_fps: String,
     record_trajectory: bool,
     trajectory: Option<String>,
+    record_state: bool,
+    state: Option<String>,
 }
 
 impl Default for MyEguiApp {
@@ -120,6 +122,8 @@ impl Default for MyEguiApp {
             statistics_fps: format!("{}", reference.statistics_fps),
             record_trajectory: false,
             trajectory: None,
+            record_state: false,
+            state: None,
         }
     }
 }
@@ -315,6 +319,11 @@ impl MyEguiApp {
         } else {
             "".to_string()
         };
+        let mut state_path = if let Some(ref path) = self.state {
+            path.clone()
+        } else {
+            "".to_string()
+        };
 
         let mut header = egui::RichText::new("Recording");
         if !self.recording_paramaters_are_valid() {
@@ -377,6 +386,27 @@ impl MyEguiApp {
                         {
                             self.trajectory = Some(path.display().to_string());
                             self.record_trajectory = true;
+                        };
+                    }
+                });
+                ui.checkbox(&mut self.record_state, "Record shared state");
+                ui.horizontal(|ui| {
+                    let text_field = egui::TextEdit::singleline(&mut state_path);
+                    let label = if self.state_is_valid() {
+                        egui::Label::new("Shared state file:")
+                    } else {
+                        egui::Label::new(egui::RichText::new("Shared state file:").color(egui::Color32::RED))
+                    };
+                    ui.add_enabled(self.record_state, label);
+                    if ui.add_enabled(self.record_state, text_field).changed() {
+                        self.state = Some(state_path);
+                    };
+                    if ui.add(egui::Button::new("Select file")).clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .save_file()
+                        {
+                            self.state = Some(path.display().to_string());
+                            self.record_state = true;
                         };
                     }
                 });
@@ -467,10 +497,22 @@ impl MyEguiApp {
             true
         }
     }
+
+    fn state_is_valid(&self) -> bool {
+        if self.record_state {
+            let Some(ref path) = self.state else {
+                return false;
+            };
+            !path.is_empty()
+        } else {
+            true
+        }
+    }
+
     fn recording_paramaters_are_valid(&self) -> bool {
         (!self.record_statistics || (self.statistics_fps_is_valid() && self.statistics_is_valid()))
-        &&
-        (!self.record_trajectory || self.trajectory_is_valid())
+        && (!self.record_trajectory || self.trajectory_is_valid())
+        && (!self.record_state || self.state_is_valid())
     }
 }
 

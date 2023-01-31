@@ -5,7 +5,7 @@ use clap::Parser;
 use tokio::runtime::Runtime;
 use std::error::Error;
 use log::{error, info};
-use narupa_rs::application::{main_to_wrap, Cli, AppError};
+use narupa_rs::application::{main_to_wrap, Cli, AppError, cancellation_channels};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -32,12 +32,12 @@ fn main() -> ExitCode {
     let runtime = Runtime::new().expect("Unable to create Runtime");
     let _enter = runtime.enter();
     
-    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    let (cancel_tx, cancel_rx) = cancellation_channels();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         // Your handler here
         info!("Closing the server. Goodbye!");
-        cancel_tx.send(()).unwrap();
+        cancel_tx.send().unwrap();
     });
 
     let run_status: Result<(), AppError> =
