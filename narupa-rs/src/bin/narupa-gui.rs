@@ -1,6 +1,6 @@
 use eframe::egui;
 use log::{LevelFilter, SetLoggerError};
-use narupa_rs::application::{main_to_wrap, AppError, Cli};
+use narupa_rs::application::{main_to_wrap, AppError, Cli, cancellation_channels, CancellationSenders};
 use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}};
 use tokio::runtime::Runtime;
 
@@ -43,12 +43,12 @@ fn init_logging() -> Result<(), SetLoggerError> {
 
 struct Server {
     thread: std::thread::JoinHandle<Result<(), AppError>>,
-    cancel_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    cancel_tx: Option<CancellationSenders>,
 }
 
 impl Server {
     pub fn new(arguments: Cli) -> Self {
-        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let (cancel_tx, cancel_rx) = cancellation_channels();
         let runtime = Runtime::new().expect("Unable to create Runtime");
         let _enter = runtime.enter();
         let handle =
@@ -69,7 +69,7 @@ impl Server {
         // that specific call to stop the server. Therefore, we can ignore
         // the send failing or the transmitter being None.
         if let Some(tx) = self.cancel_tx.take() {
-            tx.send(()).ok();
+            tx.send().ok();
         };
     }
 
