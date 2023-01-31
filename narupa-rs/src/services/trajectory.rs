@@ -34,11 +34,12 @@ impl Iterator for FrameResponseIterator {
 
 pub struct Trajectory {
     frame_source: Arc<Mutex<FrameBroadcaster>>,
+    cancel_rx: Arc<Mutex<tokio::sync::oneshot::Receiver<()>>>,
 }
 
 impl Trajectory {
-    pub fn new(frame_source: Arc<Mutex<FrameBroadcaster>>) -> Self {
-        Self { frame_source }
+    pub fn new(frame_source: Arc<Mutex<FrameBroadcaster>>, cancel_rx: tokio::sync::oneshot::Receiver<()>) -> Self {
+        Self { frame_source, cancel_rx: Arc::new(Mutex::new(cancel_rx)) }
     }
 }
 
@@ -59,8 +60,19 @@ impl TrajectoryService for Trajectory {
         let mut stream =
             Box::pin(tokio_stream::iter(responses).throttle(Duration::from_millis(interval)));
         let (tx, rx) = mpsc::channel(128);
+        let cancel_rx = Arc::clone(&self.cancel_rx);
         tokio::spawn(async move {
             while let Some(item) = stream.next().await {
+                {
+                    let mut cancel_lock = cancel_rx.lock().unwrap();
+                    match cancel_lock.try_recv() {
+                        Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                            cancel_lock.close();
+                            break;
+                        }
+                        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+                    }
+                }
                 if item.frame.is_some() {
                     match tx.send(Result::<_, Status>::Ok(item)).await {
                         Ok(_) => {

@@ -37,11 +37,12 @@ impl Iterator for StateUpdateIterator {
 
 pub struct StateService {
     shared_state: Arc<Mutex<StateBroadcaster>>,
+    cancel_rx: Arc<Mutex<tokio::sync::oneshot::Receiver<()>>>,
 }
 
 impl StateService {
-    pub fn new(shared_state: Arc<Mutex<StateBroadcaster>>) -> Self {
-        Self { shared_state }
+    pub fn new(shared_state: Arc<Mutex<StateBroadcaster>>, cancel_rx: tokio::sync::oneshot::Receiver<()>) -> Self {
+        Self { shared_state, cancel_rx: Arc::new(Mutex::new(cancel_rx)) }
     }
 }
 
@@ -62,8 +63,19 @@ impl State for StateService {
         // spawn and channel are required if you want handle "disconnect" functionality
         // the `out_stream` will not be polled after client disconnect
         let (tx, rx) = mpsc::channel(128);
+        let cancel_rx = Arc::clone(&self.cancel_rx);
         tokio::spawn(async move {
             while let Some(item) = stream.next().await {
+                {
+                    let mut cancel_lock = cancel_rx.lock().unwrap();
+                    match cancel_lock.try_recv() {
+                        Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                            cancel_lock.close();
+                            break;
+                        }
+                        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+                    }
+                }
                 if let Some(update) = item {
                     match tx.send(Result::<_, Status>::Ok(update)).await {
                         Ok(_) => {
