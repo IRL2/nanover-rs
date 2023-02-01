@@ -184,6 +184,8 @@ pub enum AppError {
     JoinError(#[from] tokio::task::JoinError),
     #[error("Cannot open the trajectory file.")]
     CannotOpenTrajectoryFile(std::io::Error),
+    #[error("Cannot open the state file.")]
+    CannotOpenStateFile(std::io::Error),
 }
 
 impl From<CannotOpenStatisticFile> for AppError {
@@ -308,7 +310,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     if let Some(path) = cli.state {
         let file = tokio::fs::File::create(path)
             .await
-            .map_err(|err| AppError::CannotOpenTrajectoryFile(err))?;
+            .map_err(|err| AppError::CannotOpenStateFile(err))?;
         let receiver = shared_state.lock().unwrap().get_rx();
         tokio::spawn(record_broadcaster(syncronous_start.clone(), receiver, file, cancel_state_rx, 1));
     }
