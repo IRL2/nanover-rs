@@ -616,23 +616,8 @@ impl MyEguiApp {
         };
 
         let runtime_handle = self.runtime.handle();
-
-        let address = SocketAddr::new(IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), arguments.port);
         let server = Server::new(arguments, runtime_handle);
-        let client = Client::connect(&address, runtime_handle);
         self.server = Some(server);
-
-        match client {
-            Ok(mut client) => {
-                let commands = client.get_command_list(runtime_handle);
-                self.client = Some(client);
-                match commands {
-                    Ok(commands) => println!("{:?}", commands),
-                    Err(_) => debug!("Could not load the list of commands."),
-                }
-            }
-            Err(status) => debug!("Could not connect a client. Some features will be deactivated. {:?}", status)
-        };
     }
 
     fn stop_server(&mut self) {
