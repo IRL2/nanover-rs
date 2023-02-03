@@ -1,5 +1,5 @@
 use eframe::egui;
-use log::{LevelFilter, SetLoggerError, error, debug, trace};
+use log::{LevelFilter, SetLoggerError, debug, trace};
 use narupa_proto::command::{command_client::CommandClient, GetCommandsRequest, CommandMessage};
 use narupa_rs::application::{main_to_wrap, AppError, Cli, cancellation_channels, CancellationSenders};
 use tonic::transport::Channel;
