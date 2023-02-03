@@ -2,7 +2,6 @@ use eframe::egui;
 use log::{LevelFilter, SetLoggerError};
 use narupa_rs::application::{main_to_wrap, AppError, Cli, cancellation_channels, CancellationSenders};
 use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}};
-use tokio::runtime::Runtime;
 
 fn main() {
     init_logging().expect("Could not setup logging.");
@@ -42,25 +41,23 @@ fn init_logging() -> Result<(), SetLoggerError> {
 }
 
 struct Server {
-    thread: std::thread::JoinHandle<Result<(), AppError>>,
+    handle: tokio::task::JoinHandle<Result<(), AppError>>,
     cancel_tx: Option<CancellationSenders>,
 }
 
 impl Server {
-    pub fn new(arguments: Cli) -> Self {
+    pub fn new(arguments: Cli, runtime_handle: &tokio::runtime::Handle) -> Self {
         let (cancel_tx, cancel_rx) = cancellation_channels();
-        let runtime = Runtime::new().expect("Unable to create Runtime");
-        let _enter = runtime.enter();
         let handle =
-            std::thread::spawn(move || runtime.block_on(main_to_wrap(arguments, cancel_rx)));
+            runtime_handle.spawn(main_to_wrap(arguments, cancel_rx));
         Server {
-            thread: handle,
+            handle,
             cancel_tx: Some(cancel_tx),
         }
     }
 
     pub fn is_running(&self) -> bool {
-        !self.thread.is_finished()
+        !self.handle.is_finished()
     }
 
     pub fn stop(&mut self) {
@@ -73,13 +70,14 @@ impl Server {
         };
     }
 
-    pub fn close(mut self) -> Result<(), AppError> {
+    pub fn close(mut self) -> tokio::task::JoinHandle<Result<(), AppError>> {
         self.stop();
-        self.thread.join().unwrap()
+        self.handle
     }
 }
 
 struct MyEguiApp {
+    runtime: tokio::runtime::Runtime,
     reference: Cli,
     input_type: InputSelection,
     input_path: Option<String>,
@@ -104,7 +102,13 @@ struct MyEguiApp {
 impl Default for MyEguiApp {
     fn default() -> Self {
         let reference = Cli::default();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+        let _enter = runtime.enter();
         Self {
+            runtime,
             reference: Cli::default(),
             input_type: InputSelection::DefaultInput,
             input_path: None,
@@ -564,7 +568,7 @@ impl MyEguiApp {
             return;
         };
 
-        let server = Server::new(arguments);
+        let server = Server::new(arguments, self.runtime.handle());
         self.server = Some(server)
     }
 
@@ -595,7 +599,7 @@ impl MyEguiApp {
     fn collect_error(&mut self) {
         if self.server_has_issue() {
             let Some(server) = self.server.take() else {return};
-            let Err(error) = server.close() else {return};
+            let Err(error) = self.runtime.block_on(server.close()).unwrap() else {return};
             self.error = Some(format!("{error}"));
         }
     }
