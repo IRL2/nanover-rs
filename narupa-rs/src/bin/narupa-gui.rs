@@ -1,7 +1,9 @@
 use eframe::egui;
-use log::{LevelFilter, SetLoggerError};
+use log::{LevelFilter, SetLoggerError, error, debug, trace};
+use narupa_proto::command::{command_client::CommandClient, GetCommandsRequest, CommandMessage};
 use narupa_rs::application::{main_to_wrap, AppError, Cli, cancellation_channels, CancellationSenders};
-use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}};
+use tonic::transport::Channel;
+use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}, net::{SocketAddr, Ipv4Addr, IpAddr}};
 
 fn main() {
     init_logging().expect("Could not setup logging.");
@@ -38,6 +40,30 @@ impl log::Log for UILogger {
 
 fn init_logging() -> Result<(), SetLoggerError> {
     log::set_logger(&UI_LOGGER).map(|()| log::set_max_level(LevelFilter::Debug))
+}
+
+struct Client {
+    command: CommandClient<Channel>,
+}
+
+impl Client {
+    pub fn connect(address: &SocketAddr, runtime_handle: &tokio::runtime::Handle) -> Result<Self, tonic::transport::Error> {
+        let endpoint = format!("http://{address}");
+        let command = runtime_handle.block_on(CommandClient::connect(endpoint))?;
+        Ok(Client { command })
+    }
+
+    pub fn get_command_list(&mut self, runtime_handle: &tokio::runtime::Handle) -> Result<Vec<String>, tonic::Status> {
+        let request = GetCommandsRequest{};
+        let reply = runtime_handle.block_on(self.command.get_commands(request))?.into_inner();
+        Ok(reply.commands.into_iter().map(|message| message.name).collect())
+    }
+
+    pub fn run_command(&mut self, name: String, runtime_handle: &tokio::runtime::Handle) -> Result<(), tonic::Status> {
+        let request = CommandMessage{ name, arguments: None };
+        let _reply = runtime_handle.block_on(self.command.run_command(request))?;
+        Ok(())
+    }
 }
 
 struct Server {
@@ -82,6 +108,7 @@ struct MyEguiApp {
     input_type: InputSelection,
     input_path: Option<String>,
     server: Option<Server>,
+    client: Option<Client>,
     error: Option<String>,
     log_level: LevelFilter,
     show_progression: bool,
@@ -113,6 +140,7 @@ impl Default for MyEguiApp {
             input_type: InputSelection::DefaultInput,
             input_path: None,
             server: None,
+            client: None,
             error: None,
             log_level: LevelFilter::Info,
             show_progression: reference.progression,
@@ -417,6 +445,25 @@ impl MyEguiApp {
             });
     }
 
+    fn command_buttons(&mut self, ui: &mut egui::Ui) {
+        egui::CollapsingHeader::new("Commands").show(ui, |ui| {
+            let Some(commands) = self.get_command_list() else {
+                return;
+            };
+            if commands.is_empty() {
+                return;
+            };
+            commands.chunks(4).for_each(|row| {
+                ui.horizontal(|ui| {
+                    row.into_iter().for_each(|command| {
+                        if ui.button(command).clicked() {
+                            self.run_client_command(command.to_string());
+                        }});
+                });
+            });
+        });
+    }
+
     fn log_window(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
@@ -568,15 +615,31 @@ impl MyEguiApp {
             return;
         };
 
-        let server = Server::new(arguments, self.runtime.handle());
-        self.server = Some(server)
+        let runtime_handle = self.runtime.handle();
+
+        let address = SocketAddr::new(IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), arguments.port);
+        let server = Server::new(arguments, runtime_handle);
+        let client = Client::connect(&address, runtime_handle);
+        self.server = Some(server);
+
+        match client {
+            Ok(mut client) => {
+                let commands = client.get_command_list(runtime_handle);
+                self.client = Some(client);
+                match commands {
+                    Ok(commands) => println!("{:?}", commands),
+                    Err(_) => debug!("Could not load the list of commands."),
+                }
+            }
+            Err(status) => debug!("Could not connect a client. Some features will be deactivated. {:?}", status)
+        };
     }
 
     fn stop_server(&mut self) {
-        let Some(mut server) = self.server.take() else {
-            return;
+        self.client = None;
+        if let Some(mut server) = self.server.take() {
+            server.stop();
         };
-        server.stop();
     }
 
     fn is_running(&self) -> bool {
@@ -592,6 +655,54 @@ impl MyEguiApp {
 
     fn server_has_issue(&self) -> bool {
         self.server.is_some() && self.is_idle()
+    }
+
+    fn try_connect_client(&mut self) {
+        if self.is_running() && self.client.is_none() {
+            let address = SocketAddr::new(IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), self.port.parse().unwrap());
+            let client = Client::connect(&address, self.runtime.handle());
+            match client {
+                Ok(client) => {
+                    self.client = Some(client);
+                    debug!("Client connected. Some features will be activated.");
+                }
+                Err(status) => {
+                    trace!("Cannot connect a client: {:?}", status);
+                }
+            }
+        }
+    }
+
+    fn get_command_list(&mut self) -> Option<Vec<String>> {
+        if self.client.is_none() {
+            self.try_connect_client();
+        };
+        let Some(ref mut client) = self.client else {
+            return None;
+        };
+        match client.get_command_list(self.runtime.handle()) {
+            Ok(commands) => {
+                trace!("Commands: {commands:?}");
+                Some(commands)
+            }
+            Err(status) => {
+                trace!("Could not get the list of commands: {:?}", status);
+                None
+            }
+        }
+    }
+
+    fn run_client_command(&mut self, name: String) {
+        if self.client.is_none() {
+            self.try_connect_client();
+        };
+        let Some(ref mut client) = self.client else {
+            return;
+        };
+        match client.run_command(name.clone(), self.runtime.handle()) {
+            Ok(_) => debug!("Successfully ran {name}"),
+            Err(status) => debug!("Error while running {name}: {status:?}."),
+        };
     }
 }
 
@@ -624,6 +735,7 @@ impl eframe::App for MyEguiApp {
             } else {
                 ui.label("Server is running.");
                 self.verbosity_selector(ui, false);
+                self.command_buttons(ui);
                 self.stop_button(ui);
                 self.log_window(ui);
                 ctx.request_repaint();
