@@ -3,7 +3,7 @@ use log::{LevelFilter, SetLoggerError, debug, trace};
 use narupa_proto::command::{command_client::CommandClient, GetCommandsRequest, CommandMessage};
 use narupa_rs::application::{main_to_wrap, AppError, Cli, cancellation_channels, CancellationSenders};
 use tonic::transport::Channel;
-use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}, net::{SocketAddr, Ipv4Addr, IpAddr}};
+use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}, net::{SocketAddr, Ipv4Addr, IpAddr}, collections::BTreeMap};
 
 fn main() {
     init_logging().expect("Could not setup logging.");
@@ -446,6 +446,13 @@ impl MyEguiApp {
     }
 
     fn command_buttons(&mut self, ui: &mut egui::Ui) {
+        let known_commands = BTreeMap::from([
+            ("playback/play", "Play"),
+            ("playback/pause", "Pause"),
+            ("playback/step", "Step"),
+            ("playback/reset", "Reset"),
+            ("multiuser/radially-orient-origins", "Radially orient origins"),
+        ]);
         egui::CollapsingHeader::new("Commands").show(ui, |ui| {
             let Some(commands) = self.get_command_list() else {
                 return;
@@ -456,7 +463,8 @@ impl MyEguiApp {
             commands.chunks(4).for_each(|row| {
                 ui.horizontal(|ui| {
                     row.into_iter().for_each(|command| {
-                        if ui.button(command).clicked() {
+                        let button_label = *known_commands.get(command.as_str()).unwrap_or(&command.as_str());
+                        if ui.button(button_label).clicked() {
                             self.run_client_command(command.to_string());
                         }});
                 });
