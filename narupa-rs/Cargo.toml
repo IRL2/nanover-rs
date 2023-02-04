@@ -28,6 +28,7 @@ env_logger = "0.10.0"
 egui = "0.20.1"
 eframe = "0.20.1"
 rfd = "0.10.0"
+indexmap = "1.9.2"
 
 [build-dependencies]
 tonic-build = "0.8.4"
