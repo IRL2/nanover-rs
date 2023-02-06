@@ -1,6 +1,7 @@
 extern crate clap;
 
 use futures::TryFutureExt;
+use indexmap::IndexMap;
 use log::{error, info, trace};
 use narupa_proto::frame::FrameData;
 use prost::Message;
@@ -20,7 +21,6 @@ use crate::simulation::XMLParsingError;
 use crate::simulation_thread::run_simulation_thread;
 use crate::simulation_thread::XMLBuffer;
 use crate::state_broadcaster::StateBroadcaster;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::net::IpAddr;
@@ -253,7 +253,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) =
         mpsc::channel(100);
 
-    let mut commands: HashMap<String, Box<dyn Command>> = HashMap::new();
+    let mut commands: IndexMap<String, Box<dyn Command>> = IndexMap::new();
     commands.insert(
         "playback/play".into(),
         Box::new(PlaybackCommand::new(

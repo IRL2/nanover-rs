@@ -1,8 +1,9 @@
 use eframe::egui;
-use log::{LevelFilter, SetLoggerError};
+use log::{LevelFilter, SetLoggerError, debug, trace};
+use narupa_proto::command::{command_client::CommandClient, GetCommandsRequest, CommandMessage};
 use narupa_rs::application::{main_to_wrap, AppError, Cli, cancellation_channels, CancellationSenders};
-use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}};
-use tokio::runtime::Runtime;
+use tonic::transport::Channel;
+use std::{sync::Mutex, num::{ParseIntError, ParseFloatError}, net::{SocketAddr, Ipv4Addr, IpAddr}, collections::BTreeMap};
 
 fn main() {
     init_logging().expect("Could not setup logging.");
@@ -41,26 +42,48 @@ fn init_logging() -> Result<(), SetLoggerError> {
     log::set_logger(&UI_LOGGER).map(|()| log::set_max_level(LevelFilter::Debug))
 }
 
+struct Client {
+    command: CommandClient<Channel>,
+}
+
+impl Client {
+    pub fn connect(address: &SocketAddr, runtime_handle: &tokio::runtime::Handle) -> Result<Self, tonic::transport::Error> {
+        let endpoint = format!("http://{address}");
+        let command = runtime_handle.block_on(CommandClient::connect(endpoint))?;
+        Ok(Client { command })
+    }
+
+    pub fn get_command_list(&mut self, runtime_handle: &tokio::runtime::Handle) -> Result<Vec<String>, tonic::Status> {
+        let request = GetCommandsRequest{};
+        let reply = runtime_handle.block_on(self.command.get_commands(request))?.into_inner();
+        Ok(reply.commands.into_iter().map(|message| message.name).collect())
+    }
+
+    pub fn run_command(&mut self, name: String, runtime_handle: &tokio::runtime::Handle) -> Result<(), tonic::Status> {
+        let request = CommandMessage{ name, arguments: None };
+        let _reply = runtime_handle.block_on(self.command.run_command(request))?;
+        Ok(())
+    }
+}
+
 struct Server {
-    thread: std::thread::JoinHandle<Result<(), AppError>>,
+    handle: tokio::task::JoinHandle<Result<(), AppError>>,
     cancel_tx: Option<CancellationSenders>,
 }
 
 impl Server {
-    pub fn new(arguments: Cli) -> Self {
+    pub fn new(arguments: Cli, runtime_handle: &tokio::runtime::Handle) -> Self {
         let (cancel_tx, cancel_rx) = cancellation_channels();
-        let runtime = Runtime::new().expect("Unable to create Runtime");
-        let _enter = runtime.enter();
         let handle =
-            std::thread::spawn(move || runtime.block_on(main_to_wrap(arguments, cancel_rx)));
+            runtime_handle.spawn(main_to_wrap(arguments, cancel_rx));
         Server {
-            thread: handle,
+            handle,
             cancel_tx: Some(cancel_tx),
         }
     }
 
     pub fn is_running(&self) -> bool {
-        !self.thread.is_finished()
+        !self.handle.is_finished()
     }
 
     pub fn stop(&mut self) {
@@ -73,17 +96,19 @@ impl Server {
         };
     }
 
-    pub fn close(mut self) -> Result<(), AppError> {
+    pub fn close(mut self) -> tokio::task::JoinHandle<Result<(), AppError>> {
         self.stop();
-        self.thread.join().unwrap()
+        self.handle
     }
 }
 
 struct MyEguiApp {
+    runtime: tokio::runtime::Runtime,
     reference: Cli,
     input_type: InputSelection,
     input_path: Option<String>,
     server: Option<Server>,
+    client: Option<Client>,
     error: Option<String>,
     log_level: LevelFilter,
     show_progression: bool,
@@ -104,11 +129,18 @@ struct MyEguiApp {
 impl Default for MyEguiApp {
     fn default() -> Self {
         let reference = Cli::default();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+        let _enter = runtime.enter();
         Self {
+            runtime,
             reference: Cli::default(),
             input_type: InputSelection::DefaultInput,
             input_path: None,
             server: None,
+            client: None,
             error: None,
             log_level: LevelFilter::Info,
             show_progression: reference.progression,
@@ -413,6 +445,33 @@ impl MyEguiApp {
             });
     }
 
+    fn command_buttons(&mut self, ui: &mut egui::Ui) {
+        let known_commands = BTreeMap::from([
+            ("playback/play", "Play"),
+            ("playback/pause", "Pause"),
+            ("playback/step", "Step"),
+            ("playback/reset", "Reset"),
+            ("multiuser/radially-orient-origins", "Radially orient origins"),
+        ]);
+        egui::CollapsingHeader::new("Commands").show(ui, |ui| {
+            let Some(commands) = self.get_command_list() else {
+                return;
+            };
+            if commands.is_empty() {
+                return;
+            };
+            commands.chunks(4).for_each(|row| {
+                ui.horizontal(|ui| {
+                    row.into_iter().for_each(|command| {
+                        let button_label = *known_commands.get(command.as_str()).unwrap_or(&command.as_str());
+                        if ui.button(button_label).clicked() {
+                            self.run_client_command(command.to_string());
+                        }});
+                });
+            });
+        });
+    }
+
     fn log_window(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
@@ -564,15 +623,16 @@ impl MyEguiApp {
             return;
         };
 
-        let server = Server::new(arguments);
-        self.server = Some(server)
+        let runtime_handle = self.runtime.handle();
+        let server = Server::new(arguments, runtime_handle);
+        self.server = Some(server);
     }
 
     fn stop_server(&mut self) {
-        let Some(mut server) = self.server.take() else {
-            return;
+        self.client = None;
+        if let Some(mut server) = self.server.take() {
+            server.stop();
         };
-        server.stop();
     }
 
     fn is_running(&self) -> bool {
@@ -589,13 +649,61 @@ impl MyEguiApp {
     fn server_has_issue(&self) -> bool {
         self.server.is_some() && self.is_idle()
     }
+
+    fn try_connect_client(&mut self) {
+        if self.is_running() && self.client.is_none() {
+            let address = SocketAddr::new(IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), self.port.parse().unwrap());
+            let client = Client::connect(&address, self.runtime.handle());
+            match client {
+                Ok(client) => {
+                    self.client = Some(client);
+                    debug!("Client connected. Some features will be activated.");
+                }
+                Err(status) => {
+                    trace!("Cannot connect a client: {:?}", status);
+                }
+            }
+        }
+    }
+
+    fn get_command_list(&mut self) -> Option<Vec<String>> {
+        if self.client.is_none() {
+            self.try_connect_client();
+        };
+        let Some(ref mut client) = self.client else {
+            return None;
+        };
+        match client.get_command_list(self.runtime.handle()) {
+            Ok(commands) => {
+                trace!("Commands: {commands:?}");
+                Some(commands)
+            }
+            Err(status) => {
+                trace!("Could not get the list of commands: {:?}", status);
+                None
+            }
+        }
+    }
+
+    fn run_client_command(&mut self, name: String) {
+        if self.client.is_none() {
+            self.try_connect_client();
+        };
+        let Some(ref mut client) = self.client else {
+            return;
+        };
+        match client.run_command(name.clone(), self.runtime.handle()) {
+            Ok(_) => debug!("Successfully ran {name}"),
+            Err(status) => debug!("Error while running {name}: {status:?}."),
+        };
+    }
 }
 
 impl MyEguiApp {
     fn collect_error(&mut self) {
         if self.server_has_issue() {
             let Some(server) = self.server.take() else {return};
-            let Err(error) = server.close() else {return};
+            let Err(error) = self.runtime.block_on(server.close()).unwrap() else {return};
             self.error = Some(format!("{error}"));
         }
     }
@@ -620,6 +728,7 @@ impl eframe::App for MyEguiApp {
             } else {
                 ui.label("Server is running.");
                 self.verbosity_selector(ui, false);
+                self.command_buttons(ui);
                 self.stop_button(ui);
                 self.log_window(ui);
                 ctx.request_repaint();

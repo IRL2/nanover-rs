@@ -1675,6 +1675,7 @@ dependencies = [
  "env_logger",
  "futures",
  "hyper",
+ "indexmap",
  "log",
  "narupa-proto",
  "network-interface",

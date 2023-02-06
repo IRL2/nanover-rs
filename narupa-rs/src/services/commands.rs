@@ -6,7 +6,7 @@ use narupa_proto::command::{
 use log::debug;
 use prost::alloc::vec::Vec;
 use prost_types::Struct;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub trait Command: Send + Sync {
     fn run(&self, input: CommandMessage) -> CommandReply;
@@ -14,11 +14,11 @@ pub trait Command: Send + Sync {
 }
 
 pub struct CommandService {
-    commands: HashMap<String, Box<dyn Command>>,
+    commands: IndexMap<String, Box<dyn Command>>,
 }
 
 impl CommandService {
-    pub fn new(commands: HashMap<String, Box<dyn Command>>) -> Self {
+    pub fn new(commands: IndexMap<String, Box<dyn Command>>) -> Self {
         CommandService { commands }
     }
 }
