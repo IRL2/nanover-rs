@@ -679,7 +679,7 @@ impl ToFrameData for OpenMMSimulation {
             .map(|e| *e as u32)
             .collect();
         frame
-            .insert_number_value("chain.count", residue_chain_index.len() as f64)
+            .insert_number_value("chain.count", *residue_chain_index.iter().max().unwrap_or(&0) as f64 + 1.0)
             .unwrap();
         frame
             .insert_index_array("residue.chains", residue_chain_index)
