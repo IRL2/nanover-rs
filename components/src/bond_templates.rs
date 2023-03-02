@@ -24,7 +24,7 @@ pub struct BondTemplate<'a> {
 }
 
 pub fn get_bond_templates<'a>() -> HashMap<&'a str, ResidueTemplate<'a>> {
-    let bytes_per_bond = 7;
+    let bytes_per_bond = 9;
     let bytes_in_header = 6;
     let bytes = include_bytes!("components.dat");
     let mut templates = HashMap::new();
@@ -42,11 +42,11 @@ pub fn get_bond_templates<'a>() -> HashMap<&'a str, ResidueTemplate<'a>> {
             u16::from_le_bytes([bytes[index + 4], bytes[index + 5]]).into();
         let bonds: Vec<BondTemplate> = bytes[(index + bytes_in_header)
             ..(index + bytes_in_header + number_of_bonds * bytes_per_bond)]
-            .chunks(7)
+            .chunks(bytes_per_bond)
             .map(|c| BondTemplate {
-                from: str::from_utf8(&c[0..3]).unwrap(),
-                to: str::from_utf8(&c[3..6]).unwrap(),
-                order: c[6].into(),
+                from: str::from_utf8(&c[0..4]).unwrap().trim_end_matches(char::from(0)),
+                to: str::from_utf8(&c[4..8]).unwrap().trim_end_matches(char::from(0)),
+                order: c[8].into(),
             })
             .collect();
         templates.insert(
