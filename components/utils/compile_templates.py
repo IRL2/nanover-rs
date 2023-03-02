@@ -151,13 +151,15 @@ def prune_components(data_blocks: Iterable[Template]) ->  list[Template]:
 
 def write_components_as_bytes(outfile, data_blocks):
     for block in data_blocks:
-        if len(block.name) != 3:
+        if len(block.name) > 3:
             continue 
         if not block.bonds:
             continue
 
         chunk = b""
-        chunk += block.name.encode()
+        name = block.name.encode()
+        padding = b'\x00' * (3 - len(name))
+        chunk += name + padding
         chunk += int(block.residue_type).to_bytes(1, 'little')
         chunk += len(block.bonds).to_bytes(2, 'little')
         outfile.write(chunk)

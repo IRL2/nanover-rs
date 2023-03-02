@@ -30,7 +30,7 @@ pub fn get_bond_templates<'a>() -> HashMap<&'a str, ResidueTemplate<'a>> {
     let mut templates = HashMap::new();
     let mut index = 0;
     while index < bytes.len() {
-        let name = str::from_utf8(&bytes[index..(index + 3)]).unwrap();
+        let name = str::from_utf8(&bytes[index..(index + 3)]).unwrap().trim_end_matches(char::from(0));
         let residue_type = match bytes[index + 3] {
             0 => ResidueType::NonPolymer,
             1 => ResidueType::Peptide,
