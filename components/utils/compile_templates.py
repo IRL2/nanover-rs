@@ -151,26 +151,28 @@ def prune_components(data_blocks: Iterable[Template]) ->  list[Template]:
 
 def write_components_as_bytes(outfile, data_blocks):
     for block in data_blocks:
-        if len(block.name) != 3:
-            continue
-        froms = (len(bond.from_atom) <= 3 for bond in block.bonds)
-        tos = (len(bond.to_atom) <= 3 for bond in block.bonds)
-        if not all(froms) or not all(tos):
-            continue
+        if len(block.name) > 3:
+            continue 
         if not block.bonds:
             continue
 
         chunk = b""
-        chunk += block.name.encode()
+        name = block.name.encode()
+        padding = b'\x00' * (3 - len(name))
+        chunk += name + padding
         chunk += int(block.residue_type).to_bytes(1, 'little')
         chunk += len(block.bonds).to_bytes(2, 'little')
         outfile.write(chunk)
         for bond in block.bonds:
             chunk = b""
-            chunk += "{:3s}".format(bond.from_atom).encode('ascii')
-            chunk += "{:3s}".format(bond.to_atom).encode('ascii')
+            atom_from = bond.from_atom[:4].encode('ascii')
+            padding = b'\x00' * (4 - len(atom_from))
+            chunk += atom_from + padding
+            atom_to = bond.to_atom[:4].encode('ascii')
+            padding = b'\x00' * (4 - len(atom_to))
+            chunk += atom_to + padding
             chunk += int(bond.order).to_bytes(1, 'little')
-            if len(chunk) != 7:
+            if len(chunk) != 9:
                 raise RuntimeError(f"Wrong size for this block {block}. {len(chunk)} bytes instead of 7 bytes.")
             outfile.write(chunk)
 
