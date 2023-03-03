@@ -102,6 +102,43 @@ impl Server {
     }
 }
 
+struct FloatField {
+    label: String,
+    default: String,
+    raw: String,
+}
+
+impl FloatField {
+    fn new(label: impl ToString, default: impl ToString) -> Self {
+        Self { label: label.to_string(), default: default.to_string(), raw: default.to_string() }
+    }
+
+    fn convert(&self) -> Result<f64, ParseFloatError> {
+        self.raw.parse()
+    }
+
+    fn is_valid(&self) -> bool {
+        self.convert().is_ok()
+    }
+
+    fn widget(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let text_color;
+            if self.is_valid() {
+                ui.label(&self.label);
+                text_color = None;
+            } else {
+                ui.label(egui::RichText::new(&self.label).color(egui::Color32::RED));
+                text_color = Some(egui::Color32::RED);
+            }
+            egui::TextEdit::singleline(&mut self.raw).text_color_opt(text_color).show(ui);
+            if ui.button("Set to default").clicked() {
+                self.raw = self.default.clone();
+            }
+        });
+    }
+}
+
 struct MyEguiApp {
     runtime: tokio::runtime::Runtime,
     reference: Cli,
@@ -114,12 +151,12 @@ struct MyEguiApp {
     show_progression: bool,
     server_name: String,
     port: String,
-    simulation_fps: String,
+    simulation_fps: FloatField,
     frame_interval: String,
     force_interval: String,
     record_statistics: bool,
     statistics: Option<String>,
-    statistics_fps: String,
+    statistics_fps: FloatField,
     record_trajectory: bool,
     trajectory: Option<String>,
     record_state: bool,
@@ -146,12 +183,12 @@ impl Default for MyEguiApp {
             show_progression: reference.progression,
             server_name: reference.name,
             port: format!("{}", reference.port),
-            simulation_fps: format!("{}", reference.simulation_fps),
+            simulation_fps: FloatField::new("Simulation FPS", reference.simulation_fps),
             frame_interval: format!("{}", reference.frame_interval),
             force_interval: format!("{}", reference.force_interval),
             record_statistics: false,
             statistics: reference.statistics,
-            statistics_fps: format!("{}", reference.statistics_fps),
+            statistics_fps: FloatField::new("Statistics FPS", reference.statistics_fps),
             record_trajectory: false,
             trajectory: None,
             record_state: false,
@@ -293,20 +330,7 @@ impl MyEguiApp {
         };
         egui::CollapsingHeader::new(header)
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let text_color;
-                    if self.simulation_fps_is_valid() {
-                        ui.label("Simulation FPS");
-                        text_color = None;
-                    } else {
-                        ui.label(egui::RichText::new("Simulation FPS").color(egui::Color32::RED));
-                        text_color = Some(egui::Color32::RED);
-                    }
-                    egui::TextEdit::singleline(&mut self.simulation_fps).text_color_opt(text_color).show(ui);
-                    if ui.button("Set to default").clicked() {
-                        self.simulation_fps = self.reference.simulation_fps.to_string();
-                    }
-                });
+                self.simulation_fps.widget(ui);
 
                 ui.horizontal(|ui| {
                     let text_color;
@@ -384,22 +408,7 @@ impl MyEguiApp {
                         };
                     }
                 });
-                ui.horizontal(|ui| {
-                    let text_color;
-                    let label = if self.statistics_fps_is_valid() {
-                        text_color = None;
-                        egui::Label::new("Statistics FPS")
-                    } else {
-                        text_color = Some(egui::Color32::RED);
-                        egui::Label::new(egui::RichText::new("Statistics FPS:").color(egui::Color32::RED))
-                    };
-                    let text_edit = egui::TextEdit::singleline(&mut self.statistics_fps).text_color_opt(text_color);
-                    ui.add_enabled(self.record_statistics, label);
-                    ui.add_enabled(self.record_statistics, text_edit);
-                    if ui.add_enabled(self.record_statistics, egui::Button::new("Set to default")).clicked() {
-                        self.statistics_fps = format!("{}", self.reference.statistics_fps);
-                    }
-                });
+                self.statistics_fps.widget(ui);
                 ui.checkbox(&mut self.record_trajectory, "Record trajectory");
                 ui.horizontal(|ui| {
                     let text_field = egui::TextEdit::singleline(&mut trajectory_path);
@@ -497,14 +506,6 @@ impl MyEguiApp {
         self.convert_port().is_ok()
     }
 
-    fn convert_simulation_fps(&self) -> Result<f64, ParseFloatError> {
-        self.simulation_fps.parse()
-    }
-
-    fn simulation_fps_is_valid(&self) -> bool {
-        self.convert_simulation_fps().is_ok()
-    }
-    
     fn convert_frame_interval(&self) -> Result<u32, ParseIntError> {
         self.frame_interval.parse()
     }
@@ -522,17 +523,9 @@ impl MyEguiApp {
     }
 
     fn simulation_parameters_are_valid(&self) -> bool {
-        self.simulation_fps_is_valid()
+        self.simulation_fps.is_valid()
         && self.frame_interval_is_valid()
         && self.force_interval_is_valid()
-    }
-
-    fn convert_statistics_fps(&self) -> Result<f64, ParseFloatError> {
-        self.statistics_fps.parse()
-    }
-
-    fn statistics_fps_is_valid(&self) -> bool {
-        self.convert_statistics_fps().is_ok()
     }
 
     fn statistics_is_valid(&self) -> bool {
@@ -569,7 +562,7 @@ impl MyEguiApp {
     }
 
     fn recording_paramaters_are_valid(&self) -> bool {
-        (!self.record_statistics || (self.statistics_fps_is_valid() && self.statistics_is_valid()))
+        (!self.record_statistics || (self.statistics_fps.is_valid() && self.statistics_is_valid()))
         && (!self.record_trajectory || self.trajectory_is_valid())
         && (!self.record_state || self.state_is_valid())
     }
@@ -578,7 +571,7 @@ impl MyEguiApp {
 impl MyEguiApp {
     fn build_arguments(&self) -> Result<Cli, ()> {
         let port = self.convert_port().map_err(|_| ())?;
-        let simulation_fps = self.convert_simulation_fps().map_err(|_| ())?;
+        let simulation_fps = self.simulation_fps.convert().map_err(|_| ())?;
         let frame_interval = self.convert_frame_interval().map_err(|_| ())?;
         let force_interval = self.convert_force_interval().map_err(|_| ())?;
 
