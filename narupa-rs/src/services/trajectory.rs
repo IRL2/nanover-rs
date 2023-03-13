@@ -18,6 +18,7 @@ type ResponseStream = Pin<Box<dyn Stream<Item = Result<GetFrameResponse, Status>
 
 struct FrameResponseIterator {
     frame_source: Arc<Mutex<BroadcastReceiver<FrameData>>>,
+    frame_index: u32,
 }
 
 impl Iterator for FrameResponseIterator {
@@ -25,9 +26,10 @@ impl Iterator for FrameResponseIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         let frame = self.frame_source.lock().unwrap().recv();
+        self.frame_index = self.frame_index.wrapping_add(1);
         Some(GetFrameResponse {
             frame,
-            frame_index: 0,
+            frame_index: self.frame_index.wrapping_sub(1),
         })
     }
 }
@@ -56,6 +58,7 @@ impl TrajectoryService for Trajectory {
         let receiver = self.frame_source.lock().unwrap().get_rx();
         let responses = FrameResponseIterator {
             frame_source: receiver,
+            frame_index: 0,
         };
         let mut stream =
             Box::pin(tokio_stream::iter(responses).throttle(Duration::from_millis(interval)));
