@@ -823,12 +823,12 @@ fn build_interaction(
         forces: selection
             .iter()
             .zip(masses)
-            .map(|pm| InteractionForce {
-                selection: *pm.0 as usize,
+            .map(|(particle, mass)| InteractionForce {
+                selection: *particle as usize,
                 force: [
-                    (force_per_particle[0] * pm.1).clamp(-max_force, max_force),
-                    (force_per_particle[1] * pm.1).clamp(-max_force, max_force),
-                    (force_per_particle[2] * pm.1).clamp(-max_force, max_force),
+                    (force_per_particle[0] * mass).clamp(-max_force, max_force),
+                    (force_per_particle[1] * mass).clamp(-max_force, max_force),
+                    (force_per_particle[2] * mass).clamp(-max_force, max_force),
                 ],
             })
             .collect(),
