@@ -241,6 +241,7 @@ pub struct OpenMMSimulation {
     imd_force: *mut OpenMM_CustomExternalForce,
     n_particles: usize,
     previous_particle_touched: HashSet<i32>,
+    user_forces: Option<CoordMap>,
     initial_state: *mut OpenMM_State,
 }
 
@@ -421,6 +422,7 @@ impl OpenMMSimulation {
                 imd_force,
                 n_particles,
                 previous_particle_touched,
+                user_forces: None,
                 initial_state,
             }
         };
@@ -628,6 +630,23 @@ impl ToFrameData for OpenMMSimulation {
             .insert_float_array("system.box.vectors", box_vectors)
             .unwrap();
 
+        if let Some(user_forces) = &self.user_forces {
+            let touched_indices = user_forces.keys();
+            let forces = user_forces.values();
+            frame
+                .insert_index_array(
+                    "user.forces.indices",
+                    touched_indices.map(|index| *index as u32).collect()
+                )
+                .unwrap();
+            frame
+                .insert_float_array(
+                    "user.forces.forces",
+                    forces.flatten().map(|value| *value as f32).collect()
+                )
+                .unwrap();
+        }
+
         frame
     }
 
@@ -714,7 +733,7 @@ impl IMD for OpenMMSimulation {
         accumulated_forces.iter().for_each(|kv| {
             self.previous_particle_touched.insert(*kv.0);
         });
-        forces.extend(accumulated_forces);
+        forces.extend(accumulated_forces.clone());
 
         for (index, force) in &forces {
             if *index as usize >= self.n_particles {
@@ -737,6 +756,8 @@ impl IMD for OpenMMSimulation {
         unsafe {
             OpenMM_CustomExternalForce_updateParametersInContext(self.imd_force, self.context);
         }
+
+        self.user_forces = Some(accumulated_forces);
 
         Ok(())
     }
