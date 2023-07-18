@@ -11,5 +11,11 @@ pub mod protocol {
     }
 }
 
+/// Mergeable data for a broadcaster.
+pub trait Mergeable {
+    /// Combine another instance with the current instance, in place.
+    fn merge(&mut self, other: &Self);
+}
+
 pub mod frame;
 pub use protocol::*;

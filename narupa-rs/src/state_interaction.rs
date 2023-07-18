@@ -11,6 +11,7 @@ pub fn read_forces(state_clone: &Arc<Mutex<StateBroadcaster>>) -> Vec<IMDInterac
             .filter(|kv| kv.0.starts_with("interaction."))
             .map(|kv| {
                 let value = kv.1;
+                println!("{:?}", kv);
                 read_state_interaction(value)
             })
             .filter_map(|interaction| interaction.ok())
@@ -32,6 +33,7 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
     let scale = get_number_or_error(content, "scale")?.unwrap_or(1.0);
     let particles = get_particles(content, "particles")?;
     let position = get_position(content, "position")?;
+    println!("Interaction with atoms {particles:?}");
 
     Ok(IMDInteraction::new(
         position, particles, kind, max_force, scale,
