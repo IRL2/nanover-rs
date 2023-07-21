@@ -9,6 +9,8 @@ pub enum PlaybackOrder {
     Pause,
     Reset,
     Step,
+    Load(usize),
+    Next,
 }
 
 pub struct PlaybackState {
@@ -33,7 +35,7 @@ impl PlaybackState {
             // Stepping implies to pause the trajectory
             PlaybackOrder::Step => self.playing = false,
             // Not our responsability here
-            PlaybackOrder::Reset => {}
+            PlaybackOrder::Reset | PlaybackOrder::Load(_) | PlaybackOrder::Next => {}
         }
     }
 }

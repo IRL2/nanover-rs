@@ -10,6 +10,7 @@ use crate::broadcaster::BroadcastReceiver;
 use crate::broadcaster::Broadcaster;
 use crate::essd::serve_essd;
 use crate::frame_broadcaster::FrameBroadcaster;
+use crate::manifest::Manifest;
 use crate::multiuser::RadialOrient;
 use crate::observer_thread::run_observer_thread;
 use crate::playback::PlaybackCommand;
@@ -19,10 +20,8 @@ use crate::services::state::{StateServer, StateService};
 use crate::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use crate::simulation::XMLParsingError;
 use crate::simulation_thread::run_simulation_thread;
-use crate::simulation_thread::XMLBuffer;
 use crate::state_broadcaster::StateBroadcaster;
 use std::fs::File;
-use std::io::BufReader;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -318,15 +317,14 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
-    let xml_buffer = if let Some(path) = xml_path {
-        let xml_file = File::open(path)?;
-        XMLBuffer::FileBuffer(BufReader::new(xml_file))
+    let simulation_manifest = if let Some(path) = xml_path {
+        Manifest::from_simulation_xml_paths(vec![path])
     } else {
         let bytes = include_bytes!("../17-ala.xml");
-        XMLBuffer::BytesBuffer(BufReader::new(bytes))
+        Manifest::from_simulation_xml_bytes(bytes)
     };
     run_simulation_thread(
-        xml_buffer,
+        simulation_manifest,
         sim_clone,
         state_clone,
         simulation_interval,
