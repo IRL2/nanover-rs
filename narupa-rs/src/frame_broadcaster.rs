@@ -1,30 +1,46 @@
-use crate::broadcaster::{Broadcaster, BroadcasterSignal, Mergeable, ReceiverVec};
-use narupa_proto::frame::FrameData;
+use crate::broadcaster::{Broadcaster, BroadcasterSignal, ReceiverVec};
+use narupa_proto::frame::{FrameData, GetFrameResponse};
+use narupa_proto::Mergeable;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 pub struct FrameBroadcaster {
-    receivers: ReceiverVec<FrameData>,
-    current: Mutex<FrameData>,
+    receivers: ReceiverVec<GetFrameResponse>,
+    current: Mutex<GetFrameResponse>,
     signal_tx: Option<Sender<BroadcasterSignal>>,
+    next_frame_index: u32,
 }
 
-impl FrameBroadcaster {}
+impl FrameBroadcaster {
+    pub fn send_frame(&mut self, frame: FrameData) -> Result<(), ()> {
+        let response = GetFrameResponse { frame_index: self.next_frame_index, frame: Some(frame) };
+        self.next_frame_index += 1;
+        self.send(response)
+    }
+
+    pub fn send_reset_frame(&mut self, frame: FrameData) -> Result<(), ()> {
+        let response = GetFrameResponse { frame_index: 0, frame: Some(frame) };
+        self.next_frame_index = 1;
+        self.send(response)
+    }
+}
 
 impl FrameBroadcaster {
-    pub fn new(base_frame: FrameData, signal_tx: Option<Sender<BroadcasterSignal>>) -> Self {
+    pub fn new(base_frame: GetFrameResponse, signal_tx: Option<Sender<BroadcasterSignal>>) -> Self {
+        let next_frame_index = base_frame.frame_index + 1;
         Self {
             receivers: Arc::new(Mutex::new(Vec::new())),
             current: Mutex::new(base_frame),
             signal_tx,
+            next_frame_index,
         }
     }
 }
 
 impl Broadcaster for FrameBroadcaster {
-    type Content = FrameData;
+    type Content = GetFrameResponse;
 
-    fn get_receivers(&self) -> ReceiverVec<FrameData> {
+    fn get_receivers(&self) -> ReceiverVec<GetFrameResponse> {
         Arc::clone(&self.receivers)
     }
 

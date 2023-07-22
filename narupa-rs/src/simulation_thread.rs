@@ -6,7 +6,6 @@ use std::time::Duration;
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 
-use crate::broadcaster::Broadcaster;
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::manifest::{Manifest, LoadDefaultError, LoadSimulationError};
 use crate::playback::{PlaybackOrder, PlaybackState};
@@ -75,7 +74,7 @@ pub fn run_simulation_thread(
             if sim_clone
                 .lock()
                 .unwrap()
-                .send(simulation.to_topology_framedata())
+                .send_reset_frame(simulation.to_topology_framedata())
                 .is_err()
             {
                 return;
@@ -107,7 +106,7 @@ pub fn run_simulation_thread(
                             simulation.step(delta_frames);
                             current_simulation_frame += delta_frames as u64;
                             let frame = simulation.to_framedata();
-                            sim_clone.lock().unwrap().send(frame).unwrap();
+                            sim_clone.lock().unwrap().send_frame(frame).unwrap();
                             playback_state.update(PlaybackOrder::Step);
                         } else {
                             warn!("No simulation loaded, ignoring STEP command.");
@@ -150,7 +149,7 @@ pub fn run_simulation_thread(
                     if do_frames {
                         let frame = simulation.to_framedata();
                         let mut source = sim_clone.lock().unwrap();
-                        if source.send(frame).is_err() {
+                        if source.send_frame(frame).is_err() {
                             return;
                         };
                     }

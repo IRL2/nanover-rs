@@ -6,7 +6,6 @@ mod test_utils;
 
 pub mod broadcaster;
 pub mod essd;
-pub mod frame;
 pub mod frame_broadcaster;
 pub mod multiuser;
 pub mod observer_thread;

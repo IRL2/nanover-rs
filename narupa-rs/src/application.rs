@@ -4,6 +4,7 @@ use futures::TryFutureExt;
 use indexmap::IndexMap;
 use log::{error, info, trace};
 use narupa_proto::frame::FrameData;
+use narupa_proto::trajectory::GetFrameResponse;
 use prost::Message;
 use tokio::io::AsyncWriteExt;
 use crate::broadcaster::BroadcastReceiver;
@@ -193,7 +194,23 @@ impl From<CannotOpenStatisticFile> for AppError {
     }
 }
 
-async fn record_broadcaster<T>(start: Instant, receiver: Arc<Mutex<BroadcastReceiver<T>>>, mut output: tokio::fs::File, mut cancel_rx: tokio::sync::oneshot::Receiver<()>, id: usize) -> std::io::Result<()> where T: Message {
+async fn record_broadcaster<T>(
+    start: Instant,
+    receiver: Arc<Mutex<BroadcastReceiver<T>>>,
+    mut output: tokio::fs::File,
+    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
+    id: usize
+) -> std::io::Result<()>
+where T: Message {
+    // The file starts with a MAGIC_NUMBER to indicate it is the expected file
+    // format. This is followed by a version number. This was introduced with
+    // version 2, so files that do not start with the magic number may be
+    // version 1.
+    const MAGIC_NUMBER: u64 = 6661355757386708963;
+    const FORMAT_VERSION: u64 = 2;
+    output.write(&MAGIC_NUMBER.to_le_bytes()).await?;
+    output.write(&FORMAT_VERSION.to_le_bytes()).await?;
+
     let duration = Duration::from_millis(33);
     let mut interval = tokio::time::interval(duration);
     loop {
@@ -243,7 +260,8 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     let (frame_tx, frame_rx) = std::sync::mpsc::channel();
     let (state_tx, state_rx) = std::sync::mpsc::channel();
     let (simulation_tx, simulation_rx) = std::sync::mpsc::channel();
-    let empty_frame = FrameData::empty();
+    let frame_index = 0;
+    let empty_frame = GetFrameResponse { frame_index, frame: Some(FrameData::empty()) };
     let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(
         empty_frame,
         Some(frame_tx),

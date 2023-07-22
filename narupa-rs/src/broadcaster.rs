@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::sync::{mpsc::Sender, Arc, Mutex, Weak};
 use std::time::Instant;
+use narupa_proto::Mergeable;
 
 pub type ReceiverVec<T> = Arc<Mutex<Vec<Weak<Mutex<BroadcastReceiver<T>>>>>>;
 
@@ -117,12 +118,6 @@ impl<T: Debug> BroadcastReceiver<T> {
     }
 }
 
-/// Mergeable data for a broadcaster.
-pub trait Mergeable {
-    /// Combine another instance with the current instance, in place.
-    fn merge(&mut self, other: &Self);
-}
-
 /// Signal sent for some actions of a broadcaster.
 pub enum BroadcasterSignal {
     /// Sent when an update is sent to the broadcaster.
@@ -138,9 +133,29 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
 
+    // We need a very simple type that implements Mergeable.
+    // We cannot implement Mergeable on an existing type because
+    // of the orphan rule, so we create a new type here.
+    #[derive(Debug, Clone, Copy)]
+    struct DummyData {
+        data: usize,
+    }
+
+    impl DummyData {
+        pub fn new(data: usize) -> Self {
+            Self { data }
+        }
+    }
+
+    impl Mergeable for DummyData {
+        fn merge(&mut self, other: &Self) {
+            self.data += other.data;
+        }
+    }
+    
     struct DummyBroadcaster {
-        receivers: ReceiverVec<usize>,
-        current: usize,
+        receivers: ReceiverVec<DummyData>,
+        current: DummyData,
         signal_tx: Option<Sender<BroadcasterSignal>>,
     }
 
@@ -148,14 +163,14 @@ mod tests {
         pub fn new(signal_tx: Option<Sender<BroadcasterSignal>>) -> Self {
             DummyBroadcaster {
                 receivers: Arc::new(Mutex::new(Vec::new())),
-                current: 0,
+                current: DummyData::new(0),
                 signal_tx,
             }
         }
     }
 
     impl Broadcaster for DummyBroadcaster {
-        type Content = usize;
+        type Content = DummyData;
 
         fn get_current(&self) -> Self::Content {
             self.current
@@ -178,11 +193,7 @@ mod tests {
         }
     }
 
-    impl Mergeable for usize {
-        fn merge(&mut self, other: &Self) {
-            *self += *other;
-        }
-    }
+    
 
     fn assert_num_receivers<T>(broadcaster: &T, expected: usize)
     where
@@ -210,11 +221,11 @@ mod tests {
         // dropped in between two sends.
         drop(rx0);
         assert_num_receivers(&broadcaster, 3);
-        broadcaster.send(1).unwrap();
+        broadcaster.send(DummyData::new(1)).unwrap();
         assert_num_receivers(&broadcaster, 2);
         drop(rx1);
         drop(rx2);
-        broadcaster.send(2).unwrap();
+        broadcaster.send(DummyData::new(2)).unwrap();
         assert_num_receivers(&broadcaster, 0);
     }
 
@@ -227,8 +238,8 @@ mod tests {
         // Before we do anything, the channel is empty.
         assert!(signal_rx.try_recv().is_err());
 
-        broadcaster.send(0).unwrap();
-        broadcaster.send(1).unwrap();
+        broadcaster.send(DummyData::new(0)).unwrap();
+        broadcaster.send(DummyData::new(1)).unwrap();
         assert!(matches! {signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
         assert!(matches! {signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});
         assert!(signal_rx.try_recv().is_err());
@@ -245,7 +256,7 @@ mod tests {
 
         let rx = broadcaster.get_rx();
         drop(rx);
-        broadcaster.send(0).unwrap();
+        broadcaster.send(DummyData::new(0)).unwrap();
 
         assert!(matches! {signal_rx.try_recv().unwrap(), BroadcasterSignal::NewReceiver(_)});
         assert!(matches! {signal_rx.try_recv().unwrap(), BroadcasterSignal::Send(_)});

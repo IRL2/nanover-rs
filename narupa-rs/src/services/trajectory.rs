@@ -1,11 +1,10 @@
 use crate::broadcaster::{BroadcastReceiver, Broadcaster};
-use narupa_proto::frame::FrameData;
 use crate::frame_broadcaster::FrameBroadcaster;
 use narupa_proto::trajectory::{
     trajectory_service_server::TrajectoryService, GetFrameRequest, GetFrameResponse,
 };
 use futures::Stream;
-use log::debug;
+use log::{debug, trace};
 use std::sync::{Arc, Mutex};
 use std::{pin::Pin, time::Duration};
 use tokio::sync::mpsc;
@@ -17,20 +16,19 @@ pub use narupa_proto::trajectory::trajectory_service_server::TrajectoryServiceSe
 type ResponseStream = Pin<Box<dyn Stream<Item = Result<GetFrameResponse, Status>> + Send + Sync>>;
 
 struct FrameResponseIterator {
-    frame_source: Arc<Mutex<BroadcastReceiver<FrameData>>>,
-    frame_index: u32,
+    frame_source: Arc<Mutex<BroadcastReceiver<GetFrameResponse>>>,
 }
 
 impl Iterator for FrameResponseIterator {
-    type Item = GetFrameResponse;
+    // This is a perpetual iterator: it always yields something.
+    // When there is no response to send (the simulation did not send a new
+    // frame yet), then we return Some(none) so we do not stop the iteration.
+    // Stopping the itaretion is the responsability of the caller.
+    type Item = Option<GetFrameResponse>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let frame = self.frame_source.lock().unwrap().recv();
-        self.frame_index = self.frame_index.wrapping_add(1);
-        Some(GetFrameResponse {
-            frame,
-            frame_index: self.frame_index.wrapping_sub(1),
-        })
+        Some(frame)
     }
 }
 
@@ -58,10 +56,15 @@ impl TrajectoryService for Trajectory {
         let receiver = self.frame_source.lock().unwrap().get_rx();
         let responses = FrameResponseIterator {
             frame_source: receiver,
-            frame_index: 0,
         };
-        let mut stream =
-            Box::pin(tokio_stream::iter(responses).throttle(Duration::from_millis(interval)));
+        let mut stream = Box::pin(
+            tokio_stream::iter(responses)
+                // if frame_source did not have a frame to return, it sent
+                // Some(None) instead. The filter_map ommits these useless
+                // values.
+                .filter_map(|item| item)
+                .throttle(Duration::from_millis(interval))
+            );
         let (tx, rx) = mpsc::channel(128);
         let cancel_rx = Arc::clone(&self.cancel_rx);
         tokio::spawn(async move {
@@ -81,7 +84,8 @@ impl TrajectoryService for Trajectory {
                         Ok(_) => {
                             // item (server response) was queued to be send to client
                         }
-                        Err(_item) => {
+                        Err(item) => {
+                            trace!("Error in stream: {item}");
                             // output_stream was build from rx and both are dropped
                             break;
                         }
