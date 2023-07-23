@@ -4,7 +4,7 @@ use narupa_proto::command::{CommandMessage, CommandReply};
 use crate::services::commands::Command;
 use prost_types::{Struct, Value, value::Kind};
 use tokio::sync::mpsc::Sender;
-use pack_prost::UnPack;
+use pack_prost::{UnPack, ToProstValue};
 
 #[derive(Debug, Clone, Copy)]
 pub enum PlaybackOrder {
@@ -111,6 +111,28 @@ impl Command for LoadCommand {
     fn arguments(&self) -> Option<Struct> {
         let arguments = BTreeMap::from([("index".into(), Value { kind: Some(Kind::NullValue(0)) })]);
         Some(Struct { fields: arguments })
+    }
+}
+
+pub struct ListSimulations {
+    simulations: Vec<String>,
+}
+
+impl ListSimulations {
+    pub fn new(simulations: Vec<String>) -> Self {
+        Self { simulations }
+    }
+}
+
+impl Command for ListSimulations {
+    fn run(&self, _input: CommandMessage) -> CommandReply {
+        let simulation_list = self.simulations.to_prost_value();
+        let result = BTreeMap::from([("simulations".into(), simulation_list)]);
+        CommandReply { result: Some(Struct { fields: result }) }
+    }
+
+    fn arguments(&self) -> Option<Struct> {
+        None
     }
 }
 

@@ -14,6 +14,7 @@ use crate::frame_broadcaster::FrameBroadcaster;
 use crate::manifest::Manifest;
 use crate::multiuser::RadialOrient;
 use crate::observer_thread::run_observer_thread;
+use crate::playback::ListSimulations;
 use crate::playback::LoadCommand;
 use crate::playback::PlaybackCommand;
 use crate::playback::PlaybackOrder;
@@ -271,6 +272,20 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) =
         mpsc::channel(100);
 
+    let simulation_manifest = if !xml_path.is_empty() {
+        if xml_path.len() == 1 {
+            info!("Running {}", xml_path.get(0).unwrap());
+        } else {
+            info!{"Running a queue of {} simulations.", xml_path.len()};
+            xml_path.iter().for_each(|path| debug!("* {path}"));
+        }
+        Manifest::from_simulation_xml_paths(xml_path)
+    } else {
+        let bytes = include_bytes!("../17-ala.xml");
+        info!("Running the demo simulation.");
+        Manifest::from_simulation_xml_bytes(bytes)
+    };
+
     let mut commands: IndexMap<String, Box<dyn Command>> = IndexMap::new();
     commands.insert(
         "playback/play".into(),
@@ -312,6 +327,10 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
         Box::new(LoadCommand::new(playback_tx.clone())),
     );
     commands.insert(
+        "playback/list".into(),
+        Box::new(ListSimulations::new(simulation_manifest.list_simulations())),
+    );
+    commands.insert(
         "multiuser/radially-orient-origins".into(),
         Box::new(RadialOrient::new(Arc::clone(&shared_state))),
     );
@@ -347,19 +366,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
-    let simulation_manifest = if !xml_path.is_empty() {
-        if xml_path.len() == 1 {
-            info!("Running {}", xml_path.get(0).unwrap());
-        } else {
-            info!{"Running a queue of {} simulations.", xml_path.len()};
-            xml_path.iter().for_each(|path| debug!("* {path}"));
-        }
-        Manifest::from_simulation_xml_paths(xml_path)
-    } else {
-        let bytes = include_bytes!("../17-ala.xml");
-        info!("Running the demo simulation.");
-        Manifest::from_simulation_xml_bytes(bytes)
-    };
+    
     run_simulation_thread(
         simulation_manifest,
         sim_clone,
