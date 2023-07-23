@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
+
 use narupa_proto::command::{CommandMessage, CommandReply};
 use crate::services::commands::Command;
-use prost_types::Struct;
+use prost_types::{Struct, Value, value::Kind};
 use tokio::sync::mpsc::Sender;
+use pack_prost::UnPack;
 
 #[derive(Debug, Clone, Copy)]
 pub enum PlaybackOrder {
@@ -59,6 +62,55 @@ impl Command for PlaybackCommand {
 
     fn arguments(&self) -> Option<Struct> {
         None
+    }
+}
+
+pub struct LoadCommand {
+    channel: Sender<PlaybackOrder>,
+}
+
+impl LoadCommand {
+    pub fn new(channel: Sender<PlaybackOrder>) -> Self {
+        Self { channel }
+    }
+}
+
+impl Command for LoadCommand {
+    fn run(&self, input: CommandMessage) -> CommandReply {
+        let Some(argument_struct) = input.arguments else {
+            // The client did not provide any arguments
+            // TODO: return an error to the client
+            return CommandReply { result: None };
+        };
+        let arguments = argument_struct.fields;
+        let Some(simulation_index_value) = arguments.get("index") else {
+            // The client did not provide the index of the simulation they want
+            // to load.
+            // TODO: return an error to the client
+            return CommandReply { result: None };
+        };
+        let maybe_simulation_index: Option<f64> = simulation_index_value.unpack();
+        let Some(maybe_simulation_index) = maybe_simulation_index else {
+            // The simulation index provided by the user is not a number.
+            // TODO: return an error to the client
+            return CommandReply { result: None };
+        };
+        let maybe_simulation_index = maybe_simulation_index.trunc() as i64;
+        let Ok(simulation_index) = TryInto::<usize>::try_into(maybe_simulation_index) else {
+            // The simulation index is negative or too large.
+            // TODO: return an error to the client
+            return CommandReply { result: None };
+        };
+
+        self.channel.try_send(PlaybackOrder::Load(simulation_index)).unwrap();
+        // TODO: indicate to the client that the command is valid. We do not
+        // know if it succeeded, though.
+        CommandReply { result: None }
+    }
+
+    fn arguments(&self) -> Option<Struct> {
+        let arguments = BTreeMap::from([("index".into(), Value { kind: Some(Kind::NullValue(0)) })]);
+        Some(Struct { fields: arguments })
     }
 }
 

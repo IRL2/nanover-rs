@@ -14,6 +14,7 @@ use crate::frame_broadcaster::FrameBroadcaster;
 use crate::manifest::Manifest;
 use crate::multiuser::RadialOrient;
 use crate::observer_thread::run_observer_thread;
+use crate::playback::LoadCommand;
 use crate::playback::PlaybackCommand;
 use crate::playback::PlaybackOrder;
 use crate::services::commands::{Command, CommandServer, CommandService};
@@ -298,6 +299,17 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
             playback_tx.clone(),
             PlaybackOrder::Step,
         )),
+    );
+    commands.insert(
+        "playback/next".into(),
+        Box::new(PlaybackCommand::new(
+            playback_tx.clone(),
+            PlaybackOrder::Next,
+        )),
+    );
+    commands.insert(
+        "playback/load".into(),
+        Box::new(LoadCommand::new(playback_tx.clone())),
     );
     commands.insert(
         "multiuser/radially-orient-origins".into(),
