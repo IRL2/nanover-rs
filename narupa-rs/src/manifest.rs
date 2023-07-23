@@ -78,11 +78,11 @@ impl Manifest {
                 Ok(simulation)
             }
             ManifestContent::MultiplePath(_) => {
-                let path = self.get_path_for_index(index).ok_or(LoadSimulationError::NoIndex(index))?;
+                let path = self.get_path_for_index(index).ok_or(LoadSimulationError::NoIndex(index))?.clone();
+                self.current_index = Some(index);
                 let xml_file = File::open(path)?;
                 let buffer = BufReader::new(xml_file);
                 let simulation = OpenMMSimulation::from_xml(buffer)?;
-                self.current_index = Some(index);
                 Ok(simulation)
             }
         }
