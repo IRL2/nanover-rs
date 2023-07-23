@@ -2,7 +2,7 @@ extern crate clap;
 
 use futures::TryFutureExt;
 use indexmap::IndexMap;
-use log::{error, info, trace};
+use log::{error, info, trace, debug};
 use narupa_proto::frame::FrameData;
 use narupa_proto::trajectory::GetFrameResponse;
 use prost::Message;
@@ -109,7 +109,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
 pub struct Cli {
     /// The path to the Narupa XML file describing the simulation to run.
     #[clap(value_parser)]
-    pub input_xml_path: Option<String>,
+    pub input_xml_path: Vec<String>,
     /// IP address to bind.
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
     pub address: IpAddr,
@@ -152,7 +152,7 @@ pub struct Cli {
 impl Default for Cli {
     fn default() -> Self {
         Cli {
-            input_xml_path: None,
+            input_xml_path: Vec::new(),
             address: IpAddr::from([0, 0, 0, 0]),
             port: 38801,
             simulation_fps: 30.0,
@@ -335,10 +335,17 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
-    let simulation_manifest = if let Some(path) = xml_path {
-        Manifest::from_simulation_xml_paths(vec![path])
+    let simulation_manifest = if !xml_path.is_empty() {
+        if xml_path.len() == 1 {
+            info!("Running {}", xml_path.get(0).unwrap());
+        } else {
+            info!{"Running a queue of {} simulations.", xml_path.len()};
+            xml_path.iter().for_each(|path| debug!("* {path}"));
+        }
+        Manifest::from_simulation_xml_paths(xml_path)
     } else {
         let bytes = include_bytes!("../17-ala.xml");
+        info!("Running the demo simulation.");
         Manifest::from_simulation_xml_bytes(bytes)
     };
     run_simulation_thread(

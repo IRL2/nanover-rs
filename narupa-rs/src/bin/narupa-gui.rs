@@ -523,7 +523,11 @@ impl MyEguiApp {
         arguments.port = port;
         arguments.name = self.server_name.clone();
         if let InputSelection::FileInput = self.input_type {
-            arguments.input_xml_path = self.input_path.clone()
+            arguments.input_xml_path = self
+                .input_path
+                .as_ref()
+                .map(|p| vec![p.clone()])
+                .unwrap_or_else(|| Vec::new());
         };
         arguments.simulation_fps = simulation_fps;
         arguments.frame_interval = frame_interval;
