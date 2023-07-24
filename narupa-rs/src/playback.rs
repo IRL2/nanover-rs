@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use narupa_proto::command::{CommandMessage, CommandReply};
 use crate::services::commands::Command;
@@ -120,7 +120,7 @@ pub struct ListSimulations {
 
 impl ListSimulations {
     pub fn new(simulations: Vec<String>) -> Self {
-        Self { simulations }
+        Self { simulations: reduce_paths(&simulations) }
     }
 }
 
@@ -134,6 +134,35 @@ impl Command for ListSimulations {
     fn arguments(&self) -> Option<Struct> {
         None
     }
+}
+
+
+/// Remove the common part at the beginning of a series of paths.
+fn reduce_paths(paths: &[String]) -> Vec<String> {
+    let mut iter = paths.iter();
+    let Some(first) = iter.next() else {
+        return Vec::new();
+    };
+    let reference: PathBuf = first.into();
+    let mut reference: Vec<_> = reference.components().collect();
+    for path in paths {
+        let pathbuf = Into::<PathBuf>::into(path);
+        let components = pathbuf.components();
+        reference = reference
+            .into_iter()
+            .zip(components)
+            .take_while(|(a, b)| *a == *b)
+            .map(|(a, _b)| a)
+            .collect();
+    };
+    let n_components_to_remove = reference.len();
+    paths.iter().map(|p| cleave_path(Into::<PathBuf>::into(p), n_components_to_remove)).collect()
+}
+
+fn cleave_path(path: PathBuf, n_components_to_remove: usize) -> String {
+    let mut out = PathBuf::new();
+    path.components().skip(n_components_to_remove).for_each(|component| out.push(component));
+    out.to_string_lossy().to_string()
 }
 
 #[cfg(test)]
