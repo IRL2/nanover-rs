@@ -33,7 +33,7 @@ pub struct StateBroadcaster {
 /// use prost_types::value::Kind;
 /// use narupa_rs::state_broadcaster::StateBroadcaster;
 /// use narupa_rs::broadcaster::Broadcaster;
-/// use narupa_rs::broadcaster::Mergeable;
+/// use narupa_proto::Mergeable;
 /// use narupa_proto::state::StateUpdate;
 ///
 /// // Create a state broadcaster with an empty state
