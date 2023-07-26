@@ -18,4 +18,5 @@ pub trait Mergeable {
 }
 
 pub mod frame;
+pub mod state_update;
 pub use protocol::*;

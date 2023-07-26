@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use pack_prost::ToProstValue;
 
 pub use crate::protocol::trajectory::FrameData;
+pub use crate::protocol::trajectory::GetFrameResponse;
 
 #[derive(Debug)]
 pub struct ExistingDataError {}
@@ -77,5 +78,28 @@ impl Mergeable for FrameData {
         let cloned_other = other.clone();
         self.values.extend(cloned_other.values);
         self.arrays.extend(cloned_other.arrays);
+    }
+}
+
+impl Mergeable for GetFrameResponse {
+    fn merge(&mut self, other: &Self) {
+        // We keep the index of the initial frame. However, if the new frame has
+        // an index of 0, then it is a resetting frame: the existing frame is
+        // erased and the frame index is set to 0 to convey this information.
+        let other_frame_index = other.frame_index;
+        if other_frame_index == 0 {
+            self.frame_index = 0;
+            self.frame = other.frame.clone();
+        } else {
+            match (&mut self.frame, &other.frame) {
+                (_, None) => {}
+                (None, Some(other_frame)) => {
+                    let _ = self.frame.insert(other_frame.clone());
+                }
+                (Some(self_frame), Some(other_frame)) => {
+                    self_frame.merge(other_frame);
+                }
+            }
+        }
     }
 }

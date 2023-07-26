@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use log::trace;
 
-use crate::broadcaster::{Broadcaster, BroadcasterSignal, Mergeable, ReceiverVec};
-use narupa_proto::state::StateUpdate;
+use crate::broadcaster::{Broadcaster, BroadcasterSignal, ReceiverVec};
+use narupa_proto::state_update::StateUpdate;
 
 #[derive(Debug)]
 pub struct StateLock {
@@ -33,7 +33,7 @@ pub struct StateBroadcaster {
 /// use prost_types::value::Kind;
 /// use narupa_rs::state_broadcaster::StateBroadcaster;
 /// use narupa_rs::broadcaster::Broadcaster;
-/// use narupa_rs::broadcaster::Mergeable;
+/// use narupa_proto::Mergeable;
 /// use narupa_proto::state::StateUpdate;
 ///
 /// // Create a state broadcaster with an empty state
@@ -225,19 +225,5 @@ impl Broadcaster for StateBroadcaster {
 
     fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>> {
         self.signal_tx.as_ref().cloned()
-    }
-}
-
-impl Mergeable for StateUpdate {
-    fn merge(&mut self, other: &Self) {
-        match (&mut self.changed_keys, &other.changed_keys) {
-            (_, None) => {}
-            (Some(ref mut current), Some(changed)) => {
-                current.fields.extend(changed.clone().fields);
-            }
-            (None, Some(changed)) => {
-                self.changed_keys = Some(changed.clone());
-            }
-        }
     }
 }

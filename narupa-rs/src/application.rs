@@ -2,16 +2,20 @@ extern crate clap;
 
 use futures::TryFutureExt;
 use indexmap::IndexMap;
-use log::{error, info, trace};
+use log::{error, info, trace, debug};
 use narupa_proto::frame::FrameData;
+use narupa_proto::trajectory::GetFrameResponse;
 use prost::Message;
 use tokio::io::AsyncWriteExt;
 use crate::broadcaster::BroadcastReceiver;
 use crate::broadcaster::Broadcaster;
 use crate::essd::serve_essd;
 use crate::frame_broadcaster::FrameBroadcaster;
+use crate::manifest::Manifest;
 use crate::multiuser::RadialOrient;
 use crate::observer_thread::run_observer_thread;
+use crate::playback::ListSimulations;
+use crate::playback::LoadCommand;
 use crate::playback::PlaybackCommand;
 use crate::playback::PlaybackOrder;
 use crate::services::commands::{Command, CommandServer, CommandService};
@@ -19,10 +23,8 @@ use crate::services::state::{StateServer, StateService};
 use crate::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use crate::simulation::XMLParsingError;
 use crate::simulation_thread::run_simulation_thread;
-use crate::simulation_thread::XMLBuffer;
 use crate::state_broadcaster::StateBroadcaster;
 use std::fs::File;
-use std::io::BufReader;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -109,7 +111,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
 pub struct Cli {
     /// The path to the Narupa XML file describing the simulation to run.
     #[clap(value_parser)]
-    pub input_xml_path: Option<String>,
+    pub input_xml_path: Vec<String>,
     /// IP address to bind.
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
     pub address: IpAddr,
@@ -152,7 +154,7 @@ pub struct Cli {
 impl Default for Cli {
     fn default() -> Self {
         Cli {
-            input_xml_path: None,
+            input_xml_path: Vec::new(),
             address: IpAddr::from([0, 0, 0, 0]),
             port: 38801,
             simulation_fps: 30.0,
@@ -194,7 +196,23 @@ impl From<CannotOpenStatisticFile> for AppError {
     }
 }
 
-async fn record_broadcaster<T>(start: Instant, receiver: Arc<Mutex<BroadcastReceiver<T>>>, mut output: tokio::fs::File, mut cancel_rx: tokio::sync::oneshot::Receiver<()>, id: usize) -> std::io::Result<()> where T: Message {
+async fn record_broadcaster<T>(
+    start: Instant,
+    receiver: Arc<Mutex<BroadcastReceiver<T>>>,
+    mut output: tokio::fs::File,
+    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
+    id: usize
+) -> std::io::Result<()>
+where T: Message {
+    // The file starts with a MAGIC_NUMBER to indicate it is the expected file
+    // format. This is followed by a version number. This was introduced with
+    // version 2, so files that do not start with the magic number may be
+    // version 1.
+    const MAGIC_NUMBER: u64 = 6661355757386708963;
+    const FORMAT_VERSION: u64 = 2;
+    output.write(&MAGIC_NUMBER.to_le_bytes()).await?;
+    output.write(&FORMAT_VERSION.to_le_bytes()).await?;
+
     let duration = Duration::from_millis(33);
     let mut interval = tokio::time::interval(duration);
     loop {
@@ -244,7 +262,8 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     let (frame_tx, frame_rx) = std::sync::mpsc::channel();
     let (state_tx, state_rx) = std::sync::mpsc::channel();
     let (simulation_tx, simulation_rx) = std::sync::mpsc::channel();
-    let empty_frame = FrameData::empty();
+    let frame_index = 0;
+    let empty_frame = GetFrameResponse { frame_index, frame: Some(FrameData::empty()) };
     let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(
         empty_frame,
         Some(frame_tx),
@@ -252,6 +271,20 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     let shared_state = Arc::new(Mutex::new(StateBroadcaster::new(Some(state_tx))));
     let (playback_tx, playback_rx): (Sender<PlaybackOrder>, Receiver<PlaybackOrder>) =
         mpsc::channel(100);
+
+    let simulation_manifest = if !xml_path.is_empty() {
+        if xml_path.len() == 1 {
+            info!("Running {}", xml_path.get(0).unwrap());
+        } else {
+            info!{"Running a queue of {} simulations.", xml_path.len()};
+            xml_path.iter().for_each(|path| debug!("* {path}"));
+        }
+        Manifest::from_simulation_xml_paths(xml_path)
+    } else {
+        let bytes = include_bytes!("../17-ala.xml");
+        info!("Running the demo simulation.");
+        Manifest::from_simulation_xml_bytes(bytes)
+    };
 
     let mut commands: IndexMap<String, Box<dyn Command>> = IndexMap::new();
     commands.insert(
@@ -281,6 +314,21 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
             playback_tx.clone(),
             PlaybackOrder::Step,
         )),
+    );
+    commands.insert(
+        "playback/next".into(),
+        Box::new(PlaybackCommand::new(
+            playback_tx.clone(),
+            PlaybackOrder::Next,
+        )),
+    );
+    commands.insert(
+        "playback/load".into(),
+        Box::new(LoadCommand::new(playback_tx.clone())),
+    );
+    commands.insert(
+        "playback/list".into(),
+        Box::new(ListSimulations::new(simulation_manifest.list_simulations())),
     );
     commands.insert(
         "multiuser/radially-orient-origins".into(),
@@ -318,15 +366,9 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
-    let xml_buffer = if let Some(path) = xml_path {
-        let xml_file = File::open(path)?;
-        XMLBuffer::FileBuffer(BufReader::new(xml_file))
-    } else {
-        let bytes = include_bytes!("../17-ala.xml");
-        XMLBuffer::BytesBuffer(BufReader::new(bytes))
-    };
+    
     run_simulation_thread(
-        xml_buffer,
+        simulation_manifest,
         sim_clone,
         state_clone,
         simulation_interval,

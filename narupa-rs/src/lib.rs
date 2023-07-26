@@ -6,7 +6,6 @@ mod test_utils;
 
 pub mod broadcaster;
 pub mod essd;
-pub mod frame;
 pub mod frame_broadcaster;
 pub mod multiuser;
 pub mod observer_thread;
@@ -18,3 +17,4 @@ pub mod simulation_thread;
 pub mod state_broadcaster;
 pub mod state_interaction;
 pub mod application;
+pub mod manifest;

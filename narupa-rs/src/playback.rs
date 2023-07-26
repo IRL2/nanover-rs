@@ -1,7 +1,10 @@
+use std::{collections::BTreeMap, path::PathBuf};
+
 use narupa_proto::command::{CommandMessage, CommandReply};
 use crate::services::commands::Command;
-use prost_types::Struct;
+use prost_types::{Struct, Value, value::Kind};
 use tokio::sync::mpsc::Sender;
+use pack_prost::{UnPack, ToProstValue};
 
 #[derive(Debug, Clone, Copy)]
 pub enum PlaybackOrder {
@@ -9,6 +12,8 @@ pub enum PlaybackOrder {
     Pause,
     Reset,
     Step,
+    Load(usize),
+    Next,
 }
 
 pub struct PlaybackState {
@@ -33,7 +38,7 @@ impl PlaybackState {
             // Stepping implies to pause the trajectory
             PlaybackOrder::Step => self.playing = false,
             // Not our responsability here
-            PlaybackOrder::Reset => {}
+            PlaybackOrder::Reset | PlaybackOrder::Load(_) | PlaybackOrder::Next => {}
         }
     }
 }
@@ -58,6 +63,106 @@ impl Command for PlaybackCommand {
     fn arguments(&self) -> Option<Struct> {
         None
     }
+}
+
+pub struct LoadCommand {
+    channel: Sender<PlaybackOrder>,
+}
+
+impl LoadCommand {
+    pub fn new(channel: Sender<PlaybackOrder>) -> Self {
+        Self { channel }
+    }
+}
+
+impl Command for LoadCommand {
+    fn run(&self, input: CommandMessage) -> CommandReply {
+        let Some(argument_struct) = input.arguments else {
+            // The client did not provide any arguments
+            // TODO: return an error to the client
+            return CommandReply { result: None };
+        };
+        let arguments = argument_struct.fields;
+        let Some(simulation_index_value) = arguments.get("index") else {
+            // The client did not provide the index of the simulation they want
+            // to load.
+            // TODO: return an error to the client
+            return CommandReply { result: None };
+        };
+        let maybe_simulation_index: Option<f64> = simulation_index_value.unpack();
+        let Some(maybe_simulation_index) = maybe_simulation_index else {
+            // The simulation index provided by the user is not a number.
+            // TODO: return an error to the client
+            return CommandReply { result: None };
+        };
+        let maybe_simulation_index = maybe_simulation_index.trunc() as i64;
+        let Ok(simulation_index) = TryInto::<usize>::try_into(maybe_simulation_index) else {
+            // The simulation index is negative or too large.
+            // TODO: return an error to the client
+            return CommandReply { result: None };
+        };
+
+        self.channel.try_send(PlaybackOrder::Load(simulation_index)).unwrap();
+        // TODO: indicate to the client that the command is valid. We do not
+        // know if it succeeded, though.
+        CommandReply { result: None }
+    }
+
+    fn arguments(&self) -> Option<Struct> {
+        let arguments = BTreeMap::from([("index".into(), Value { kind: Some(Kind::NullValue(0)) })]);
+        Some(Struct { fields: arguments })
+    }
+}
+
+pub struct ListSimulations {
+    simulations: Vec<String>,
+}
+
+impl ListSimulations {
+    pub fn new(simulations: Vec<String>) -> Self {
+        Self { simulations: reduce_paths(&simulations) }
+    }
+}
+
+impl Command for ListSimulations {
+    fn run(&self, _input: CommandMessage) -> CommandReply {
+        let simulation_list = self.simulations.to_prost_value();
+        let result = BTreeMap::from([("simulations".into(), simulation_list)]);
+        CommandReply { result: Some(Struct { fields: result }) }
+    }
+
+    fn arguments(&self) -> Option<Struct> {
+        None
+    }
+}
+
+
+/// Remove the common part at the beginning of a series of paths.
+fn reduce_paths(paths: &[String]) -> Vec<String> {
+    let mut iter = paths.iter();
+    let Some(first) = iter.next() else {
+        return Vec::new();
+    };
+    let reference: PathBuf = first.into();
+    let mut reference: Vec<_> = reference.components().collect();
+    for path in paths {
+        let pathbuf = Into::<PathBuf>::into(path);
+        let components = pathbuf.components();
+        reference = reference
+            .into_iter()
+            .zip(components)
+            .take_while(|(a, b)| *a == *b)
+            .map(|(a, _b)| a)
+            .collect();
+    };
+    let n_components_to_remove = reference.len();
+    paths.iter().map(|p| cleave_path(Into::<PathBuf>::into(p), n_components_to_remove)).collect()
+}
+
+fn cleave_path(path: PathBuf, n_components_to_remove: usize) -> String {
+    let mut out = PathBuf::new();
+    path.components().skip(n_components_to_remove).for_each(|component| out.push(component));
+    out.to_string_lossy().to_string()
 }
 
 #[cfg(test)]
