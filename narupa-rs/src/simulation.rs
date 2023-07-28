@@ -31,6 +31,7 @@ use std::env;
 use std::ffi::{CStr, CString};
 use std::io::{BufReader, Cursor, Read};
 use std::str;
+use std::path::{Path, PathBuf};
 
 use crate::parsers::{errors::ReadError, read_cif, read_pdb, MolecularSystem};
 use narupa_proto::frame::FrameData;
@@ -352,7 +353,22 @@ impl OpenMMSimulation {
                     OpenMM_Platform_loadPluginsFromDirectory(lib_directory.into_raw());
                 }
                 Err(_) => {
-                    warn!("No plugin to load, set OPENMM_PLUGIN_DIR");
+                    // Try to load OpenMM plugins if they are stored next to
+                    // this program. This makes it easier to distribute OpenMM
+                    // next to the narupa server. It is especially convenient on
+                    // Windows, there the OS will look for OpenMM.dll next to
+                    // the program.
+                    let tentative_plugin_path = get_local_plugin_path();
+                    match tentative_plugin_path {
+                        Some(path) => {
+                            let path_str = path.to_str().expect("A plugin directory was found but it could not be loaded because its path could not be converted to unicode.");
+                            let lib_directory = CString::new(path_str).unwrap();
+                            OpenMM_Platform_loadPluginsFromDirectory(lib_directory.into_raw());
+                        }
+                        None => {
+                            warn!("No plugin to load, set OPENMM_PLUGIN_DIR");
+                        }
+                    }
                 }
             }
 
@@ -739,6 +755,22 @@ impl IMD for OpenMMSimulation {
         }
 
         Ok(())
+    }
+}
+
+/// Look for the OpenMM plugins next to the current program.
+/// 
+/// Loading the plugins from there makes it easier to distribute OpenMM next
+/// to the narupa server. It is especially convenient on Windows, there the
+/// OS will look for OpenMM.dll next to the program.
+fn get_local_plugin_path() -> Option<PathBuf> {
+    let Ok(exe_path) = std::env::current_exe() else {return None};
+    let Some(exe_parent) = exe_path.parent() else {return None};
+    let tentative_plugin_path = exe_parent.with_file_name("plugins");
+    if tentative_plugin_path.is_dir() {
+        Some(tentative_plugin_path)
+    } else {
+        None
     }
 }
 
