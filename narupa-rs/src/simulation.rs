@@ -31,7 +31,7 @@ use std::env;
 use std::ffi::{CStr, CString};
 use std::io::{BufReader, Cursor, Read};
 use std::str;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::parsers::{errors::ReadError, read_cif, read_pdb, MolecularSystem};
 use narupa_proto::frame::FrameData;
@@ -358,6 +358,7 @@ impl OpenMMSimulation {
                     // next to the narupa server. It is especially convenient on
                     // Windows, there the OS will look for OpenMM.dll next to
                     // the program.
+                    trace!("Attempting to load plugins next to the executable.");
                     let tentative_plugin_path = get_local_plugin_path();
                     match tentative_plugin_path {
                         Some(path) => {
@@ -764,12 +765,21 @@ impl IMD for OpenMMSimulation {
 /// to the narupa server. It is especially convenient on Windows, there the
 /// OS will look for OpenMM.dll next to the program.
 fn get_local_plugin_path() -> Option<PathBuf> {
-    let Ok(exe_path) = std::env::current_exe() else {return None};
-    let Some(exe_parent) = exe_path.parent() else {return None};
-    let tentative_plugin_path = exe_parent.with_file_name("plugins");
+    let Ok(exe_path) = std::env::current_exe() else {
+        trace!("Could not get the executable path to find the OpenMM plugins.");
+        return None;
+    };
+    trace!("The executable is in {}", exe_path.display());
+    let Some(exe_parent) = exe_path.parent() else {
+        trace!("Could not get the executable parent path to find the OpenMM plugins.");
+        return None
+    };
+    let tentative_plugin_path = exe_parent.join("plugins");
     if tentative_plugin_path.is_dir() {
+        trace!("Found OpenMM plugins in {}.", tentative_plugin_path.display());
         Some(tentative_plugin_path)
     } else {
+        trace!("Did not find the OpenMM plugins next to the executable: {} is not a directory.", tentative_plugin_path.display());
         None
     }
 }
