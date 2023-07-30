@@ -22,7 +22,7 @@ struct UILogger;
 
 impl log::Log for UILogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= log::Level::Debug
+        metadata.level() <= log::Level::Trace
     }
 
     fn log(&self, record: &log::Record) {
@@ -39,7 +39,7 @@ impl log::Log for UILogger {
 }
 
 fn init_logging() -> Result<(), SetLoggerError> {
-    log::set_logger(&UI_LOGGER).map(|()| log::set_max_level(LevelFilter::Debug))
+    log::set_logger(&UI_LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
 }
 
 struct Client {
