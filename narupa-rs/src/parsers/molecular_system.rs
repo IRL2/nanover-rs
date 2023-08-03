@@ -69,11 +69,8 @@ impl MolecularSystem {
                 if type_previous != type_current {
                     continue;
                 }
-                match type_previous {
-                    ResidueType::Peptide => {
-                        bonds.append(&mut make_peptide_bond(&previous, &current))
-                    }
-                    _ => {}
+                if type_previous == &ResidueType::Peptide {
+                    bonds.append(&mut make_peptide_bond(&previous, &current))
                 }
             }
         }

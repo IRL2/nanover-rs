@@ -113,9 +113,10 @@ impl StateBroadcaster {
 
         trace!("Atomic lock update {requested_updates:?}");
 
+        type LockChangeRequest = (String, Option<Duration>);
         let (requested_removals, requested_adds): (
-            Vec<(String, Option<Duration>)>,
-            Vec<(String, Option<Duration>)>,
+            Vec<LockChangeRequest>,
+            Vec<LockChangeRequest>,
         ) = requested_updates
             .into_iter()
             .partition(|(_, value)| value.is_none());

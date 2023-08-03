@@ -225,8 +225,8 @@ where
     // version 1.
     const MAGIC_NUMBER: u64 = 6661355757386708963;
     const FORMAT_VERSION: u64 = 2;
-    output.write(&MAGIC_NUMBER.to_le_bytes()).await?;
-    output.write(&FORMAT_VERSION.to_le_bytes()).await?;
+    output.write_all(&MAGIC_NUMBER.to_le_bytes()).await?;
+    output.write_all(&FORMAT_VERSION.to_le_bytes()).await?;
 
     let duration = Duration::from_millis(33);
     let mut interval = tokio::time::interval(duration);
@@ -240,14 +240,14 @@ where
             continue;
         };
         let timestamp = Instant::now().saturating_duration_since(start).as_micros();
-        let mut now_bytes = timestamp.to_le_bytes();
+        let now_bytes = timestamp.to_le_bytes();
         let mut buffer: Vec<u8> = Vec::new();
         frame.encode(&mut buffer)?;
         // println!("Frame: {buffer:?}");
-        let mut frame_byte_size = (buffer.len() as u64).to_le_bytes();
-        output.write_all(&mut now_bytes).await?;
-        output.write_all(&mut frame_byte_size).await?;
-        output.write_all(&mut buffer).await?;
+        let frame_byte_size = (buffer.len() as u64).to_le_bytes();
+        output.write_all(&now_bytes).await?;
+        output.write_all(&frame_byte_size).await?;
+        output.write_all(&buffer).await?;
         trace!("Record {id}");
     }
 
@@ -375,10 +375,10 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     if let Some(path) = cli.trajectory {
         let file = tokio::fs::File::create(path)
             .await
-            .map_err(|err| AppError::CannotOpenTrajectoryFile(err))?;
+            .map_err(AppError::CannotOpenTrajectoryFile)?;
         let receiver = frame_source.lock().unwrap().get_rx();
         tokio::spawn(record_broadcaster(
-            syncronous_start.clone(),
+            syncronous_start,
             receiver,
             file,
             cancel_trajectory_rx,
@@ -388,10 +388,10 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     if let Some(path) = cli.state {
         let file = tokio::fs::File::create(path)
             .await
-            .map_err(|err| AppError::CannotOpenStateFile(err))?;
+            .map_err(AppError::CannotOpenStateFile)?;
         let receiver = shared_state.lock().unwrap().get_rx();
         tokio::spawn(record_broadcaster(
-            syncronous_start.clone(),
+            syncronous_start,
             receiver,
             file,
             cancel_state_rx,

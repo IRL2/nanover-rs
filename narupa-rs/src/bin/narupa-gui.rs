@@ -161,14 +161,13 @@ where
 
     fn widget(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            let text_color;
-            if self.is_valid() {
+            let text_color = if self.is_valid() {
                 ui.label(&self.label);
-                text_color = None;
+                None
             } else {
                 ui.label(egui::RichText::new(&self.label).color(egui::Color32::RED));
-                text_color = Some(egui::Color32::RED);
-            }
+                Some(egui::Color32::RED)
+            };
             egui::TextEdit::singleline(&mut self.raw)
                 .text_color_opt(text_color)
                 .show(ui);
@@ -283,11 +282,10 @@ impl MyEguiApp {
     }
 
     fn run_button(&mut self, ui: &mut egui::Ui) {
-        let ready = match (&self.input_type, &self.input_path) {
-            (InputSelection::DefaultInput, _) => true,
-            (InputSelection::FileInput, Some(_)) => true,
-            _ => false,
-        };
+        let ready = matches!(
+            (&self.input_type, &self.input_path),
+            (InputSelection::DefaultInput, _) | (InputSelection::FileInput, Some(_))
+        );
         let ready = ready
             && self.port.is_valid()
             && self.simulation_parameters_are_valid()
@@ -471,7 +469,7 @@ impl MyEguiApp {
             };
             commands.chunks(4).for_each(|row| {
                 ui.horizontal(|ui| {
-                    row.into_iter().for_each(|command| {
+                    row.iter().for_each(|command| {
                         let button_label = *known_commands
                             .get(command.as_str())
                             .unwrap_or(&command.as_str());
@@ -554,20 +552,23 @@ impl MyEguiApp {
         let frame_interval = self.frame_interval.convert().map_err(|_| ())?;
         let force_interval = self.force_interval.convert().map_err(|_| ())?;
 
-        let mut arguments = Cli::default();
-        arguments.progression = self.show_progression;
-        arguments.port = port;
-        arguments.name = self.server_name.clone();
+        let mut arguments = Cli {
+            port,
+            simulation_fps,
+            frame_interval,
+            force_interval,
+            progression: self.show_progression,
+            name: self.server_name.clone(),
+            ..Default::default()
+        };
+
         if let InputSelection::FileInput = self.input_type {
             arguments.input_xml_path = self
                 .input_path
                 .as_ref()
                 .map(|p| vec![p.clone()])
-                .unwrap_or_else(|| Vec::new());
+                .unwrap_or_else(Vec::new);
         };
-        arguments.simulation_fps = simulation_fps;
-        arguments.frame_interval = frame_interval;
-        arguments.force_interval = force_interval;
 
         if self.record_statistics {
             let Some(ref statistics) = self.statistics else {
