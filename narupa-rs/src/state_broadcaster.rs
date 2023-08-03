@@ -1,9 +1,9 @@
+use log::trace;
 use prost_types::{value::Kind, Struct, Value};
 use std::collections::{btree_map, BTreeMap};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use log::trace;
 
 use crate::broadcaster::{Broadcaster, BroadcasterSignal, ReceiverVec};
 use narupa_proto::state_update::StateUpdate;
@@ -113,7 +113,10 @@ impl StateBroadcaster {
 
         trace!("Atomic lock update {requested_updates:?}");
 
-        let (requested_removals, requested_adds): (Vec<(String, Option<Duration>)>, Vec<(String, Option<Duration>)>) = requested_updates
+        let (requested_removals, requested_adds): (
+            Vec<(String, Option<Duration>)>,
+            Vec<(String, Option<Duration>)>,
+        ) = requested_updates
             .into_iter()
             .partition(|(_, value)| value.is_none());
 

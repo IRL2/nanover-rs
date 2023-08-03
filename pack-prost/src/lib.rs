@@ -1,11 +1,11 @@
-use prost_types::{Value, ListValue, value::Kind};
+use prost_types::{value::Kind, ListValue, Value};
 
 pub trait UnPack<T> {
     fn unpack(self) -> Option<T>;
 }
 
 /// Build a Value from the object
-/// 
+///
 /// ```
 /// use pack_prost::ToProstValue;
 /// use prost_types::{Value, value::Kind};
@@ -13,10 +13,10 @@ pub trait UnPack<T> {
 /// let value = number.into_prost_value();
 /// assert_eq!(value, Value{ kind: Some(Kind::NumberValue(42.0)) });
 /// ```
-/// 
+///
 /// It is safe to pack numbers smaller than f64 as they can be safely
 /// cast to f64.
-/// 
+///
 /// ```
 /// use pack_prost::ToProstValue;
 /// use prost_types::{Value, value::Kind};
@@ -24,9 +24,9 @@ pub trait UnPack<T> {
 /// let value = number.into_prost_value();
 /// assert_eq!(value, Value{ kind: Some(Kind::NumberValue(42.0)) });
 /// ```
-/// 
+///
 /// Text can also be packed.
-/// 
+///
 /// ```
 /// use pack_prost::ToProstValue;
 /// use prost_types::{Value, value::Kind};
@@ -37,7 +37,7 @@ pub trait UnPack<T> {
 ///     Value{ kind: Some(Kind::StringValue("Hello!".to_string())) }
 /// );
 /// ```
-/// 
+///
 /// ```
 /// use pack_prost::ToProstValue;
 /// use prost_types::{Value, value::Kind};
@@ -48,9 +48,9 @@ pub trait UnPack<T> {
 ///     Value{ kind: Some(Kind::StringValue("Hello!".to_string())) }
 /// );
 /// ```
-/// 
+///
 /// Vectors can be packed as well if the type they contain can be packed.
-/// 
+///
 /// ```
 /// use pack_prost::ToProstValue;
 /// use prost_types::{Value, ListValue, value::Kind};
@@ -72,7 +72,7 @@ pub trait ToProstValue {
 
 impl UnPack<f64> for &Value {
     /// Get a number out of a reference to a prost Value
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, value::Kind};
@@ -90,7 +90,7 @@ impl UnPack<f64> for &Value {
 
 impl UnPack<f64> for Value {
     /// Get a number out of a prost Value
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, value::Kind};
@@ -108,7 +108,7 @@ impl UnPack<f64> for Value {
 
 impl UnPack<bool> for &Value {
     /// Get a boolean out of a reference to a prost Value
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, value::Kind};
@@ -126,7 +126,7 @@ impl UnPack<bool> for &Value {
 
 impl UnPack<bool> for Value {
     /// Get a boolean out of a prost Value
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, value::Kind};
@@ -144,7 +144,7 @@ impl UnPack<bool> for Value {
 
 impl UnPack<String> for &Value {
     /// Get a string out of a reference to a prost Value
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, value::Kind};
@@ -162,7 +162,7 @@ impl UnPack<String> for &Value {
 
 impl UnPack<String> for Value {
     /// Get a string out of a prost Value
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, value::Kind};
@@ -178,9 +178,12 @@ impl UnPack<String> for Value {
     }
 }
 
-impl<'a, T> UnPack<Vec<T>> for &'a Value where &'a Value: UnPack<T> {
+impl<'a, T> UnPack<Vec<T>> for &'a Value
+where
+    &'a Value: UnPack<T>,
+{
     /// Get a vector of homogeneous values out of a reference to a prost value.
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, ListValue, value::Kind};
@@ -192,7 +195,7 @@ impl<'a, T> UnPack<Vec<T>> for &'a Value where &'a Value: UnPack<T> {
     /// let unpacked: Vec<f64> = (&value).unpack().unwrap();
     /// assert_eq!(unpacked, vec![23.0, 42.0, 12.0]);
     /// ```
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, ListValue, value::Kind};
@@ -213,7 +216,7 @@ impl<'a, T> UnPack<Vec<T>> for &'a Value where &'a Value: UnPack<T> {
     ///     ]
     /// );
     /// ```
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, ListValue, value::Kind};
@@ -246,7 +249,7 @@ impl<'a, T> UnPack<Vec<T>> for &'a Value where &'a Value: UnPack<T> {
     ///     ]
     /// );
     /// ```
-    /// 
+    ///
     /// ```
     /// use pack_prost::UnPack;
     /// use prost_types::{Value, ListValue, value::Kind};
@@ -262,88 +265,132 @@ impl<'a, T> UnPack<Vec<T>> for &'a Value where &'a Value: UnPack<T> {
         let Some(Kind::ListValue(ref vector_value)) = self.kind else {
             return None;
         };
-        vector_value.values.iter().map(|item| item.unpack()).collect()
+        vector_value
+            .values
+            .iter()
+            .map(|item| item.unpack())
+            .collect()
     }
 }
 
-impl<T> UnPack<Vec<T>> for Value where Value: UnPack<T> {
+impl<T> UnPack<Vec<T>> for Value
+where
+    Value: UnPack<T>,
+{
     fn unpack(self) -> Option<Vec<T>> {
         let Some(Kind::ListValue(vector_value)) = self.kind else {
             return None;
         };
-        vector_value.values.into_iter().map(|item| item.unpack()).collect()
+        vector_value
+            .values
+            .into_iter()
+            .map(|item| item.unpack())
+            .collect()
     }
 }
 
 impl ToProstValue for f64 {
     fn into_prost_value(self) -> Value {
-        Value{ kind: Some(Kind::NumberValue(self)) }
+        Value {
+            kind: Some(Kind::NumberValue(self)),
+        }
     }
 
     fn to_prost_value(&self) -> Value {
-        Value{ kind: Some(Kind::NumberValue(*self)) }
+        Value {
+            kind: Some(Kind::NumberValue(*self)),
+        }
     }
 }
 
 impl ToProstValue for f32 {
     fn into_prost_value(self) -> Value {
-        Value{ kind: Some(Kind::NumberValue(self as f64)) }
+        Value {
+            kind: Some(Kind::NumberValue(self as f64)),
+        }
     }
 
     fn to_prost_value(&self) -> Value {
-        Value{ kind: Some(Kind::NumberValue(*self as f64)) }
+        Value {
+            kind: Some(Kind::NumberValue(*self as f64)),
+        }
     }
 }
 
 impl ToProstValue for String {
     fn into_prost_value(self) -> Value {
-        Value { kind: Some(Kind::StringValue(self)) }
+        Value {
+            kind: Some(Kind::StringValue(self)),
+        }
     }
 
     fn to_prost_value(&self) -> Value {
-        Value { kind: Some(Kind::StringValue(self.clone())) }
+        Value {
+            kind: Some(Kind::StringValue(self.clone())),
+        }
     }
-
 }
 
 impl ToProstValue for &String {
     fn into_prost_value(self) -> Value {
-        Value { kind: Some(Kind::StringValue(self.clone())) }
+        Value {
+            kind: Some(Kind::StringValue(self.clone())),
+        }
     }
 
     fn to_prost_value(&self) -> Value {
-        Value { kind: Some(Kind::StringValue(self.to_string())) }
+        Value {
+            kind: Some(Kind::StringValue(self.to_string())),
+        }
     }
 }
 
 impl ToProstValue for &str {
     fn into_prost_value(self) -> Value {
-        Value { kind: Some(Kind::StringValue(self.to_owned())) }
+        Value {
+            kind: Some(Kind::StringValue(self.to_owned())),
+        }
     }
 
     fn to_prost_value(&self) -> Value {
-        Value { kind: Some(Kind::StringValue(self.to_string())) }
+        Value {
+            kind: Some(Kind::StringValue(self.to_string())),
+        }
     }
 }
 
 impl ToProstValue for bool {
     fn into_prost_value(self) -> Value {
-        Value { kind: Some(Kind::BoolValue(self)) }
+        Value {
+            kind: Some(Kind::BoolValue(self)),
+        }
     }
 
     fn to_prost_value(&self) -> Value {
-        Value { kind: Some(Kind::BoolValue(*self)) }
+        Value {
+            kind: Some(Kind::BoolValue(*self)),
+        }
     }
 }
 
-impl<T> ToProstValue for Vec<T> where T: ToProstValue {
+impl<T> ToProstValue for Vec<T>
+where
+    T: ToProstValue,
+{
     fn into_prost_value(self) -> Value {
-        let values = self.into_iter().map(|item| item.into_prost_value()).collect();
-        Value { kind: Some(Kind::ListValue(ListValue{ values })) }
+        let values = self
+            .into_iter()
+            .map(|item| item.into_prost_value())
+            .collect();
+        Value {
+            kind: Some(Kind::ListValue(ListValue { values })),
+        }
     }
 
     fn to_prost_value(&self) -> Value {
         let values = self.iter().map(|item| item.to_prost_value()).collect();
-        Value { kind: Some(Kind::ListValue(ListValue{ values })) }
+        Value {
+            kind: Some(Kind::ListValue(ListValue { values })),
+        }
     }
 }

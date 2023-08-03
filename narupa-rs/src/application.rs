@@ -1,12 +1,5 @@
 extern crate clap;
 
-use futures::TryFutureExt;
-use indexmap::IndexMap;
-use log::{error, info, trace, debug};
-use narupa_proto::frame::FrameData;
-use narupa_proto::trajectory::GetFrameResponse;
-use prost::Message;
-use tokio::io::AsyncWriteExt;
 use crate::broadcaster::BroadcastReceiver;
 use crate::broadcaster::Broadcaster;
 use crate::essd::serve_essd;
@@ -24,6 +17,12 @@ use crate::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use crate::simulation::XMLParsingError;
 use crate::simulation_thread::run_simulation_thread;
 use crate::state_broadcaster::StateBroadcaster;
+use futures::TryFutureExt;
+use indexmap::IndexMap;
+use log::{debug, error, info, trace};
+use narupa_proto::frame::FrameData;
+use narupa_proto::trajectory::GetFrameResponse;
+use prost::Message;
 use std::fs::File;
 use std::net::IpAddr;
 use std::net::SocketAddr;
@@ -31,6 +30,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::Instant;
 use thiserror::Error;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
 use tonic::transport::Server;
@@ -56,8 +56,22 @@ pub struct CancellationReceivers {
 }
 
 impl CancellationReceivers {
-    pub fn unpack(self) -> (oneshot::Receiver<()>, oneshot::Receiver<()>, oneshot::Receiver<()>, oneshot::Receiver<()>, oneshot::Receiver<()>) {
-        (self.server, self.trajectory, self.state, self.traj_service, self.state_service)
+    pub fn unpack(
+        self,
+    ) -> (
+        oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
+    ) {
+        (
+            self.server,
+            self.trajectory,
+            self.state,
+            self.traj_service,
+            self.state_service,
+        )
     }
 }
 
@@ -103,7 +117,6 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
         },
     )
 }
-
 
 /// A Narupa IMD server.
 #[derive(Parser)]
@@ -201,9 +214,11 @@ async fn record_broadcaster<T>(
     receiver: Arc<Mutex<BroadcastReceiver<T>>>,
     mut output: tokio::fs::File,
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
-    id: usize
+    id: usize,
 ) -> std::io::Result<()>
-where T: Message {
+where
+    T: Message,
+{
     // The file starts with a MAGIC_NUMBER to indicate it is the expected file
     // format. This is followed by a version number. This was introduced with
     // version 2, so files that do not start with the magic number may be
@@ -218,7 +233,7 @@ where T: Message {
     loop {
         match cancel_rx.try_recv() {
             Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => break,
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {},
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
         };
         interval.tick().await;
         let Some(frame) = receiver.lock().unwrap().recv()  else {
@@ -226,7 +241,7 @@ where T: Message {
         };
         let timestamp = Instant::now().saturating_duration_since(start).as_micros();
         let mut now_bytes = timestamp.to_le_bytes();
-        let mut buffer:Vec<u8> = Vec::new();
+        let mut buffer: Vec<u8> = Vec::new();
         frame.encode(&mut buffer)?;
         // println!("Frame: {buffer:?}");
         let mut frame_byte_size = (buffer.len() as u64).to_le_bytes();
@@ -263,7 +278,10 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
     let (state_tx, state_rx) = std::sync::mpsc::channel();
     let (simulation_tx, simulation_rx) = std::sync::mpsc::channel();
     let frame_index = 0;
-    let empty_frame = GetFrameResponse { frame_index, frame: Some(FrameData::empty()) };
+    let empty_frame = GetFrameResponse {
+        frame_index,
+        frame: Some(FrameData::empty()),
+    };
     let frame_source = Arc::new(Mutex::new(FrameBroadcaster::new(
         empty_frame,
         Some(frame_tx),
@@ -276,7 +294,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
         if xml_path.len() == 1 {
             info!("Running {}", xml_path.get(0).unwrap());
         } else {
-            info!{"Running a queue of {} simulations.", xml_path.len()};
+            info! {"Running a queue of {} simulations.", xml_path.len()};
             xml_path.iter().for_each(|path| debug!("* {path}"));
         }
         Manifest::from_simulation_xml_paths(xml_path)
@@ -346,27 +364,45 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
         );
     };
 
-    let (cancel_server_rx, cancel_trajectory_rx, cancel_state_rx, cancel_traj_serv_rx, cancel_state_serv_rx) = cancel_rx.unpack();
+    let (
+        cancel_server_rx,
+        cancel_trajectory_rx,
+        cancel_state_rx,
+        cancel_traj_serv_rx,
+        cancel_state_serv_rx,
+    ) = cancel_rx.unpack();
     let syncronous_start = Instant::now();
     if let Some(path) = cli.trajectory {
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|err| AppError::CannotOpenTrajectoryFile(err))?;
         let receiver = frame_source.lock().unwrap().get_rx();
-        tokio::spawn(record_broadcaster(syncronous_start.clone(), receiver, file, cancel_trajectory_rx, 0));
+        tokio::spawn(record_broadcaster(
+            syncronous_start.clone(),
+            receiver,
+            file,
+            cancel_trajectory_rx,
+            0,
+        ));
     }
     if let Some(path) = cli.state {
         let file = tokio::fs::File::create(path)
             .await
             .map_err(|err| AppError::CannotOpenStateFile(err))?;
         let receiver = shared_state.lock().unwrap().get_rx();
-        tokio::spawn(record_broadcaster(syncronous_start.clone(), receiver, file, cancel_state_rx, 1));
+        tokio::spawn(record_broadcaster(
+            syncronous_start.clone(),
+            receiver,
+            file,
+            cancel_state_rx,
+            1,
+        ));
     }
 
     // Run the simulation thread.
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
-    
+
     run_simulation_thread(
         simulation_manifest,
         sim_clone,

@@ -1,7 +1,7 @@
+use narupa_proto::Mergeable;
 use std::fmt::Debug;
 use std::sync::{mpsc::Sender, Arc, Mutex, Weak};
 use std::time::Instant;
-use narupa_proto::Mergeable;
 
 pub type ReceiverVec<T> = Arc<Mutex<Vec<Weak<Mutex<BroadcastReceiver<T>>>>>>;
 
@@ -38,7 +38,8 @@ pub trait Broadcaster {
     ///
     /// Send the `BroacasterSignal::NewReceiver` signal.
     fn get_rx(&mut self) -> Arc<Mutex<BroadcastReceiver<Self::Content>>> {
-        self.send_broadaster_signal(BroadcasterSignal::NewReceiver(Instant::now())).unwrap();
+        self.send_broadaster_signal(BroadcasterSignal::NewReceiver(Instant::now()))
+            .unwrap();
         let current = self.get_current();
         let receiver = Arc::new(Mutex::new(BroadcastReceiver::new(current)));
         let clone = Arc::downgrade(&receiver);
@@ -152,7 +153,7 @@ mod tests {
             self.data += other.data;
         }
     }
-    
+
     struct DummyBroadcaster {
         receivers: ReceiverVec<DummyData>,
         current: DummyData,
@@ -192,8 +193,6 @@ mod tests {
             }
         }
     }
-
-    
 
     fn assert_num_receivers<T>(broadcaster: &T, expected: usize)
     where

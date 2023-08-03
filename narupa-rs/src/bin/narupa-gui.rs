@@ -1,9 +1,17 @@
 use eframe::egui;
-use log::{LevelFilter, SetLoggerError, debug, trace};
-use narupa_proto::command::{command_client::CommandClient, GetCommandsRequest, CommandMessage};
-use narupa_rs::application::{main_to_wrap, AppError, Cli, cancellation_channels, CancellationSenders};
+use log::{debug, trace, LevelFilter, SetLoggerError};
+use narupa_proto::command::{command_client::CommandClient, CommandMessage, GetCommandsRequest};
+use narupa_rs::application::{
+    cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli,
+};
+use std::{
+    collections::BTreeMap,
+    marker::PhantomData,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    str::FromStr,
+    sync::Mutex,
+};
 use tonic::transport::Channel;
-use std::{sync::Mutex, net::{SocketAddr, Ipv4Addr, IpAddr}, collections::BTreeMap, marker::PhantomData, str::FromStr};
 
 fn main() {
     init_logging().expect("Could not setup logging.");
@@ -47,20 +55,39 @@ struct Client {
 }
 
 impl Client {
-    pub fn connect(address: &SocketAddr, runtime_handle: &tokio::runtime::Handle) -> Result<Self, tonic::transport::Error> {
+    pub fn connect(
+        address: &SocketAddr,
+        runtime_handle: &tokio::runtime::Handle,
+    ) -> Result<Self, tonic::transport::Error> {
         let endpoint = format!("http://{address}");
         let command = runtime_handle.block_on(CommandClient::connect(endpoint))?;
         Ok(Client { command })
     }
 
-    pub fn get_command_list(&mut self, runtime_handle: &tokio::runtime::Handle) -> Result<Vec<String>, tonic::Status> {
-        let request = GetCommandsRequest{};
-        let reply = runtime_handle.block_on(self.command.get_commands(request))?.into_inner();
-        Ok(reply.commands.into_iter().map(|message| message.name).collect())
+    pub fn get_command_list(
+        &mut self,
+        runtime_handle: &tokio::runtime::Handle,
+    ) -> Result<Vec<String>, tonic::Status> {
+        let request = GetCommandsRequest {};
+        let reply = runtime_handle
+            .block_on(self.command.get_commands(request))?
+            .into_inner();
+        Ok(reply
+            .commands
+            .into_iter()
+            .map(|message| message.name)
+            .collect())
     }
 
-    pub fn run_command(&mut self, name: String, runtime_handle: &tokio::runtime::Handle) -> Result<(), tonic::Status> {
-        let request = CommandMessage{ name, arguments: None };
+    pub fn run_command(
+        &mut self,
+        name: String,
+        runtime_handle: &tokio::runtime::Handle,
+    ) -> Result<(), tonic::Status> {
+        let request = CommandMessage {
+            name,
+            arguments: None,
+        };
         let _reply = runtime_handle.block_on(self.command.run_command(request))?;
         Ok(())
     }
@@ -74,8 +101,7 @@ struct Server {
 impl Server {
     pub fn new(arguments: Cli, runtime_handle: &tokio::runtime::Handle) -> Self {
         let (cancel_tx, cancel_rx) = cancellation_channels();
-        let handle =
-            runtime_handle.spawn(main_to_wrap(arguments, cancel_rx));
+        let handle = runtime_handle.spawn(main_to_wrap(arguments, cancel_rx));
         Server {
             handle,
             cancel_tx: Some(cancel_tx),
@@ -102,14 +128,20 @@ impl Server {
     }
 }
 
-struct NumericField<NumType> where NumType: FromStr {
+struct NumericField<NumType>
+where
+    NumType: FromStr,
+{
     label: String,
     default: String,
     raw: String,
     _phantom: PhantomData<NumType>,
 }
 
-impl<NumType> NumericField<NumType> where NumType: FromStr {
+impl<NumType> NumericField<NumType>
+where
+    NumType: FromStr,
+{
     fn new(label: impl ToString, default: impl ToString) -> Self {
         Self {
             label: label.to_string(),
@@ -137,7 +169,9 @@ impl<NumType> NumericField<NumType> where NumType: FromStr {
                 ui.label(egui::RichText::new(&self.label).color(egui::Color32::RED));
                 text_color = Some(egui::Color32::RED);
             }
-            egui::TextEdit::singleline(&mut self.raw).text_color_opt(text_color).show(ui);
+            egui::TextEdit::singleline(&mut self.raw)
+                .text_color_opt(text_color)
+                .show(ui);
             if ui.button("Set to default").clicked() {
                 self.raw = self.default.clone();
             }
@@ -173,9 +207,9 @@ impl Default for MyEguiApp {
     fn default() -> Self {
         let reference = Cli::default();
         let runtime = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap();
+            .enable_all()
+            .build()
+            .unwrap();
         let _enter = runtime.enter();
         Self {
             runtime,
@@ -284,19 +318,18 @@ impl MyEguiApp {
     }
 
     fn verbosity_selector(&mut self, ui: &mut egui::Ui, progression: bool) {
-        egui::CollapsingHeader::new("Verbosity")
-            .show(ui, |ui| {
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.radio_value(&mut self.log_level, LevelFilter::Info, "Normal");
-                        ui.radio_value(&mut self.log_level, LevelFilter::Debug, "Verbose");
-                        ui.radio_value(&mut self.log_level, LevelFilter::Trace, "Super verbose");
-                    });
-                    if progression {
-                        ui.checkbox(&mut self.show_progression, "Show simulation progression");
-                    };
-                })
-            });
+        egui::CollapsingHeader::new("Verbosity").show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut self.log_level, LevelFilter::Info, "Normal");
+                    ui.radio_value(&mut self.log_level, LevelFilter::Debug, "Verbose");
+                    ui.radio_value(&mut self.log_level, LevelFilter::Trace, "Super verbose");
+                });
+                if progression {
+                    ui.checkbox(&mut self.show_progression, "Show simulation progression");
+                };
+            })
+        });
     }
 
     fn network_parameters(&mut self, ui: &mut egui::Ui) {
@@ -305,17 +338,16 @@ impl MyEguiApp {
         if !port_is_valid {
             header = header.color(egui::Color32::RED);
         }
-        egui::CollapsingHeader::new(header)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Server name");
-                    ui.text_edit_singleline(&mut self.server_name);
-                    if ui.button("Set to default").clicked() {
-                        self.server_name = self.reference.name.clone();
-                    }
-                });
-                self.port.widget(ui);
+        egui::CollapsingHeader::new(header).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Server name");
+                ui.text_edit_singleline(&mut self.server_name);
+                if ui.button("Set to default").clicked() {
+                    self.server_name = self.reference.name.clone();
+                }
             });
+            self.port.widget(ui);
+        });
     }
 
     fn simulation_parameters(&mut self, ui: &mut egui::Ui) {
@@ -323,12 +355,11 @@ impl MyEguiApp {
         if !self.simulation_parameters_are_valid() {
             header = header.color(egui::Color32::RED);
         };
-        egui::CollapsingHeader::new(header)
-            .show(ui, |ui| {
-                self.simulation_fps.widget(ui);
-                self.frame_interval.widget(ui);
-                self.force_interval.widget(ui);
-            });
+        egui::CollapsingHeader::new(header).show(ui, |ui| {
+            self.simulation_fps.widget(ui);
+            self.frame_interval.widget(ui);
+            self.force_interval.widget(ui);
+        });
     }
 
     fn recording_paramaters(&mut self, ui: &mut egui::Ui) {
@@ -352,73 +383,72 @@ impl MyEguiApp {
         if !self.recording_paramaters_are_valid() {
             header = header.color(egui::Color32::RED);
         };
-        egui::CollapsingHeader::new(header)
-            .show(ui, |ui| {
-                ui.checkbox(&mut self.record_statistics, "Record statistics");
-                ui.horizontal(|ui| {
-                    let text_field = egui::TextEdit::singleline(&mut statistics_path);
-                    let label = if self.statistics_is_valid() {
-                        egui::Label::new("Statistics file:")
-                    } else {
-                        egui::Label::new(egui::RichText::new("Statistics file:").color(egui::Color32::RED))
+        egui::CollapsingHeader::new(header).show(ui, |ui| {
+            ui.checkbox(&mut self.record_statistics, "Record statistics");
+            ui.horizontal(|ui| {
+                let text_field = egui::TextEdit::singleline(&mut statistics_path);
+                let label = if self.statistics_is_valid() {
+                    egui::Label::new("Statistics file:")
+                } else {
+                    egui::Label::new(
+                        egui::RichText::new("Statistics file:").color(egui::Color32::RED),
+                    )
+                };
+                ui.add_enabled(self.record_statistics, label);
+                if ui.add_enabled(self.record_statistics, text_field).changed() {
+                    self.statistics = Some(statistics_path);
+                };
+                if ui.add(egui::Button::new("Select file")).clicked() {
+                    if let Some(path) = rfd::FileDialog::new().save_file() {
+                        self.statistics = Some(path.display().to_string());
+                        self.record_statistics = true;
                     };
-                    ui.add_enabled(self.record_statistics, label);
-                    if ui.add_enabled(self.record_statistics, text_field).changed() {
-                        self.statistics = Some(statistics_path);
-                    };
-                    if ui.add(egui::Button::new("Select file")).clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .save_file()
-                        {
-                            self.statistics = Some(path.display().to_string());
-                            self.record_statistics = true;
-                        };
-                    }
-                });
-                self.statistics_fps.widget(ui);
-                ui.checkbox(&mut self.record_trajectory, "Record trajectory");
-                ui.horizontal(|ui| {
-                    let text_field = egui::TextEdit::singleline(&mut trajectory_path);
-                    let label = if self.trajectory_is_valid() {
-                        egui::Label::new("Trajectory file:")
-                    } else {
-                        egui::Label::new(egui::RichText::new("Trajectory file:").color(egui::Color32::RED))
-                    };
-                    ui.add_enabled(self.record_trajectory, label);
-                    if ui.add_enabled(self.record_trajectory, text_field).changed() {
-                        self.trajectory = Some(trajectory_path);
-                    };
-                    if ui.add(egui::Button::new("Select file")).clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .save_file()
-                        {
-                            self.trajectory = Some(path.display().to_string());
-                            self.record_trajectory = true;
-                        };
-                    }
-                });
-                ui.checkbox(&mut self.record_state, "Record shared state");
-                ui.horizontal(|ui| {
-                    let text_field = egui::TextEdit::singleline(&mut state_path);
-                    let label = if self.state_is_valid() {
-                        egui::Label::new("Shared state file:")
-                    } else {
-                        egui::Label::new(egui::RichText::new("Shared state file:").color(egui::Color32::RED))
-                    };
-                    ui.add_enabled(self.record_state, label);
-                    if ui.add_enabled(self.record_state, text_field).changed() {
-                        self.state = Some(state_path);
-                    };
-                    if ui.add(egui::Button::new("Select file")).clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .save_file()
-                        {
-                            self.state = Some(path.display().to_string());
-                            self.record_state = true;
-                        };
-                    }
-                });
+                }
             });
+            self.statistics_fps.widget(ui);
+            ui.checkbox(&mut self.record_trajectory, "Record trajectory");
+            ui.horizontal(|ui| {
+                let text_field = egui::TextEdit::singleline(&mut trajectory_path);
+                let label = if self.trajectory_is_valid() {
+                    egui::Label::new("Trajectory file:")
+                } else {
+                    egui::Label::new(
+                        egui::RichText::new("Trajectory file:").color(egui::Color32::RED),
+                    )
+                };
+                ui.add_enabled(self.record_trajectory, label);
+                if ui.add_enabled(self.record_trajectory, text_field).changed() {
+                    self.trajectory = Some(trajectory_path);
+                };
+                if ui.add(egui::Button::new("Select file")).clicked() {
+                    if let Some(path) = rfd::FileDialog::new().save_file() {
+                        self.trajectory = Some(path.display().to_string());
+                        self.record_trajectory = true;
+                    };
+                }
+            });
+            ui.checkbox(&mut self.record_state, "Record shared state");
+            ui.horizontal(|ui| {
+                let text_field = egui::TextEdit::singleline(&mut state_path);
+                let label = if self.state_is_valid() {
+                    egui::Label::new("Shared state file:")
+                } else {
+                    egui::Label::new(
+                        egui::RichText::new("Shared state file:").color(egui::Color32::RED),
+                    )
+                };
+                ui.add_enabled(self.record_state, label);
+                if ui.add_enabled(self.record_state, text_field).changed() {
+                    self.state = Some(state_path);
+                };
+                if ui.add(egui::Button::new("Select file")).clicked() {
+                    if let Some(path) = rfd::FileDialog::new().save_file() {
+                        self.state = Some(path.display().to_string());
+                        self.record_state = true;
+                    };
+                }
+            });
+        });
     }
 
     fn command_buttons(&mut self, ui: &mut egui::Ui) {
@@ -427,7 +457,10 @@ impl MyEguiApp {
             ("playback/pause", "Pause"),
             ("playback/step", "Step"),
             ("playback/reset", "Reset"),
-            ("multiuser/radially-orient-origins", "Radially orient origins"),
+            (
+                "multiuser/radially-orient-origins",
+                "Radially orient origins",
+            ),
         ]);
         egui::CollapsingHeader::new("Commands").show(ui, |ui| {
             let Some(commands) = self.get_command_list() else {
@@ -439,10 +472,13 @@ impl MyEguiApp {
             commands.chunks(4).for_each(|row| {
                 ui.horizontal(|ui| {
                     row.into_iter().for_each(|command| {
-                        let button_label = *known_commands.get(command.as_str()).unwrap_or(&command.as_str());
+                        let button_label = *known_commands
+                            .get(command.as_str())
+                            .unwrap_or(&command.as_str());
                         if ui.button(button_label).clicked() {
                             self.run_client_command(command.to_string());
-                        }});
+                        }
+                    });
                 });
             });
         });
@@ -467,8 +503,8 @@ impl MyEguiApp {
 impl MyEguiApp {
     fn simulation_parameters_are_valid(&self) -> bool {
         self.simulation_fps.is_valid()
-        && self.frame_interval.is_valid()
-        && self.force_interval.is_valid()
+            && self.frame_interval.is_valid()
+            && self.force_interval.is_valid()
     }
 
     fn statistics_is_valid(&self) -> bool {
@@ -506,8 +542,8 @@ impl MyEguiApp {
 
     fn recording_paramaters_are_valid(&self) -> bool {
         (!self.record_statistics || (self.statistics_fps.is_valid() && self.statistics_is_valid()))
-        && (!self.record_trajectory || self.trajectory_is_valid())
-        && (!self.record_state || self.state_is_valid())
+            && (!self.record_trajectory || self.trajectory_is_valid())
+            && (!self.record_state || self.state_is_valid())
     }
 }
 
@@ -592,7 +628,10 @@ impl MyEguiApp {
 
     fn try_connect_client(&mut self) {
         if self.is_running() && self.client.is_none() {
-            let address = SocketAddr::new(IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), self.port.convert().unwrap());
+            let address = SocketAddr::new(
+                IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)),
+                self.port.convert().unwrap(),
+            );
             let client = Client::connect(&address, self.runtime.handle());
             match client {
                 Ok(client) => {

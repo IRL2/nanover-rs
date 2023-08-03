@@ -1,12 +1,10 @@
+use indexmap::IndexMap;
+use log::debug;
 use narupa_proto::command::command_server;
 pub use narupa_proto::command::command_server::CommandServer;
-use narupa_proto::command::{
-    CommandMessage, CommandReply, GetCommandsReply, GetCommandsRequest,
-};
-use log::debug;
+use narupa_proto::command::{CommandMessage, CommandReply, GetCommandsReply, GetCommandsRequest};
 use prost::alloc::vec::Vec;
 use prost_types::Struct;
-use indexmap::IndexMap;
 
 pub trait Command: Send + Sync {
     fn run(&self, input: CommandMessage) -> CommandReply;
