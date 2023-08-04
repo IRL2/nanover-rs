@@ -162,7 +162,7 @@ impl State for StateService {
         let mut state = self.shared_state.lock().unwrap();
         match state.atomic_lock_updates(token, requested_updates) {
             Ok(()) => success_response,
-            Err(()) => Ok(Response::new(UpdateLocksResponse { success: false })),
+            Err(_) => Ok(Response::new(UpdateLocksResponse { success: false })),
         }
     }
 }

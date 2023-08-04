@@ -4,14 +4,27 @@ use std::collections::{btree_map, BTreeMap};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use thiserror::Error;
 
-use crate::broadcaster::{Broadcaster, BroadcasterSignal, ReceiverVec};
+use crate::broadcaster::{Broadcaster, BroadcasterSignal, ReceiverVec, BroadcastSendError};
 use narupa_proto::state_update::StateUpdate;
 
 #[derive(Debug)]
 pub struct StateLock {
     token: String,
     timeout: Option<Instant>,
+}
+
+#[derive(Debug, Error)]
+#[error("At least one key is locked.")]
+pub struct KeyLocked {}
+
+#[derive(Debug, Error)]
+pub enum SendWithLockError {
+    #[error("{0}")]
+    KeyLocked(#[from] KeyLocked),
+    #[error("{0}")]
+    BroadcastSendError(#[from] BroadcastSendError),
 }
 
 pub struct StateBroadcaster {
@@ -108,7 +121,7 @@ impl StateBroadcaster {
         &mut self,
         token: String,
         requested_updates: BTreeMap<String, Option<Duration>>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), KeyLocked> {
         let now = Instant::now();
 
         trace!("Atomic lock update {requested_updates:?}");
@@ -137,7 +150,7 @@ impl StateBroadcaster {
                 Some(lock) if !can_write(lock, &now, &token) => {
                     // There is a lock and we do not own it.
                     // We cancel the whole update.
-                    return Err(());
+                    return Err(KeyLocked {});
                 }
                 _ => {
                     trace!("Adding lock {key}");
@@ -165,7 +178,7 @@ impl StateBroadcaster {
         }
     }
 
-    pub fn send_with_locks(&mut self, item: StateUpdate, token: &String) -> Result<(), ()> {
+    pub fn send_with_locks(&mut self, item: StateUpdate, token: &String) -> Result<(), SendWithLockError> {
         let now = Instant::now();
         let can_update = match &item.changed_keys {
             None => true,
@@ -175,10 +188,10 @@ impl StateBroadcaster {
                 .all(|key| self.can_write_key(key, &now, token)),
         };
         if can_update {
-            self.send(item).unwrap();
+            self.send(item)?;
             Ok(())
         } else {
-            Err(())
+            Err(SendWithLockError::KeyLocked(KeyLocked {}))
         }
     }
 }

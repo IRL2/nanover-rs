@@ -75,6 +75,10 @@ impl CancellationReceivers {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("Not all cancellation requests could be sent.")]
+pub struct CancellationError {}
+
 pub struct CancellationSenders {
     server: tokio::sync::oneshot::Sender<()>,
     trajectory: tokio::sync::oneshot::Sender<()>,
@@ -84,12 +88,12 @@ pub struct CancellationSenders {
 }
 
 impl CancellationSenders {
-    pub fn send(self) -> Result<(), ()> {
-        self.server.send(())?;
-        self.trajectory.send(())?;
-        self.state.send(())?;
-        self.traj_service.send(())?;
-        self.state_service.send(())?;
+    pub fn send(self) -> Result<(), CancellationError> {
+        self.server.send(()).map_err(|_| CancellationError {})?;
+        self.trajectory.send(()).map_err(|_| CancellationError {})?;
+        self.state.send(()).map_err(|_| CancellationError {})?;
+        self.traj_service.send(()).map_err(|_| CancellationError {})?;
+        self.state_service.send(()).map_err(|_| CancellationError {})?;
         Ok(())
     }
 }

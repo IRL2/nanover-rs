@@ -2,8 +2,13 @@ use narupa_proto::Mergeable;
 use std::fmt::Debug;
 use std::sync::{mpsc::Sender, Arc, Mutex, Weak};
 use std::time::Instant;
+use thiserror::Error;
 
 pub type ReceiverVec<T> = Arc<Mutex<Vec<Weak<Mutex<BroadcastReceiver<T>>>>>>;
+
+#[derive(Debug, Error)]
+#[error("Broadcaster cannot send message.")]
+pub struct BroadcastSendError {}
 
 /// Broadcast data to several consumers at various rates.
 ///
@@ -51,7 +56,7 @@ pub trait Broadcaster {
     ///
     /// Sends the `BroadcasterSignal::Send` signal every time. Sends also the
     /// `BroadcasterSignal::RemoveReceiver` for each receiver that gets removed.
-    fn send(&mut self, item: Self::Content) -> Result<(), ()> {
+    fn send(&mut self, item: Self::Content) -> Result<(), BroadcastSendError> {
         self.send_broadaster_signal(BroadcasterSignal::Send(Instant::now()))?;
         let mut to_remove: Vec<usize> = Vec::new();
         self.update_current(&item);
@@ -79,9 +84,9 @@ pub trait Broadcaster {
         Ok(())
     }
 
-    fn send_broadaster_signal(&self, signal: BroadcasterSignal) -> Result<(), ()> {
+    fn send_broadaster_signal(&self, signal: BroadcasterSignal) -> Result<(), BroadcastSendError> {
         if let Some(tx) = self.get_signal_tx() {
-            tx.send(signal).map_err(|_| ())?;
+            tx.send(signal).map_err(|_| BroadcastSendError {})?;
         }
         Ok(())
     }
