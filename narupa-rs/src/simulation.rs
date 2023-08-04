@@ -99,7 +99,10 @@ pub struct ParticleOutOfRange {
 }
 
 pub trait IMD {
-    fn update_imd_forces(&mut self, interactions: Vec<Interaction>) -> Result<(), ParticleOutOfRange>;
+    fn update_imd_forces(
+        &mut self,
+        interactions: Vec<Interaction>,
+    ) -> Result<(), ParticleOutOfRange>;
 }
 
 #[derive(Debug)]
@@ -734,7 +737,10 @@ impl ToFrameData for OpenMMSimulation {
 }
 
 impl IMD for OpenMMSimulation {
-    fn update_imd_forces(&mut self, interactions: Vec<Interaction>) -> Result<(), ParticleOutOfRange> {
+    fn update_imd_forces(
+        &mut self,
+        interactions: Vec<Interaction>,
+    ) -> Result<(), ParticleOutOfRange> {
         let mut forces = zeroed_out(&self.previous_particle_touched);
         let accumulated_forces = accumulate_forces(interactions);
         self.previous_particle_touched = HashSet::new();
@@ -745,7 +751,10 @@ impl IMD for OpenMMSimulation {
 
         for (index, force) in &forces {
             if *index as usize >= self.n_particles {
-                return Err(ParticleOutOfRange { index: *index, particle_count: self.n_particles });
+                return Err(ParticleOutOfRange {
+                    index: *index,
+                    particle_count: self.n_particles,
+                });
             }
             unsafe {
                 let force_array = OpenMM_DoubleArray_create(3);

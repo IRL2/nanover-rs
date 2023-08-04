@@ -1,4 +1,4 @@
-use crate::broadcaster::{Broadcaster, BroadcasterSignal, ReceiverVec, BroadcastSendError};
+use crate::broadcaster::{BroadcastSendError, Broadcaster, BroadcasterSignal, ReceiverVec};
 use narupa_proto::frame::{FrameData, GetFrameResponse};
 use narupa_proto::Mergeable;
 use std::sync::mpsc::Sender;

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
-use crate::broadcaster::{Broadcaster, BroadcasterSignal, ReceiverVec, BroadcastSendError};
+use crate::broadcaster::{BroadcastSendError, Broadcaster, BroadcasterSignal, ReceiverVec};
 use narupa_proto::state_update::StateUpdate;
 
 #[derive(Debug)]
@@ -127,12 +127,10 @@ impl StateBroadcaster {
         trace!("Atomic lock update {requested_updates:?}");
 
         type LockChangeRequest = (String, Option<Duration>);
-        let (requested_removals, requested_adds): (
-            Vec<LockChangeRequest>,
-            Vec<LockChangeRequest>,
-        ) = requested_updates
-            .into_iter()
-            .partition(|(_, value)| value.is_none());
+        let (requested_removals, requested_adds): (Vec<LockChangeRequest>, Vec<LockChangeRequest>) =
+            requested_updates
+                .into_iter()
+                .partition(|(_, value)| value.is_none());
 
         for (key, _) in requested_removals {
             match self.locks.get(&key) {
@@ -178,7 +176,11 @@ impl StateBroadcaster {
         }
     }
 
-    pub fn send_with_locks(&mut self, item: StateUpdate, token: &String) -> Result<(), SendWithLockError> {
+    pub fn send_with_locks(
+        &mut self,
+        item: StateUpdate,
+        token: &String,
+    ) -> Result<(), SendWithLockError> {
         let now = Instant::now();
         let can_update = match &item.changed_keys {
             None => true,

@@ -92,8 +92,12 @@ impl CancellationSenders {
         self.server.send(()).map_err(|_| CancellationError {})?;
         self.trajectory.send(()).map_err(|_| CancellationError {})?;
         self.state.send(()).map_err(|_| CancellationError {})?;
-        self.traj_service.send(()).map_err(|_| CancellationError {})?;
-        self.state_service.send(()).map_err(|_| CancellationError {})?;
+        self.traj_service
+            .send(())
+            .map_err(|_| CancellationError {})?;
+        self.state_service
+            .send(())
+            .map_err(|_| CancellationError {})?;
         Ok(())
     }
 }
