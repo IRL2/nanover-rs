@@ -43,6 +43,7 @@ fn apply_forces(
     simulation.update_imd_forces(imd_interactions).unwrap();
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_simulation_thread(
     mut simulations_manifest: Manifest,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
