@@ -1,5 +1,5 @@
-use crate::Mergeable;
 pub use crate::protocol::state::StateUpdate;
+use crate::Mergeable;
 
 impl Mergeable for StateUpdate {
     fn merge(&mut self, other: &Self) {

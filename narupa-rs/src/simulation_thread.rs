@@ -1,4 +1,4 @@
-use log::{info, warn, error};
+use log::{error, info, warn};
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
@@ -7,7 +7,7 @@ use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 
 use crate::frame_broadcaster::FrameBroadcaster;
-use crate::manifest::{Manifest, LoadDefaultError, LoadSimulationError};
+use crate::manifest::{LoadDefaultError, LoadSimulationError, Manifest};
 use crate::playback::{PlaybackOrder, PlaybackState};
 use crate::simulation::{OpenMMSimulation, Simulation, ToFrameData, XMLParsingError, IMD};
 use crate::state_broadcaster::StateBroadcaster;
@@ -43,6 +43,7 @@ fn apply_forces(
     simulation.update_imd_forces(imd_interactions).unwrap();
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_simulation_thread(
     mut simulations_manifest: Manifest,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,

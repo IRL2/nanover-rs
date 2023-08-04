@@ -1,9 +1,9 @@
 use crate::protocol::value_array::Values;
 use crate::protocol::{FloatArray, IndexArray, StringArray, ValueArray};
 use crate::Mergeable;
+use pack_prost::ToProstValue;
 use prost_types::Value;
 use std::collections::HashMap;
-use pack_prost::ToProstValue;
 
 pub use crate::protocol::trajectory::FrameData;
 pub use crate::protocol::trajectory::GetFrameResponse;

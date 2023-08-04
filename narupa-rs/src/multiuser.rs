@@ -1,13 +1,13 @@
 use crate::broadcaster::Broadcaster;
-use narupa_proto::command::{CommandMessage, CommandReply};
-use narupa_proto::protocol::state::StateUpdate;
 use crate::services::commands::Command;
 use crate::state_broadcaster::StateBroadcaster;
+use narupa_proto::command::{CommandMessage, CommandReply};
+use narupa_proto::protocol::state::StateUpdate;
+use pack_prost::ToProstValue;
 use prost_types::value::Kind;
 use prost_types::{Struct, Value};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use pack_prost::ToProstValue;
 
 pub struct RadialOrient {
     state: Arc<Mutex<StateBroadcaster>>,
@@ -49,10 +49,7 @@ impl Command for RadialOrient {
 
     fn arguments(&self) -> Option<Struct> {
         Some(Struct {
-            fields: BTreeMap::from([(
-                String::from("radius"),
-                (1.0f64).into_prost_value(),
-            )]),
+            fields: BTreeMap::from([(String::from("radius"), (1.0f64).into_prost_value())]),
         })
     }
 }

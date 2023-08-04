@@ -30,8 +30,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::ffi::{CStr, CString};
 use std::io::{BufReader, Cursor, Read};
-use std::str;
 use std::path::PathBuf;
+use std::str;
 
 use crate::parsers::{errors::ReadError, read_cif, read_pdb, MolecularSystem};
 use narupa_proto::frame::FrameData;
@@ -91,8 +91,18 @@ pub trait ToFrameData {
     fn to_topology_framedata(&self) -> FrameData;
 }
 
+#[derive(Debug, Error)]
+#[error("Particle with index {index} out of range for {particle_count} particles.")]
+pub struct ParticleOutOfRange {
+    index: i32,
+    particle_count: usize,
+}
+
 pub trait IMD {
-    fn update_imd_forces(&mut self, interactions: Vec<Interaction>) -> Result<(), ()>;
+    fn update_imd_forces(
+        &mut self,
+        interactions: Vec<Interaction>,
+    ) -> Result<(), ParticleOutOfRange>;
 }
 
 #[derive(Debug)]
@@ -696,7 +706,10 @@ impl ToFrameData for OpenMMSimulation {
             .map(|e| *e as u32)
             .collect();
         frame
-            .insert_number_value("chain.count", *residue_chain_index.iter().max().unwrap_or(&0) as f64 + 1.0)
+            .insert_number_value(
+                "chain.count",
+                *residue_chain_index.iter().max().unwrap_or(&0) as f64 + 1.0,
+            )
             .unwrap();
         frame
             .insert_index_array("residue.chains", residue_chain_index)
@@ -724,7 +737,10 @@ impl ToFrameData for OpenMMSimulation {
 }
 
 impl IMD for OpenMMSimulation {
-    fn update_imd_forces(&mut self, interactions: Vec<Interaction>) -> Result<(), ()> {
+    fn update_imd_forces(
+        &mut self,
+        interactions: Vec<Interaction>,
+    ) -> Result<(), ParticleOutOfRange> {
         let mut forces = zeroed_out(&self.previous_particle_touched);
         let accumulated_forces = accumulate_forces(interactions);
         self.previous_particle_touched = HashSet::new();
@@ -735,7 +751,10 @@ impl IMD for OpenMMSimulation {
 
         for (index, force) in &forces {
             if *index as usize >= self.n_particles {
-                return Err(());
+                return Err(ParticleOutOfRange {
+                    index: *index,
+                    particle_count: self.n_particles,
+                });
             }
             unsafe {
                 let force_array = OpenMM_DoubleArray_create(3);
@@ -760,7 +779,7 @@ impl IMD for OpenMMSimulation {
 }
 
 /// Look for the OpenMM plugins next to the current program.
-/// 
+///
 /// Loading the plugins from there makes it easier to distribute OpenMM next
 /// to the narupa server. It is especially convenient on Windows, there the
 /// OS will look for OpenMM.dll next to the program.
@@ -776,10 +795,16 @@ fn get_local_plugin_path() -> Option<PathBuf> {
     };
     let tentative_plugin_path = exe_parent.join("plugins");
     if tentative_plugin_path.is_dir() {
-        trace!("Found OpenMM plugins in {}.", tentative_plugin_path.display());
+        trace!(
+            "Found OpenMM plugins in {}.",
+            tentative_plugin_path.display()
+        );
         Some(tentative_plugin_path)
     } else {
-        trace!("Did not find the OpenMM plugins next to the executable: {} is not a directory.", tentative_plugin_path.display());
+        trace!(
+            "Did not find the OpenMM plugins next to the executable: {} is not a directory.",
+            tentative_plugin_path.display()
+        );
         None
     }
 }

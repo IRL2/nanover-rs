@@ -1,10 +1,10 @@
 use crate::broadcaster::{BroadcastReceiver, Broadcaster};
 use crate::frame_broadcaster::FrameBroadcaster;
+use futures::Stream;
+use log::{debug, trace};
 use narupa_proto::trajectory::{
     trajectory_service_server::TrajectoryService, GetFrameRequest, GetFrameResponse,
 };
-use futures::Stream;
-use log::{debug, trace};
 use std::sync::{Arc, Mutex};
 use std::{pin::Pin, time::Duration};
 use tokio::sync::mpsc;
@@ -38,8 +38,14 @@ pub struct Trajectory {
 }
 
 impl Trajectory {
-    pub fn new(frame_source: Arc<Mutex<FrameBroadcaster>>, cancel_rx: tokio::sync::oneshot::Receiver<()>) -> Self {
-        Self { frame_source, cancel_rx: Arc::new(Mutex::new(cancel_rx)) }
+    pub fn new(
+        frame_source: Arc<Mutex<FrameBroadcaster>>,
+        cancel_rx: tokio::sync::oneshot::Receiver<()>,
+    ) -> Self {
+        Self {
+            frame_source,
+            cancel_rx: Arc::new(Mutex::new(cancel_rx)),
+        }
     }
 }
 
@@ -63,8 +69,8 @@ impl TrajectoryService for Trajectory {
                 // Some(None) instead. The filter_map ommits these useless
                 // values.
                 .filter_map(|item| item)
-                .throttle(Duration::from_millis(interval))
-            );
+                .throttle(Duration::from_millis(interval)),
+        );
         let (tx, rx) = mpsc::channel(128);
         let cancel_rx = Arc::clone(&self.cancel_rx);
         tokio::spawn(async move {

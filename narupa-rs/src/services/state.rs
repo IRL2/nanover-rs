@@ -1,11 +1,12 @@
 use crate::broadcaster::{BroadcastReceiver, Broadcaster};
+use crate::state_broadcaster::StateBroadcaster;
+use futures::Stream;
+use log::trace;
 use narupa_proto::state::state_server::State;
 use narupa_proto::state::{
     StateUpdate, SubscribeStateUpdatesRequest, UpdateLocksRequest, UpdateLocksResponse,
     UpdateStateRequest, UpdateStateResponse,
 };
-use crate::state_broadcaster::StateBroadcaster;
-use futures::Stream;
 use prost_types::value::Kind;
 use std::collections::BTreeMap;
 use std::{
@@ -16,7 +17,6 @@ use std::{
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Response, Status};
-use log::trace;
 
 pub use narupa_proto::state::state_server::StateServer;
 
@@ -41,8 +41,14 @@ pub struct StateService {
 }
 
 impl StateService {
-    pub fn new(shared_state: Arc<Mutex<StateBroadcaster>>, cancel_rx: tokio::sync::oneshot::Receiver<()>) -> Self {
-        Self { shared_state, cancel_rx: Arc::new(Mutex::new(cancel_rx)) }
+    pub fn new(
+        shared_state: Arc<Mutex<StateBroadcaster>>,
+        cancel_rx: tokio::sync::oneshot::Receiver<()>,
+    ) -> Self {
+        Self {
+            shared_state,
+            cancel_rx: Arc::new(Mutex::new(cancel_rx)),
+        }
     }
 }
 
@@ -156,7 +162,7 @@ impl State for StateService {
         let mut state = self.shared_state.lock().unwrap();
         match state.atomic_lock_updates(token, requested_updates) {
             Ok(()) => success_response,
-            Err(()) => Ok(Response::new(UpdateLocksResponse { success: false })),
+            Err(_) => Ok(Response::new(UpdateLocksResponse { success: false })),
         }
     }
 }

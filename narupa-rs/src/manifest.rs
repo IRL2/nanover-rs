@@ -1,5 +1,5 @@
-use std::io::BufReader;
 use std::fs::File;
+use std::io::BufReader;
 use thiserror::Error;
 
 use crate::simulation::{OpenMMSimulation, XMLParsingError};
@@ -31,14 +31,14 @@ pub enum LoadSimulationError {
     #[error("Index {0} is not defined in the manifest.")]
     NoIndex(usize),
     #[error("{0}")]
-    XMLParsingError(#[from] XMLParsingError)
+    XMLParsingError(#[from] XMLParsingError),
 }
 
 pub type SimulationEntry = String;
 
 enum ManifestContent {
     SingleBuffer(Vec<u8>),
-    MultiplePath(Vec<SimulationEntry>),    
+    MultiplePath(Vec<SimulationEntry>),
 }
 
 pub struct Manifest {
@@ -47,11 +47,17 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    pub fn from_simulation_xml_paths<T>(files: Vec<T>) -> Self where T: ToString {
+    pub fn from_simulation_xml_paths<T>(files: Vec<T>) -> Self
+    where
+        T: ToString,
+    {
         let entries = files.iter().map(|path| path.to_string()).collect();
         let content = ManifestContent::MultiplePath(entries);
         let current_index = None;
-        Self { content, current_index }
+        Self {
+            content,
+            current_index,
+        }
     }
 
     pub fn from_simulation_xml_bytes(bytes: &[u8]) -> Self {
@@ -62,7 +68,9 @@ impl Manifest {
     }
 
     pub fn load_default(&mut self) -> Result<OpenMMSimulation, LoadDefaultError> {
-        let default_index = self.get_default_index().ok_or(LoadDefaultError::NoDefault)?;
+        let default_index = self
+            .get_default_index()
+            .ok_or(LoadDefaultError::NoDefault)?;
         Ok(self.load_index(default_index)?)
     }
 
@@ -78,7 +86,10 @@ impl Manifest {
                 Ok(simulation)
             }
             ManifestContent::MultiplePath(_) => {
-                let path = self.get_path_for_index(index).ok_or(LoadSimulationError::NoIndex(index))?.clone();
+                let path = self
+                    .get_path_for_index(index)
+                    .ok_or(LoadSimulationError::NoIndex(index))?
+                    .clone();
                 self.current_index = Some(index);
                 let xml_file = File::open(path)?;
                 let buffer = BufReader::new(xml_file);
@@ -110,21 +121,13 @@ impl Manifest {
 
     fn get_next_index(&self) -> Option<usize> {
         match (self.current_index, &self.content) {
-            (_, ManifestContent::SingleBuffer(_)) => {
-                None
-            }
-            (_, ManifestContent::MultiplePath(content)) if content.is_empty() => {
-                None
-            }
-            (None, ManifestContent::MultiplePath(_)) => {
-                Some(0)
-            }
+            (_, ManifestContent::SingleBuffer(_)) => None,
+            (_, ManifestContent::MultiplePath(content)) if content.is_empty() => None,
+            (None, ManifestContent::MultiplePath(_)) => Some(0),
             (Some(index), ManifestContent::MultiplePath(content)) if index < content.len() - 1 => {
                 Some(index + 1)
             }
-            (Some(_), ManifestContent::MultiplePath(_)) => {
-                Some(0)
-            }
+            (Some(_), ManifestContent::MultiplePath(_)) => Some(0),
         }
     }
 

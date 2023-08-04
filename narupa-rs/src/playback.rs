@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use narupa_proto::command::{CommandMessage, CommandReply};
 use crate::services::commands::Command;
-use prost_types::{Struct, Value, value::Kind};
+use narupa_proto::command::{CommandMessage, CommandReply};
+use pack_prost::{ToProstValue, UnPack};
+use prost_types::{value::Kind, Struct, Value};
 use tokio::sync::mpsc::Sender;
-use pack_prost::{UnPack, ToProstValue};
 
 #[derive(Debug, Clone, Copy)]
 pub enum PlaybackOrder {
@@ -102,14 +102,21 @@ impl Command for LoadCommand {
             return CommandReply { result: None };
         };
 
-        self.channel.try_send(PlaybackOrder::Load(simulation_index)).unwrap();
+        self.channel
+            .try_send(PlaybackOrder::Load(simulation_index))
+            .unwrap();
         // TODO: indicate to the client that the command is valid. We do not
         // know if it succeeded, though.
         CommandReply { result: None }
     }
 
     fn arguments(&self) -> Option<Struct> {
-        let arguments = BTreeMap::from([("index".into(), Value { kind: Some(Kind::NullValue(0)) })]);
+        let arguments = BTreeMap::from([(
+            "index".into(),
+            Value {
+                kind: Some(Kind::NullValue(0)),
+            },
+        )]);
         Some(Struct { fields: arguments })
     }
 }
@@ -120,7 +127,9 @@ pub struct ListSimulations {
 
 impl ListSimulations {
     pub fn new(simulations: Vec<String>) -> Self {
-        Self { simulations: reduce_paths(&simulations) }
+        Self {
+            simulations: reduce_paths(&simulations),
+        }
     }
 }
 
@@ -128,14 +137,15 @@ impl Command for ListSimulations {
     fn run(&self, _input: CommandMessage) -> CommandReply {
         let simulation_list = self.simulations.to_prost_value();
         let result = BTreeMap::from([("simulations".into(), simulation_list)]);
-        CommandReply { result: Some(Struct { fields: result }) }
+        CommandReply {
+            result: Some(Struct { fields: result }),
+        }
     }
 
     fn arguments(&self) -> Option<Struct> {
         None
     }
 }
-
 
 /// Remove the common part at the beginning of a series of paths.
 fn reduce_paths(paths: &[String]) -> Vec<String> {
@@ -154,14 +164,19 @@ fn reduce_paths(paths: &[String]) -> Vec<String> {
             .take_while(|(a, b)| *a == *b)
             .map(|(a, _b)| a)
             .collect();
-    };
+    }
     let n_components_to_remove = reference.len();
-    paths.iter().map(|p| cleave_path(Into::<PathBuf>::into(p), n_components_to_remove)).collect()
+    paths
+        .iter()
+        .map(|p| cleave_path(Into::<PathBuf>::into(p), n_components_to_remove))
+        .collect()
 }
 
 fn cleave_path(path: PathBuf, n_components_to_remove: usize) -> String {
     let mut out = PathBuf::new();
-    path.components().skip(n_components_to_remove).for_each(|component| out.push(component));
+    path.components()
+        .skip(n_components_to_remove)
+        .for_each(|component| out.push(component));
     out.to_string_lossy().to_string()
 }
 

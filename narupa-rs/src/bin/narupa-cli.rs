@@ -1,11 +1,11 @@
-use std::process::ExitCode;
-use log::LevelFilter;
-use env_logger::Builder;
 use clap::Parser;
-use tokio::runtime::Runtime;
-use std::error::Error;
+use env_logger::Builder;
+use log::LevelFilter;
 use log::{error, info};
-use narupa_rs::application::{main_to_wrap, Cli, AppError, cancellation_channels};
+use narupa_rs::application::{cancellation_channels, main_to_wrap, AppError, Cli};
+use std::error::Error;
+use std::process::ExitCode;
+use tokio::runtime::Runtime;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -31,7 +31,7 @@ fn main() -> ExitCode {
 
     let runtime = Runtime::new().expect("Unable to create Runtime");
     let _enter = runtime.enter();
-    
+
     let (cancel_tx, cancel_rx) = cancellation_channels();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
@@ -40,9 +40,12 @@ fn main() -> ExitCode {
         cancel_tx.send().unwrap();
     });
 
-    let run_status: Result<(), AppError> =
-        std::thread::scope(|scope| scope.spawn(|| runtime.block_on(main_to_wrap(cli, cancel_rx))).join())
-            .unwrap();
+    let run_status: Result<(), AppError> = std::thread::scope(|scope| {
+        scope
+            .spawn(|| runtime.block_on(main_to_wrap(cli, cancel_rx)))
+            .join()
+    })
+    .unwrap();
     let Err(ref error) = run_status else {
         return ExitCode::SUCCESS;
     };

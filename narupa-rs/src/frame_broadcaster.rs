@@ -1,4 +1,4 @@
-use crate::broadcaster::{Broadcaster, BroadcasterSignal, ReceiverVec};
+use crate::broadcaster::{BroadcastSendError, Broadcaster, BroadcasterSignal, ReceiverVec};
 use narupa_proto::frame::{FrameData, GetFrameResponse};
 use narupa_proto::Mergeable;
 use std::sync::mpsc::Sender;
@@ -12,14 +12,20 @@ pub struct FrameBroadcaster {
 }
 
 impl FrameBroadcaster {
-    pub fn send_frame(&mut self, frame: FrameData) -> Result<(), ()> {
-        let response = GetFrameResponse { frame_index: self.next_frame_index, frame: Some(frame) };
+    pub fn send_frame(&mut self, frame: FrameData) -> Result<(), BroadcastSendError> {
+        let response = GetFrameResponse {
+            frame_index: self.next_frame_index,
+            frame: Some(frame),
+        };
         self.next_frame_index += 1;
         self.send(response)
     }
 
-    pub fn send_reset_frame(&mut self, frame: FrameData) -> Result<(), ()> {
-        let response = GetFrameResponse { frame_index: 0, frame: Some(frame) };
+    pub fn send_reset_frame(&mut self, frame: FrameData) -> Result<(), BroadcastSendError> {
+        let response = GetFrameResponse {
+            frame_index: 0,
+            frame: Some(frame),
+        };
         self.next_frame_index = 1;
         self.send(response)
     }
