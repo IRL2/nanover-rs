@@ -178,11 +178,96 @@ where
     }
 }
 
+struct FileField {
+    value: String,
+}
+
+impl FileField {
+    pub fn new() -> Self {
+        Self { value: String::new() }
+    }
+
+    pub fn has_path(&self) -> bool {
+        !self.value.trim().is_empty()
+    }
+
+    fn widget(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut was_interacted_with = false;
+        ui.horizontal(|ui| {
+            was_interacted_with |= ui.text_edit_singleline(&mut self.value).changed();
+            if ui.button("Select files").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Narupa XML", &["xml"])
+                    .pick_file()
+                {
+                    self.value = path.display().to_string();
+                    was_interacted_with = true;
+                };
+            };
+        });
+        was_interacted_with
+    }
+}
+
+struct MultiFileField {
+    fields: Vec<FileField>
+}
+
+impl MultiFileField {
+    pub fn new() -> Self {
+        Self { fields: vec![FileField::new()] }
+    }
+
+    fn widget(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut was_interacted_with = false;
+        ui.vertical(|ui| {
+            for field in self.fields.iter_mut() {
+                was_interacted_with |= field.widget(ui);
+            }
+            ui.horizontal(|ui| {
+                if ui.button("+").clicked() {
+                    self.add_field();
+                };
+                if ui.button("-").clicked() {
+                    self.remove_field();
+                }
+            })
+        });
+        was_interacted_with
+    }
+
+    fn add_field(&mut self) {
+        self.fields.push(FileField::new());
+    }
+
+    fn remove_field(&mut self) {
+        self.fields.pop();
+    }
+
+    pub fn paths(&self) -> Vec<String> {
+        self.fields
+            .iter()
+            .filter_map(|field| {
+                let trimmed = field.value.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            })
+            .collect()
+    }
+
+    pub fn has_path(&self) -> bool {
+        self.fields.iter().any(|field| field.has_path())
+    }
+}
+
 struct MyEguiApp {
     runtime: tokio::runtime::Runtime,
     reference: Cli,
     input_type: InputSelection,
-    input_path: Option<String>,
+    input_path: MultiFileField,
     server: Option<Server>,
     client: Option<Client>,
     error: Option<String>,
@@ -214,7 +299,7 @@ impl Default for MyEguiApp {
             runtime,
             reference: Cli::default(),
             input_type: InputSelection::DefaultInput,
-            input_path: None,
+            input_path: MultiFileField::new(),
             server: None,
             client: None,
             error: None,
@@ -246,11 +331,6 @@ impl MyEguiApp {
     }
 
     fn input_selection(&mut self, ui: &mut egui::Ui) {
-        let mut file_picked = if let Some(ref path) = self.input_path {
-            path.clone()
-        } else {
-            "".to_owned()
-        };
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.radio_value(
@@ -259,32 +339,21 @@ impl MyEguiApp {
                     "Demonstration input",
                 )
             });
-            ui.horizontal(|ui| {
-                ui.radio_value(
-                    &mut self.input_type,
-                    InputSelection::FileInput,
-                    "File input",
-                );
-                if ui.text_edit_singleline(&mut file_picked).changed() {
-                    self.input_path = Some(file_picked);
-                };
-                if ui.button("Select files").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Narupa XML", &["xml"])
-                        .pick_file()
-                    {
-                        self.input_path = Some(path.display().to_string());
-                        self.input_type = InputSelection::FileInput;
-                    };
-                };
-            });
+            ui.radio_value(
+                &mut self.input_type,
+                InputSelection::FileInput,
+                "File input",
+            );
+            if self.input_path.widget(ui) {
+                self.input_type = InputSelection::FileInput;
+            };
         });
     }
 
     fn run_button(&mut self, ui: &mut egui::Ui) {
         let ready = matches!(
-            (&self.input_type, &self.input_path),
-            (InputSelection::DefaultInput, _) | (InputSelection::FileInput, Some(_))
+            (&self.input_type, &self.input_path.has_path()),
+            (InputSelection::DefaultInput, _) | (InputSelection::FileInput, true)
         );
         let ready = ready
             && self.port.is_valid()
@@ -563,12 +632,8 @@ impl MyEguiApp {
         };
 
         if let InputSelection::FileInput = self.input_type {
-            arguments.input_xml_path = self
-                .input_path
-                .as_ref()
-                .map(|p| vec![p.clone()])
-                .unwrap_or_else(Vec::new);
-        };
+            arguments.input_xml_path = self.input_path.paths();
+        }
 
         if self.record_statistics {
             let Some(ref statistics) = self.statistics else {
