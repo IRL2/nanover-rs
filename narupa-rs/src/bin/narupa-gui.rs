@@ -1,5 +1,5 @@
 use eframe::egui;
-use log::{debug, trace, LevelFilter, SetLoggerError};
+use log::{debug, trace, warn, LevelFilter, SetLoggerError};
 use narupa_proto::command::{command_client::CommandClient, CommandMessage, GetCommandsRequest};
 use narupa_rs::application::{
     cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli,
@@ -9,7 +9,7 @@ use std::{
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     str::FromStr,
-    sync::Mutex,
+    sync::Mutex, time::{Instant, Duration},
 };
 use tonic::transport::Channel;
 
@@ -25,6 +25,8 @@ fn main() {
 
 static LOG_VECTOR: Mutex<Vec<(log::Level, String)>> = Mutex::new(Vec::new());
 static UI_LOGGER: UILogger = UILogger;
+
+const CACHE_VALIDITY: Duration = Duration::from_secs(2);
 
 struct UILogger;
 
@@ -50,8 +52,26 @@ fn init_logging() -> Result<(), SetLoggerError> {
     log::set_logger(&UI_LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
 }
 
+struct CommandCache {
+    validity: Duration,
+    time: Instant,
+    commands: Vec<String>,
+}
+
+impl CommandCache {
+    fn new(validity: Duration, commands: Vec<String>) -> Self {
+        Self { validity, time: Instant::now(), commands }
+    }
+
+    /// Is the cache fresh enough, or has it expired?
+    fn is_valid(&self) -> bool {
+        self.time.elapsed() < self.validity
+    }
+}
+
 struct Client {
     command: CommandClient<Channel>,
+    cache: Option<CommandCache>,
 }
 
 impl Client {
@@ -61,10 +81,10 @@ impl Client {
     ) -> Result<Self, tonic::transport::Error> {
         let endpoint = format!("http://{address}");
         let command = runtime_handle.block_on(CommandClient::connect(endpoint))?;
-        Ok(Client { command })
+        Ok(Client { command, cache: None })
     }
 
-    pub fn get_command_list(
+    pub fn get_command_list_force(
         &mut self,
         runtime_handle: &tokio::runtime::Handle,
     ) -> Result<Vec<String>, tonic::Status> {
@@ -72,11 +92,31 @@ impl Client {
         let reply = runtime_handle
             .block_on(self.command.get_commands(request))?
             .into_inner();
-        Ok(reply
+        let commands: Vec<_> = reply
             .commands
             .into_iter()
             .map(|message| message.name)
-            .collect())
+            .collect();
+        self.cache = Some(CommandCache::new(CACHE_VALIDITY, commands.clone()));
+        Ok(commands)
+    }
+
+    pub fn get_command_list(
+        &mut self,
+        runtime_handle: &tokio::runtime::Handle,
+    ) -> Result<Vec<String>, tonic::Status> {
+        match &self.cache {
+            None => {
+                self.get_command_list_force(runtime_handle)
+            }
+            Some(cache) => {
+                if cache.is_valid() {
+                    Ok(cache.commands.clone())
+                } else {
+                    self.get_command_list_force(runtime_handle)
+                }
+            }
+        }        
     }
 
     pub fn run_command(
@@ -705,7 +745,7 @@ impl MyEguiApp {
                     debug!("Client connected. Some features will be activated.");
                 }
                 Err(status) => {
-                    trace!("Cannot connect a client: {:?}", status);
+                    warn!("Cannot connect a client: {:?}", status);
                 }
             }
         }
@@ -720,7 +760,6 @@ impl MyEguiApp {
         };
         match client.get_command_list(self.runtime.handle()) {
             Ok(commands) => {
-                trace!("Commands: {commands:?}");
                 Some(commands)
             }
             Err(status) => {
