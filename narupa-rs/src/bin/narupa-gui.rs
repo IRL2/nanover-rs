@@ -564,15 +564,21 @@ impl MyEguiApp {
             ("playback/pause", "Pause"),
             ("playback/step", "Step"),
             ("playback/reset", "Reset"),
+            ("playback/next", "Next simulation"),
             (
                 "multiuser/radially-orient-origins",
                 "Radially orient origins",
             ),
         ]);
+        let hidden_commands = vec!["playback/list", "playback/load"];
         egui::CollapsingHeader::new("Commands").show(ui, |ui| {
             let Some(commands) = self.get_command_list() else {
                 return;
             };
+            let commands: Vec<_> = commands
+                .iter()
+                .filter(|command| !hidden_commands.contains(&command.as_str()))
+                .collect();
             if commands.is_empty() {
                 return;
             };
