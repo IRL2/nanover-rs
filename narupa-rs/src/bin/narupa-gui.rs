@@ -4,6 +4,7 @@ use narupa_proto::command::{command_client::CommandClient, CommandMessage, GetCo
 use narupa_rs::application::{
     cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli,
 };
+use prost_types::Struct;
 use std::{
     collections::BTreeMap,
     marker::PhantomData,
@@ -12,7 +13,7 @@ use std::{
     sync::Mutex, time::{Instant, Duration},
 };
 use tonic::transport::Channel;
-use pack_prost::UnPack;
+use pack_prost::{UnPack, ToProstValue};
 
 fn main() {
     init_logging().expect("Could not setup logging.");
@@ -27,7 +28,12 @@ fn main() {
 static LOG_VECTOR: Mutex<Vec<(log::Level, String)>> = Mutex::new(Vec::new());
 static UI_LOGGER: UILogger = UILogger;
 
-const CACHE_VALIDITY: Duration = Duration::from_secs(2);
+// We only communicate with the server implemented in this crate that has
+// neither the list of commands or the list of simulations dynamic within a
+// session. We could run the request only once, but let's be future proof and
+// have the mechanism in place in case we implement dynamic lists and the cache
+// needs to follow.
+const CACHE_VALIDITY: Duration = Duration::from_secs(10);
 
 struct UILogger;
 
@@ -125,7 +131,7 @@ impl Client {
         &mut self,
         runtime_handle: &tokio::runtime::Handle,
     ) -> Result<Vec<String>, tonic::Status> {
-        let reply = self.run_command("playback/list".into(), runtime_handle)?;
+        let reply = self.run_command("playback/list".into(), None, runtime_handle)?;
         // We only communicate with the narupa server we implement here. We
         // assume the response is formatted correctly and we panic if it is not
         // the case.
@@ -157,11 +163,12 @@ impl Client {
     pub fn run_command(
         &mut self,
         name: String,
+        arguments: Option<Struct>,
         runtime_handle: &tokio::runtime::Handle,
     ) -> Result<CommandReply, tonic::Status> {
         let request = CommandMessage {
             name,
-            arguments: None,
+            arguments,
         };
         let reply = runtime_handle.block_on(self.command.run_command(request))?;
         Ok(reply.into_inner())
@@ -624,7 +631,7 @@ impl MyEguiApp {
                             .get(command.as_str())
                             .unwrap_or(&command.as_str());
                         if ui.button(button_label).clicked() {
-                            self.run_client_command(command.to_string());
+                            self.run_client_command(command.to_string(), None);
                         }
                     });
                 });
@@ -641,8 +648,14 @@ impl MyEguiApp {
         };
         egui::CollapsingHeader::new("Simulation list").show(ui, |ui| {
             ui.vertical(|ui| {
-                for simulation in simulations {
-                    ui.label(format!("• {simulation}"));
+                for (index, simulation) in simulations.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("• {simulation}"));
+                        if ui.button("Load").clicked() {
+                            let arguments = Struct { fields: BTreeMap::from([("index".into(), (index as f64).to_prost_value())]) };
+                            self.run_client_command("playback/load".into(), Some(arguments))
+                        }
+                    });
                 }
             });
         });
@@ -844,14 +857,14 @@ impl MyEguiApp {
         }
     }
 
-    fn run_client_command(&mut self, name: String) {
+    fn run_client_command(&mut self, name: String, arguments: Option<Struct>) {
         if self.client.is_none() {
             self.try_connect_client();
         };
         let Some(ref mut client) = self.client else {
             return;
         };
-        match client.run_command(name.clone(), self.runtime.handle()) {
+        match client.run_command(name.clone(), arguments, self.runtime.handle()) {
             Ok(_) => debug!("Successfully ran {name}"),
             Err(status) => debug!("Error while running {name}: {status:?}."),
         };
