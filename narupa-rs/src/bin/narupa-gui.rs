@@ -1,6 +1,6 @@
 use eframe::egui;
 use log::{debug, trace, warn, LevelFilter, SetLoggerError};
-use narupa_proto::command::{command_client::CommandClient, CommandMessage, GetCommandsRequest};
+use narupa_proto::command::{command_client::CommandClient, CommandMessage, GetCommandsRequest, CommandReply};
 use narupa_rs::application::{
     cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli,
 };
@@ -12,6 +12,7 @@ use std::{
     sync::Mutex, time::{Instant, Duration},
 };
 use tonic::transport::Channel;
+use pack_prost::UnPack;
 
 fn main() {
     init_logging().expect("Could not setup logging.");
@@ -72,6 +73,7 @@ impl CommandCache {
 struct Client {
     command: CommandClient<Channel>,
     cache: Option<CommandCache>,
+    simulations: Option<CommandCache>,
 }
 
 impl Client {
@@ -81,7 +83,7 @@ impl Client {
     ) -> Result<Self, tonic::transport::Error> {
         let endpoint = format!("http://{address}");
         let command = runtime_handle.block_on(CommandClient::connect(endpoint))?;
-        Ok(Client { command, cache: None })
+        Ok(Client { command, cache: None, simulations: None })
     }
 
     pub fn get_command_list_force(
@@ -119,17 +121,50 @@ impl Client {
         }        
     }
 
+    pub fn get_simulation_list_force(
+        &mut self,
+        runtime_handle: &tokio::runtime::Handle,
+    ) -> Result<Vec<String>, tonic::Status> {
+        let reply = self.run_command("playback/list".into(), runtime_handle)?;
+        // We only communicate with the narupa server we implement here. We
+        // assume the response is formatted correctly and we panic if it is not
+        // the case.
+        let return_value = reply.result.expect("There is no return value for the playback/list command.");
+        let list = return_value.fields.get("simulations").expect("No 'simulations' key in the return of playback/list.");
+        let list: Vec<String> = list.unpack().expect("The return of playback/list has not the expected format.");
+        self.simulations = Some(CommandCache::new(CACHE_VALIDITY, list.clone()));
+        Ok(list)
+    }
+
+    pub fn get_simulation_list(
+        &mut self,
+        runtime_handle: &tokio::runtime::Handle,
+    ) -> Result<Vec<String>, tonic::Status> {
+        match &self.simulations {
+            None => {
+                self.get_simulation_list_force(runtime_handle)
+            }
+            Some(cache) => {
+                if cache.is_valid() {
+                    Ok(cache.commands.clone())
+                } else {
+                    self.get_simulation_list_force(runtime_handle)
+                }
+            }
+        }        
+    }
+
     pub fn run_command(
         &mut self,
         name: String,
         runtime_handle: &tokio::runtime::Handle,
-    ) -> Result<(), tonic::Status> {
+    ) -> Result<CommandReply, tonic::Status> {
         let request = CommandMessage {
             name,
             arguments: None,
         };
-        let _reply = runtime_handle.block_on(self.command.run_command(request))?;
-        Ok(())
+        let reply = runtime_handle.block_on(self.command.run_command(request))?;
+        Ok(reply.into_inner())
     }
 }
 
@@ -597,6 +632,22 @@ impl MyEguiApp {
         });
     }
 
+    fn simulation_list(&mut self, ui: &mut egui::Ui) {
+        let Some(simulations) = self.get_simulation_list() else {
+            return;
+        };
+        if simulations.is_empty() {
+            return;
+        };
+        egui::CollapsingHeader::new("Simulation list").show(ui, |ui| {
+            ui.vertical(|ui| {
+                for simulation in simulations {
+                    ui.label(format!("• {simulation}"));
+                }
+            });
+        });
+    }
+
     fn log_window(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
@@ -775,6 +826,24 @@ impl MyEguiApp {
         }
     }
 
+    fn get_simulation_list(&mut self) -> Option<Vec<String>> {
+        if self.client.is_none() {
+            self.try_connect_client();
+        };
+        let Some(ref mut client) = self.client else {
+            return None;
+        };
+        match client.get_simulation_list(self.runtime.handle()) {
+            Ok(commands) => {
+                Some(commands)
+            }
+            Err(status) => {
+                trace!("Could not get the list of simulations: {:?}", status);
+                None
+            }
+        }
+    }
+
     fn run_client_command(&mut self, name: String) {
         if self.client.is_none() {
             self.try_connect_client();
@@ -819,6 +888,7 @@ impl eframe::App for MyEguiApp {
                 ui.label("Server is running.");
                 self.verbosity_selector(ui, false);
                 self.command_buttons(ui);
+                self.simulation_list(ui);
                 self.stop_button(ui);
                 self.log_window(ui);
                 ctx.request_repaint();
