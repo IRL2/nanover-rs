@@ -149,13 +149,30 @@ impl Command for ListSimulations {
 
 /// Remove the common part at the beginning of a series of paths.
 fn reduce_paths(paths: &[String]) -> Vec<String> {
+    // When there is only one path, it makes no sense to return the part that
+    // differ amongst paths. Would we do that, we would return an empty path as
+    // it is identical to itself. Instead, we return the file name if it can be
+    // obtained, or the full path if something prevents us from getting a file
+    // name (i.e. path is the root or ends with ..).
+    if paths.len() == 1 {
+        let path: PathBuf = paths[0].clone().into();
+        return if let Some(file_name) = path.file_name() {
+            vec![file_name.to_string_lossy().to_string()]
+        } else {
+            vec![paths[0].clone()]
+        };
+    }
+
+    // TODO: If all the paths are identical, then we return a vector of empty
+    // strings. We need to figure out what to do instead. The solution may also
+    // solve the the edge case of a single path being provided.
     let mut iter = paths.iter();
     let Some(first) = iter.next() else {
         return Vec::new();
     };
     let reference: PathBuf = first.into();
     let mut reference: Vec<_> = reference.components().collect();
-    for path in paths {
+    for path in iter {
         let pathbuf = Into::<PathBuf>::into(path);
         let components = pathbuf.components();
         reference = reference
