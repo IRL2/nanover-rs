@@ -1,17 +1,19 @@
 use eframe::egui;
-use log::{debug, trace, LevelFilter, SetLoggerError};
-use narupa_proto::command::{command_client::CommandClient, CommandMessage, GetCommandsRequest};
+use log::{debug, trace, warn, LevelFilter, SetLoggerError};
+use narupa_proto::command::{command_client::CommandClient, CommandMessage, GetCommandsRequest, CommandReply};
 use narupa_rs::application::{
     cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli,
 };
+use prost_types::Struct;
 use std::{
     collections::BTreeMap,
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     str::FromStr,
-    sync::Mutex,
+    sync::Mutex, time::{Instant, Duration},
 };
 use tonic::transport::Channel;
+use pack_prost::{UnPack, ToProstValue};
 
 fn main() {
     init_logging().expect("Could not setup logging.");
@@ -25,6 +27,13 @@ fn main() {
 
 static LOG_VECTOR: Mutex<Vec<(log::Level, String)>> = Mutex::new(Vec::new());
 static UI_LOGGER: UILogger = UILogger;
+
+// We only communicate with the server implemented in this crate that has
+// neither the list of commands or the list of simulations dynamic within a
+// session. We could run the request only once, but let's be future proof and
+// have the mechanism in place in case we implement dynamic lists and the cache
+// needs to follow.
+const CACHE_VALIDITY: Duration = Duration::from_secs(10);
 
 struct UILogger;
 
@@ -50,8 +59,27 @@ fn init_logging() -> Result<(), SetLoggerError> {
     log::set_logger(&UI_LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
 }
 
+struct CommandCache {
+    validity: Duration,
+    time: Instant,
+    commands: Vec<String>,
+}
+
+impl CommandCache {
+    fn new(validity: Duration, commands: Vec<String>) -> Self {
+        Self { validity, time: Instant::now(), commands }
+    }
+
+    /// Is the cache fresh enough, or has it expired?
+    fn is_valid(&self) -> bool {
+        self.time.elapsed() < self.validity
+    }
+}
+
 struct Client {
     command: CommandClient<Channel>,
+    cache: Option<CommandCache>,
+    simulations: Option<CommandCache>,
 }
 
 impl Client {
@@ -61,10 +89,10 @@ impl Client {
     ) -> Result<Self, tonic::transport::Error> {
         let endpoint = format!("http://{address}");
         let command = runtime_handle.block_on(CommandClient::connect(endpoint))?;
-        Ok(Client { command })
+        Ok(Client { command, cache: None, simulations: None })
     }
 
-    pub fn get_command_list(
+    pub fn get_command_list_force(
         &mut self,
         runtime_handle: &tokio::runtime::Handle,
     ) -> Result<Vec<String>, tonic::Status> {
@@ -72,24 +100,78 @@ impl Client {
         let reply = runtime_handle
             .block_on(self.command.get_commands(request))?
             .into_inner();
-        Ok(reply
+        let commands: Vec<_> = reply
             .commands
             .into_iter()
             .map(|message| message.name)
-            .collect())
+            .collect();
+        self.cache = Some(CommandCache::new(CACHE_VALIDITY, commands.clone()));
+        Ok(commands)
+    }
+
+    pub fn get_command_list(
+        &mut self,
+        runtime_handle: &tokio::runtime::Handle,
+    ) -> Result<Vec<String>, tonic::Status> {
+        match &self.cache {
+            None => {
+                self.get_command_list_force(runtime_handle)
+            }
+            Some(cache) => {
+                if cache.is_valid() {
+                    Ok(cache.commands.clone())
+                } else {
+                    self.get_command_list_force(runtime_handle)
+                }
+            }
+        }        
+    }
+
+    pub fn get_simulation_list_force(
+        &mut self,
+        runtime_handle: &tokio::runtime::Handle,
+    ) -> Result<Vec<String>, tonic::Status> {
+        let reply = self.run_command("playback/list".into(), None, runtime_handle)?;
+        // We only communicate with the narupa server we implement here. We
+        // assume the response is formatted correctly and we panic if it is not
+        // the case.
+        let return_value = reply.result.expect("There is no return value for the playback/list command.");
+        let list = return_value.fields.get("simulations").expect("No 'simulations' key in the return of playback/list.");
+        let list: Vec<String> = list.unpack().expect("The return of playback/list has not the expected format.");
+        self.simulations = Some(CommandCache::new(CACHE_VALIDITY, list.clone()));
+        Ok(list)
+    }
+
+    pub fn get_simulation_list(
+        &mut self,
+        runtime_handle: &tokio::runtime::Handle,
+    ) -> Result<Vec<String>, tonic::Status> {
+        match &self.simulations {
+            None => {
+                self.get_simulation_list_force(runtime_handle)
+            }
+            Some(cache) => {
+                if cache.is_valid() {
+                    Ok(cache.commands.clone())
+                } else {
+                    self.get_simulation_list_force(runtime_handle)
+                }
+            }
+        }        
     }
 
     pub fn run_command(
         &mut self,
         name: String,
+        arguments: Option<Struct>,
         runtime_handle: &tokio::runtime::Handle,
-    ) -> Result<(), tonic::Status> {
+    ) -> Result<CommandReply, tonic::Status> {
         let request = CommandMessage {
             name,
-            arguments: None,
+            arguments,
         };
-        let _reply = runtime_handle.block_on(self.command.run_command(request))?;
-        Ok(())
+        let reply = runtime_handle.block_on(self.command.run_command(request))?;
+        Ok(reply.into_inner())
     }
 }
 
@@ -178,11 +260,96 @@ where
     }
 }
 
+struct FileField {
+    value: String,
+}
+
+impl FileField {
+    pub fn new() -> Self {
+        Self { value: String::new() }
+    }
+
+    pub fn has_path(&self) -> bool {
+        !self.value.trim().is_empty()
+    }
+
+    fn widget(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut was_interacted_with = false;
+        ui.horizontal(|ui| {
+            was_interacted_with |= ui.text_edit_singleline(&mut self.value).changed();
+            if ui.button("Select files").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Narupa XML", &["xml"])
+                    .pick_file()
+                {
+                    self.value = path.display().to_string();
+                    was_interacted_with = true;
+                };
+            };
+        });
+        was_interacted_with
+    }
+}
+
+struct MultiFileField {
+    fields: Vec<FileField>
+}
+
+impl MultiFileField {
+    pub fn new() -> Self {
+        Self { fields: vec![FileField::new()] }
+    }
+
+    fn widget(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut was_interacted_with = false;
+        ui.vertical(|ui| {
+            for field in self.fields.iter_mut() {
+                was_interacted_with |= field.widget(ui);
+            }
+            ui.horizontal(|ui| {
+                if ui.button("+").clicked() {
+                    self.add_field();
+                };
+                if ui.button("-").clicked() {
+                    self.remove_field();
+                }
+            })
+        });
+        was_interacted_with
+    }
+
+    fn add_field(&mut self) {
+        self.fields.push(FileField::new());
+    }
+
+    fn remove_field(&mut self) {
+        self.fields.pop();
+    }
+
+    pub fn paths(&self) -> Vec<String> {
+        self.fields
+            .iter()
+            .filter_map(|field| {
+                let trimmed = field.value.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            })
+            .collect()
+    }
+
+    pub fn has_path(&self) -> bool {
+        self.fields.iter().any(|field| field.has_path())
+    }
+}
+
 struct MyEguiApp {
     runtime: tokio::runtime::Runtime,
     reference: Cli,
     input_type: InputSelection,
-    input_path: Option<String>,
+    input_path: MultiFileField,
     server: Option<Server>,
     client: Option<Client>,
     error: Option<String>,
@@ -214,7 +381,7 @@ impl Default for MyEguiApp {
             runtime,
             reference: Cli::default(),
             input_type: InputSelection::DefaultInput,
-            input_path: None,
+            input_path: MultiFileField::new(),
             server: None,
             client: None,
             error: None,
@@ -246,11 +413,6 @@ impl MyEguiApp {
     }
 
     fn input_selection(&mut self, ui: &mut egui::Ui) {
-        let mut file_picked = if let Some(ref path) = self.input_path {
-            path.clone()
-        } else {
-            "".to_owned()
-        };
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.radio_value(
@@ -259,32 +421,21 @@ impl MyEguiApp {
                     "Demonstration input",
                 )
             });
-            ui.horizontal(|ui| {
-                ui.radio_value(
-                    &mut self.input_type,
-                    InputSelection::FileInput,
-                    "File input",
-                );
-                if ui.text_edit_singleline(&mut file_picked).changed() {
-                    self.input_path = Some(file_picked);
-                };
-                if ui.button("Select files").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Narupa XML", &["xml"])
-                        .pick_file()
-                    {
-                        self.input_path = Some(path.display().to_string());
-                        self.input_type = InputSelection::FileInput;
-                    };
-                };
-            });
+            ui.radio_value(
+                &mut self.input_type,
+                InputSelection::FileInput,
+                "File input",
+            );
+            if self.input_path.widget(ui) {
+                self.input_type = InputSelection::FileInput;
+            };
         });
     }
 
     fn run_button(&mut self, ui: &mut egui::Ui) {
         let ready = matches!(
-            (&self.input_type, &self.input_path),
-            (InputSelection::DefaultInput, _) | (InputSelection::FileInput, Some(_))
+            (&self.input_type, &self.input_path.has_path()),
+            (InputSelection::DefaultInput, _) | (InputSelection::FileInput, true)
         );
         let ready = ready
             && self.port.is_valid()
@@ -455,15 +606,21 @@ impl MyEguiApp {
             ("playback/pause", "Pause"),
             ("playback/step", "Step"),
             ("playback/reset", "Reset"),
+            ("playback/next", "Next simulation"),
             (
                 "multiuser/radially-orient-origins",
                 "Radially orient origins",
             ),
         ]);
+        let hidden_commands = vec!["playback/list", "playback/load"];
         egui::CollapsingHeader::new("Commands").show(ui, |ui| {
             let Some(commands) = self.get_command_list() else {
                 return;
             };
+            let commands: Vec<_> = commands
+                .iter()
+                .filter(|command| !hidden_commands.contains(&command.as_str()))
+                .collect();
             if commands.is_empty() {
                 return;
             };
@@ -474,10 +631,32 @@ impl MyEguiApp {
                             .get(command.as_str())
                             .unwrap_or(&command.as_str());
                         if ui.button(button_label).clicked() {
-                            self.run_client_command(command.to_string());
+                            self.run_client_command(command.to_string(), None);
                         }
                     });
                 });
+            });
+        });
+    }
+
+    fn simulation_list(&mut self, ui: &mut egui::Ui) {
+        let Some(simulations) = self.get_simulation_list() else {
+            return;
+        };
+        if simulations.is_empty() {
+            return;
+        };
+        egui::CollapsingHeader::new("Simulation list").show(ui, |ui| {
+            ui.vertical(|ui| {
+                for (index, simulation) in simulations.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("• {simulation}"));
+                        if ui.button("Load").clicked() {
+                            let arguments = Struct { fields: BTreeMap::from([("index".into(), (index as f64).to_prost_value())]) };
+                            self.run_client_command("playback/load".into(), Some(arguments))
+                        }
+                    });
+                }
             });
         });
     }
@@ -563,12 +742,8 @@ impl MyEguiApp {
         };
 
         if let InputSelection::FileInput = self.input_type {
-            arguments.input_xml_path = self
-                .input_path
-                .as_ref()
-                .map(|p| vec![p.clone()])
-                .unwrap_or_else(Vec::new);
-        };
+            arguments.input_xml_path = self.input_path.paths();
+        }
 
         if self.record_statistics {
             let Some(ref statistics) = self.statistics else {
@@ -640,7 +815,7 @@ impl MyEguiApp {
                     debug!("Client connected. Some features will be activated.");
                 }
                 Err(status) => {
-                    trace!("Cannot connect a client: {:?}", status);
+                    warn!("Cannot connect a client: {:?}", status);
                 }
             }
         }
@@ -655,7 +830,6 @@ impl MyEguiApp {
         };
         match client.get_command_list(self.runtime.handle()) {
             Ok(commands) => {
-                trace!("Commands: {commands:?}");
                 Some(commands)
             }
             Err(status) => {
@@ -665,14 +839,32 @@ impl MyEguiApp {
         }
     }
 
-    fn run_client_command(&mut self, name: String) {
+    fn get_simulation_list(&mut self) -> Option<Vec<String>> {
+        if self.client.is_none() {
+            self.try_connect_client();
+        };
+        let Some(ref mut client) = self.client else {
+            return None;
+        };
+        match client.get_simulation_list(self.runtime.handle()) {
+            Ok(commands) => {
+                Some(commands)
+            }
+            Err(status) => {
+                trace!("Could not get the list of simulations: {:?}", status);
+                None
+            }
+        }
+    }
+
+    fn run_client_command(&mut self, name: String, arguments: Option<Struct>) {
         if self.client.is_none() {
             self.try_connect_client();
         };
         let Some(ref mut client) = self.client else {
             return;
         };
-        match client.run_command(name.clone(), self.runtime.handle()) {
+        match client.run_command(name.clone(), arguments, self.runtime.handle()) {
             Ok(_) => debug!("Successfully ran {name}"),
             Err(status) => debug!("Error while running {name}: {status:?}."),
         };
@@ -709,6 +901,7 @@ impl eframe::App for MyEguiApp {
                 ui.label("Server is running.");
                 self.verbosity_selector(ui, false);
                 self.command_buttons(ui);
+                self.simulation_list(ui);
                 self.stop_button(ui);
                 self.log_window(ui);
                 ctx.request_repaint();
