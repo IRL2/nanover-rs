@@ -171,6 +171,9 @@ pub struct Cli {
     /// Record the updates from the shared state
     #[clap(long, value_parser)]
     pub state: Option<String>,
+    /// Start the simulation paused
+    #[clap(long, value_parser, default_value_t = false)]
+    pub start_paused: bool,
 }
 
 impl Default for Cli {
@@ -190,6 +193,7 @@ impl Default for Cli {
             name: "Narupa-RS iMD Server".to_owned(),
             trajectory: None,
             state: None,
+            start_paused: false,
         }
     }
 }
@@ -423,6 +427,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
         playback_rx,
         simulation_tx,
         true,
+        !cli.start_paused,
     )?;
 
     // Advertise the server with ESSD
