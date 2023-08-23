@@ -52,6 +52,7 @@ pub struct IMDInteraction {
     pub kind: InteractionKind,
     max_force: Option<f64>,
     scale: f64,
+    id: Option<String>,
 }
 
 impl IMDInteraction {
@@ -61,6 +62,7 @@ impl IMDInteraction {
         kind: InteractionKind,
         max_force: Option<f64>,
         scale: f64,
+        id: Option<String>,
     ) -> Self {
         Self {
             position,
@@ -68,6 +70,7 @@ impl IMDInteraction {
             kind,
             max_force,
             scale,
+            id,
         }
     }
 }
@@ -80,6 +83,7 @@ pub struct InteractionForce {
 pub struct Interaction {
     pub forces: Vec<InteractionForce>,
     pub energy: Option<f64>,
+    pub id: Option<String>,
 }
 
 pub trait Simulation {
@@ -520,6 +524,7 @@ impl OpenMMSimulation {
                         &masses,
                         max_force,
                         Some(energy),
+                        imd.id.clone(),
                     )
                 })
                 .collect();
@@ -862,6 +867,7 @@ fn build_interaction(
     masses: &[f64],
     max_force: f64,
     energy: Option<f64>,
+    id: Option<String>,
 ) -> Interaction {
     let force_per_particle = [
         scale * com_force[0] / n_particles as f64,
@@ -882,6 +888,7 @@ fn build_interaction(
             })
             .collect(),
         energy,
+        id,
     }
 }
 
@@ -1039,6 +1046,7 @@ mod tests {
                     },
                 ],
                 energy: None,
+                id: None,
             },
             Interaction {
                 forces: vec![InteractionForce {
@@ -1046,6 +1054,7 @@ mod tests {
                     force: [3.2, 4.3, 5.4],
                 }],
                 energy: None,
+                id: None,
             },
             Interaction {
                 forces: vec![InteractionForce {
@@ -1053,6 +1062,7 @@ mod tests {
                     force: [4.3, 5.4, 6.5],
                 }],
                 energy: None,
+                id: None,
             },
         ];
         let accumulated = accumulate_forces(interactions);
