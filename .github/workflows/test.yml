@@ -56,6 +56,11 @@ jobs:
         env:
           LD_LIBRARY_PATH: /home/runner/local/lib/
           OPENMM_HOME: /home/runner/local/
+      - name: Clippy
+        run: cargo clippy
+        env:
+          LD_LIBRARY_PATH: /home/runner/local/lib/
+          OPENMM_HOME: /home/runner/local/
   format:
     name: Format
     runs-on: ubuntu-latest
@@ -63,10 +68,3 @@ jobs:
       - uses: actions/checkout@v2
       - name: Format
         run: cargo fmt --check
-  lint:
-      name: Lint
-      runs-on: ubuntu-latest
-      steps:
-      - uses: actions/checkout@v2
-      - name: Clippy
-        run: cargo clippy
