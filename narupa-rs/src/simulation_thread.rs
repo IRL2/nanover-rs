@@ -55,6 +55,7 @@ pub fn run_simulation_thread(
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
     auto_reset: bool,
+    run_on_start: bool
 ) -> Result<(), XMLParsingError> {
     let mut maybe_simulation: Option<OpenMMSimulation> = match simulations_manifest.load_default() {
         Ok(simulation) => Some(simulation),
@@ -69,7 +70,7 @@ pub fn run_simulation_thread(
     };
 
     tokio::task::spawn_blocking(move || {
-        let mut playback_state = PlaybackState::new(true);
+        let mut playback_state = PlaybackState::new(run_on_start);
         let interval = Duration::from_millis(simulation_interval);
         if let Some(ref simulation) = maybe_simulation {
             if sim_clone

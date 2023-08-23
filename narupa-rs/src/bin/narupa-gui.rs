@@ -367,6 +367,7 @@ struct MyEguiApp {
     trajectory: Option<String>,
     record_state: bool,
     state: Option<String>,
+    start_paused: bool,
 }
 
 impl Default for MyEguiApp {
@@ -399,6 +400,7 @@ impl Default for MyEguiApp {
             trajectory: None,
             record_state: false,
             state: None,
+            start_paused: reference.start_paused,
         }
     }
 }
@@ -508,6 +510,7 @@ impl MyEguiApp {
             self.simulation_fps.widget(ui);
             self.frame_interval.widget(ui);
             self.force_interval.widget(ui);
+            ui.checkbox(&mut self.start_paused, "Start simulation paused");
         });
     }
 
@@ -730,6 +733,7 @@ impl MyEguiApp {
         let simulation_fps = self.simulation_fps.convert().map_err(|_| ())?;
         let frame_interval = self.frame_interval.convert().map_err(|_| ())?;
         let force_interval = self.force_interval.convert().map_err(|_| ())?;
+        let start_paused = self.start_paused;
 
         let mut arguments = Cli {
             port,
@@ -738,6 +742,7 @@ impl MyEguiApp {
             force_interval,
             progression: self.show_progression,
             name: self.server_name.clone(),
+            start_paused,
             ..Default::default()
         };
 
