@@ -79,6 +79,7 @@ pub struct InteractionForce {
 
 pub struct Interaction {
     pub forces: Vec<InteractionForce>,
+    pub energy: Option<f64>,
 }
 
 pub trait Simulation {
@@ -507,7 +508,7 @@ impl OpenMMSimulation {
                         com[2] - interaction_position[2],
                     ];
                     let sigma = 1.0; // For now we use this as a constant. It is in the python version.
-                    let (com_force, _energy) = match imd.kind {
+                    let (com_force, energy) = match imd.kind {
                         InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
                         InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
                     };
@@ -518,6 +519,7 @@ impl OpenMMSimulation {
                         &selection,
                         &masses,
                         max_force,
+                        Some(energy),
                     )
                 })
                 .collect();
@@ -859,6 +861,7 @@ fn build_interaction(
     selection: &[i32],
     masses: &[f64],
     max_force: f64,
+    energy: Option<f64>,
 ) -> Interaction {
     let force_per_particle = [
         scale * com_force[0] / n_particles as f64,
@@ -878,6 +881,7 @@ fn build_interaction(
                 ],
             })
             .collect(),
+        energy,
     }
 }
 
@@ -1034,18 +1038,21 @@ mod tests {
                         force: [2.1, 3.2, 4.3],
                     },
                 ],
+                energy: None,
             },
             Interaction {
                 forces: vec![InteractionForce {
                     selection: 2,
                     force: [3.2, 4.3, 5.4],
                 }],
+                energy: None,
             },
             Interaction {
                 forces: vec![InteractionForce {
                     selection: 43,
                     force: [4.3, 5.4, 6.5],
                 }],
+                energy: None,
             },
         ];
         let accumulated = accumulate_forces(interactions);
