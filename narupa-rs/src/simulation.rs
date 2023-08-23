@@ -507,7 +507,7 @@ impl OpenMMSimulation {
                         com[2] - interaction_position[2],
                     ];
                     let sigma = 1.0; // For now we use this as a constant. It is in the python version.
-                    let com_force = match imd.kind {
+                    let (com_force, _energy) = match imd.kind {
                         InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
                         InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
                     };
@@ -903,20 +903,25 @@ fn zeroed_out(indices: &HashSet<i32>) -> CoordMap {
     btree
 }
 
-fn compute_gaussian_force(diff: Coordinate, sigma: f64) -> Coordinate {
+fn compute_gaussian_force(diff: Coordinate, sigma: f64) -> (Coordinate, f64) {
     let sigma_sqr = sigma * sigma;
     let distance_sqr = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
     let gauss = (-distance_sqr / (2.0 * sigma_sqr)).exp();
-    [
+    let force = [
         -(diff[0] / sigma_sqr) * gauss,
         -(diff[1] / sigma_sqr) * gauss,
         -(diff[2] / sigma_sqr) * gauss,
-    ]
+    ];
+    let energy = -gauss;
+    (force, energy)
 }
 
-fn compute_harmonic_force(diff: Coordinate, k: f64) -> Coordinate {
+fn compute_harmonic_force(diff: Coordinate, k: f64) -> (Coordinate, f64) {
     let factor = -2.0 * k;
-    [factor * diff[0], factor * diff[1], factor * diff[2]]
+    let distance_sqr = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
+    let force = [factor * diff[0], factor * diff[1], factor * diff[2]];
+    let energy = k * distance_sqr;
+    (force, energy)
 }
 
 unsafe fn get_selection_masses_from_system(
@@ -963,15 +968,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-EXP_1, 0.0, 0.0])]
-    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ EXP_1, 0.0, 0.0])]
-    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -EXP_1, 0.0])]
-    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -EXP_1])]
-    #[case(UNIT, [0.0, 0.0, 0.0], [-EXP_1 * UNIT[0]; 3])]
+    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-EXP_1, 0.0, 0.0], -EXP_1)]
+    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ EXP_1, 0.0, 0.0], -EXP_1)]
+    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -EXP_1, 0.0], -EXP_1)]
+    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -EXP_1], -EXP_1)]
+    #[case(UNIT, [0.0, 0.0, 0.0], [-EXP_1 * UNIT[0]; 3], -EXP_1)]
     fn test_gaussian_force(
         #[case] position: Coordinate,
         #[case] interaction_position: Coordinate,
         #[case] expected_force: Coordinate,
+        #[case] expected_energy: f64,
     ) {
         let sigma = 1.0;
         let diff = [
@@ -979,25 +985,27 @@ mod tests {
             position[1] - interaction_position[1],
             position[2] - interaction_position[2],
         ];
-        let force = compute_gaussian_force(diff, sigma);
+        let (force, energy) = compute_gaussian_force(diff, sigma);
         assert_f64_near!(force[0], expected_force[0]);
         assert_f64_near!(force[1], expected_force[1]);
         assert_f64_near!(force[2], expected_force[2]);
+        assert_f64_near!(energy, expected_energy);
     }
 
     #[rstest]
-    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-2.0, 0.0, 0.0])]
-    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ 2.0, 0.0, 0.0])]
-    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -2.0, 0.0])]
-    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -2.0])]
-    #[case(UNIT, [0.0, 0.0, 0.0], [-2.0 * UNIT[0]; 3])]
-    #[case([1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [-2.0, -2.0, -2.0])]
-    #[case([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [0.0, 0.0, 0.0])]
-    #[case([-1.0, -1.0, -1.0], [0.0, 0.0, 0.0], [2.0, 2.0, 2.0])]
+    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-2.0, 0.0, 0.0], 1.0)]
+    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ 2.0, 0.0, 0.0], 1.0)]
+    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -2.0, 0.0], 1.0)]
+    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -2.0], 1.0)]
+    #[case(UNIT, [0.0, 0.0, 0.0], [-2.0 * UNIT[0]; 3], 1.0)]
+    #[case([1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [-2.0, -2.0, -2.0], 3.0)]
+    #[case([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [0.0, 0.0, 0.0], 0.0)]
+    #[case([-1.0, -1.0, -1.0], [0.0, 0.0, 0.0], [2.0, 2.0, 2.0], 3.0)]
     fn test_harmonic_force(
         #[case] position: Coordinate,
         #[case] interaction_position: Coordinate,
         #[case] expected_force: Coordinate,
+        #[case] expected_energy: f64,
     ) {
         let k = 1.0;
         let diff = [
@@ -1005,10 +1013,11 @@ mod tests {
             position[1] - interaction_position[1],
             position[2] - interaction_position[2],
         ];
-        let force = compute_harmonic_force(diff, k);
+        let (force, energy) = compute_harmonic_force(diff, k);
         assert_f64_near!(force[0], expected_force[0]);
         assert_f64_near!(force[1], expected_force[1]);
         assert_f64_near!(force[2], expected_force[2]);
+        assert_f64_near!(energy, expected_energy);
     }
 
     #[test]
