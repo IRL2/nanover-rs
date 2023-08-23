@@ -106,7 +106,7 @@ pub struct ParticleOutOfRange {
 pub trait IMD {
     fn update_imd_forces(
         &mut self,
-        interactions: Vec<Interaction>,
+        interactions: &[Interaction],
     ) -> Result<(), ParticleOutOfRange>;
 }
 
@@ -746,7 +746,7 @@ impl ToFrameData for OpenMMSimulation {
 impl IMD for OpenMMSimulation {
     fn update_imd_forces(
         &mut self,
-        interactions: Vec<Interaction>,
+        interactions: &[Interaction],
     ) -> Result<(), ParticleOutOfRange> {
         let mut forces = zeroed_out(&self.previous_particle_touched);
         let accumulated_forces = accumulate_forces(interactions);
@@ -838,10 +838,10 @@ fn compute_com(positions: &[[f64; 3]], masses: &[f64]) -> [f64; 3] {
     ]
 }
 
-fn accumulate_forces(interactions: Vec<Interaction>) -> CoordMap {
+fn accumulate_forces(interactions: &[Interaction]) -> CoordMap {
     let mut btree: CoordMap = BTreeMap::new();
     for interaction in interactions {
-        for particle in interaction.forces {
+        for particle in &interaction.forces {
             let index: i32 = particle
                 .selection
                 .try_into()
@@ -1065,7 +1065,7 @@ mod tests {
                 id: None,
             },
         ];
-        let accumulated = accumulate_forces(interactions);
+        let accumulated = accumulate_forces(&interactions);
         let mut expected = BTreeMap::new();
         expected.insert(2, [3.2, 4.3, 5.4]);
         expected.insert(12, [2.1, 3.2, 4.3]);
