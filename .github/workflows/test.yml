@@ -45,7 +45,7 @@ jobs:
             echo "OpenMM found in cache."
             ls /home/runner/local/lib/libOpenMM.so
           fi
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -65,6 +65,6 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Format
         run: cargo fmt --check
