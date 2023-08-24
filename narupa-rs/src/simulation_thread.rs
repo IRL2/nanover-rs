@@ -156,24 +156,12 @@ pub fn run_simulation_thread(
                     if do_frames {
                         let mut frame = simulation.to_framedata();
                         let mut energy_total = 0.0;
-                        let mut has_energy = false;
-                        for (id, energy) in &user_energies {
-                            if let (Some(id), Some(energy)) = (id, energy) {
-                                frame
-                                    .insert_number_value(
-                                        format!("energy.user.{id}").as_str(),
-                                        *energy,
-                                    )
-                                    .unwrap();
-                            }
+                        for (_id, energy) in &user_energies {
                             if let Some(energy) = energy {
                                 energy_total += energy;
-                                has_energy = true;
                             }
                         }
-                        if has_energy {
-                            frame.insert_number_value("energy.user.total", energy_total).unwrap();
-                        }
+                        frame.insert_number_value("energy.user.total", energy_total).unwrap();
                         let mut source = sim_clone.lock().unwrap();
                         if source.send_frame(frame).is_err() {
                             return;
