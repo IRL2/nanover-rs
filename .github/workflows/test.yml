@@ -52,7 +52,7 @@ jobs:
       - name: Install OpenMM
         uses: ./.github/composite/openmm
         with:
-          version: "7.7.0"
+          version: "8.0.0"
       - name: Clippy
         run: cargo clippy
         env:
