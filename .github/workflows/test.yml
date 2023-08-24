@@ -56,6 +56,49 @@ jobs:
         env:
           LD_LIBRARY_PATH: /home/runner/local/lib/
           OPENMM_HOME: /home/runner/local/
+  lint:
+      name: Lint
+      runs-on: ubuntu-latest
+      steps:
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/local
+          key: ${{ runner.os }}-openmm-7.7.0
+      - name: Install APT dependencies
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libssl-dev protobuf-compiler libprotobuf-dev
+      - name: Install Openmm
+        run: |
+          if [[ ! -e "/home/runner/local/lib/libOpenMM.so" ]]; then
+            sudo apt-get update
+            sudo apt-get install doxygen
+            wget https://github.com/openmm/openmm/archive/refs/tags/7.7.0.tar.gz -O openmm-7.7.0.tar.gz
+            tar -xf openmm-7.7.0.tar.gz
+            cd openmm-7.7.0
+            mkdir build
+            cd build
+            cmake .. \
+              -DCMAKE_INSTALL_PREFIX=$HOME/local \
+              -DOPENMM_BUILD_OPENCL_LIB=OFF \
+              -DOPENMM_BUILD_AMOEBA_PLUGIN=OFF \
+              -DOPENMM_BUILD_DRUDE_PLUGIN=OFF \
+              -DOPENMM_BUILD_PYTHON_WRAPPERS=OFF \
+              -DOPENMM_BUILD_RPMD_PLUGIN=OFF \
+            && make && make install
+          else
+            echo "OpenMM found in cache."
+            ls /home/runner/local/lib/libOpenMM.so
+          fi
+      - uses: actions/checkout@v3
       - name: Clippy
         run: cargo clippy
         env:
