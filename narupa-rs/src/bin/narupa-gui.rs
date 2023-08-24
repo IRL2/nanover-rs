@@ -1,19 +1,22 @@
 use eframe::egui;
 use log::{debug, trace, warn, LevelFilter, SetLoggerError};
-use narupa_proto::command::{command_client::CommandClient, CommandMessage, GetCommandsRequest, CommandReply};
+use narupa_proto::command::{
+    command_client::CommandClient, CommandMessage, CommandReply, GetCommandsRequest,
+};
 use narupa_rs::application::{
     cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli,
 };
+use pack_prost::{ToProstValue, UnPack};
 use prost_types::Struct;
 use std::{
     collections::BTreeMap,
     marker::PhantomData,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     str::FromStr,
-    sync::Mutex, time::{Instant, Duration},
+    sync::Mutex,
+    time::{Duration, Instant},
 };
 use tonic::transport::Channel;
-use pack_prost::{UnPack, ToProstValue};
 
 fn main() {
     init_logging().expect("Could not setup logging.");
@@ -67,7 +70,11 @@ struct CommandCache {
 
 impl CommandCache {
     fn new(validity: Duration, commands: Vec<String>) -> Self {
-        Self { validity, time: Instant::now(), commands }
+        Self {
+            validity,
+            time: Instant::now(),
+            commands,
+        }
     }
 
     /// Is the cache fresh enough, or has it expired?
@@ -89,7 +96,11 @@ impl Client {
     ) -> Result<Self, tonic::transport::Error> {
         let endpoint = format!("http://{address}");
         let command = runtime_handle.block_on(CommandClient::connect(endpoint))?;
-        Ok(Client { command, cache: None, simulations: None })
+        Ok(Client {
+            command,
+            cache: None,
+            simulations: None,
+        })
     }
 
     pub fn get_command_list_force(
@@ -114,9 +125,7 @@ impl Client {
         runtime_handle: &tokio::runtime::Handle,
     ) -> Result<Vec<String>, tonic::Status> {
         match &self.cache {
-            None => {
-                self.get_command_list_force(runtime_handle)
-            }
+            None => self.get_command_list_force(runtime_handle),
             Some(cache) => {
                 if cache.is_valid() {
                     Ok(cache.commands.clone())
@@ -124,7 +133,7 @@ impl Client {
                     self.get_command_list_force(runtime_handle)
                 }
             }
-        }        
+        }
     }
 
     pub fn get_simulation_list_force(
@@ -135,9 +144,16 @@ impl Client {
         // We only communicate with the narupa server we implement here. We
         // assume the response is formatted correctly and we panic if it is not
         // the case.
-        let return_value = reply.result.expect("There is no return value for the playback/list command.");
-        let list = return_value.fields.get("simulations").expect("No 'simulations' key in the return of playback/list.");
-        let list: Vec<String> = list.unpack().expect("The return of playback/list has not the expected format.");
+        let return_value = reply
+            .result
+            .expect("There is no return value for the playback/list command.");
+        let list = return_value
+            .fields
+            .get("simulations")
+            .expect("No 'simulations' key in the return of playback/list.");
+        let list: Vec<String> = list
+            .unpack()
+            .expect("The return of playback/list has not the expected format.");
         self.simulations = Some(CommandCache::new(CACHE_VALIDITY, list.clone()));
         Ok(list)
     }
@@ -147,9 +163,7 @@ impl Client {
         runtime_handle: &tokio::runtime::Handle,
     ) -> Result<Vec<String>, tonic::Status> {
         match &self.simulations {
-            None => {
-                self.get_simulation_list_force(runtime_handle)
-            }
+            None => self.get_simulation_list_force(runtime_handle),
             Some(cache) => {
                 if cache.is_valid() {
                     Ok(cache.commands.clone())
@@ -157,7 +171,7 @@ impl Client {
                     self.get_simulation_list_force(runtime_handle)
                 }
             }
-        }        
+        }
     }
 
     pub fn run_command(
@@ -166,10 +180,7 @@ impl Client {
         arguments: Option<Struct>,
         runtime_handle: &tokio::runtime::Handle,
     ) -> Result<CommandReply, tonic::Status> {
-        let request = CommandMessage {
-            name,
-            arguments,
-        };
+        let request = CommandMessage { name, arguments };
         let reply = runtime_handle.block_on(self.command.run_command(request))?;
         Ok(reply.into_inner())
     }
@@ -266,7 +277,9 @@ struct FileField {
 
 impl FileField {
     pub fn new() -> Self {
-        Self { value: String::new() }
+        Self {
+            value: String::new(),
+        }
     }
 
     pub fn has_path(&self) -> bool {
@@ -292,12 +305,14 @@ impl FileField {
 }
 
 struct MultiFileField {
-    fields: Vec<FileField>
+    fields: Vec<FileField>,
 }
 
 impl MultiFileField {
     pub fn new() -> Self {
-        Self { fields: vec![FileField::new()] }
+        Self {
+            fields: vec![FileField::new()],
+        }
     }
 
     fn widget(&mut self, ui: &mut egui::Ui) -> bool {
@@ -655,7 +670,12 @@ impl MyEguiApp {
                     ui.horizontal(|ui| {
                         ui.label(format!("• {simulation}"));
                         if ui.button("Load").clicked() {
-                            let arguments = Struct { fields: BTreeMap::from([("index".into(), (index as f64).to_prost_value())]) };
+                            let arguments = Struct {
+                                fields: BTreeMap::from([(
+                                    "index".into(),
+                                    (index as f64).to_prost_value(),
+                                )]),
+                            };
                             self.run_client_command("playback/load".into(), Some(arguments))
                         }
                     });
@@ -834,9 +854,7 @@ impl MyEguiApp {
             return None;
         };
         match client.get_command_list(self.runtime.handle()) {
-            Ok(commands) => {
-                Some(commands)
-            }
+            Ok(commands) => Some(commands),
             Err(status) => {
                 trace!("Could not get the list of commands: {:?}", status);
                 None
@@ -852,9 +870,7 @@ impl MyEguiApp {
             return None;
         };
         match client.get_simulation_list(self.runtime.handle()) {
-            Ok(commands) => {
-                Some(commands)
-            }
+            Ok(commands) => Some(commands),
             Err(status) => {
                 trace!("Could not get the list of simulations: {:?}", status);
                 None
