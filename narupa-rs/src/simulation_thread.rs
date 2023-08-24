@@ -153,6 +153,13 @@ pub fn run_simulation_thread(
                         next_stop(current_simulation_frame, frame_interval, force_interval);
                     simulation.step(delta_frames);
                     current_simulation_frame += delta_frames as u64;
+
+                    if do_forces {
+                        user_energies = apply_forces(&state_clone, simulation, simulation_tx.clone());
+                    }
+
+                    let system_energy = simulation.get_total_energy();
+
                     if do_frames {
                         let mut frame = simulation.to_framedata();
                         let mut energy_total = 0.0;
@@ -162,13 +169,11 @@ pub fn run_simulation_thread(
                             }
                         }
                         frame.insert_number_value("energy.user.total", energy_total).unwrap();
+                        frame.insert_number_value("energy.total", system_energy).unwrap();
                         let mut source = sim_clone.lock().unwrap();
                         if source.send_frame(frame).is_err() {
                             return;
                         };
-                    }
-                    if do_forces {
-                        user_energies = apply_forces(&state_clone, simulation, simulation_tx.clone());
                     }
 
                     let elapsed = now.elapsed();
@@ -176,13 +181,12 @@ pub fn run_simulation_thread(
                         Some(d) => d,
                         None => Duration::from_millis(0),
                     };
-                    let energy = simulation.get_total_energy();
                     if verbose {
                         info!(
-                            "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}. Total energy {energy:.2} kJ/mol."
+                            "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol."
                         );
                     };
-                    if auto_reset && !energy.is_finite() {
+                    if auto_reset && !system_energy.is_finite() {
                         simulation.reset();
                     }
                     thread::sleep(time_left);
