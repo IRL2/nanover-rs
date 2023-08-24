@@ -1,0 +1,37 @@
+name: openmm
+description: Compile OpenMM from source
+
+inputs:
+  version:
+    required: true
+    description: OpenMM version
+
+runs:
+  using: composite
+  steps:
+  - uses: actions/cache@v3
+    with:
+      path: |
+        ~/local
+      key: ${{ runner.os }}-openmm-${{ inputs.version }}
+  - run: |
+    if [[ ! -e "/home/runner/local/lib/libOpenMM.so" ]]; then
+      sudo apt-get update
+      sudo apt-get install doxygen
+      wget https://github.com/openmm/openmm/archive/refs/tags/${{ inputs.version }}.tar.gz -O openmm.tar.gz
+      tar -xf openmm.tar.gz
+      cd openmm-${{ inputs.version }}
+      mkdir build
+      cd build
+      cmake .. \
+        -DCMAKE_INSTALL_PREFIX=$HOME/local \
+        -DOPENMM_BUILD_OPENCL_LIB=OFF \
+        -DOPENMM_BUILD_AMOEBA_PLUGIN=OFF \
+        -DOPENMM_BUILD_DRUDE_PLUGIN=OFF \
+        -DOPENMM_BUILD_PYTHON_WRAPPERS=OFF \
+        -DOPENMM_BUILD_RPMD_PLUGIN=OFF \
+      && make && make install
+    else
+      echo "OpenMM found in cache."
+      ls /home/runner/local/lib/libOpenMM.so
+    fi
