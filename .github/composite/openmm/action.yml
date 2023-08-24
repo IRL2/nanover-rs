@@ -35,3 +35,4 @@ runs:
         echo "OpenMM found in cache."
         ls /home/runner/local/lib/libOpenMM.so
       fi
+    shell: bash
