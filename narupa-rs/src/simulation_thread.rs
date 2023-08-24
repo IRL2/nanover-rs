@@ -55,7 +55,7 @@ pub fn run_simulation_thread(
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
     auto_reset: bool,
-    run_on_start: bool
+    run_on_start: bool,
 ) -> Result<(), XMLParsingError> {
     let mut maybe_simulation: Option<OpenMMSimulation> = match simulations_manifest.load_default() {
         Ok(simulation) => Some(simulation),
