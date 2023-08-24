@@ -7,6 +7,7 @@ jobs:
     name: Rust project
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
       - uses: actions/cache@v3
         with:
           path: |
@@ -27,7 +28,6 @@ jobs:
         uses: ./.github/composite/openmm
         with:
           version: "7.7.0"
-      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -42,6 +42,7 @@ jobs:
       name: Lint
       runs-on: ubuntu-latest
       steps:
+      - uses: actions/checkout@v3
       - uses: actions/cache@v3
         with:
           path: |
@@ -62,7 +63,6 @@ jobs:
         uses: ./.github/composite/openmm
         with:
           version: "7.7.0"
-      - uses: actions/checkout@v3
       - name: Clippy
         run: cargo clippy
         env:
