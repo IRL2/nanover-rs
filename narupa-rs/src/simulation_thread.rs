@@ -169,7 +169,6 @@ pub fn run_simulation_thread(
                             }
                         }
                         frame.insert_number_value("energy.user.total", energy_total).unwrap();
-                        frame.insert_number_value("energy.total", system_energy).unwrap();
                         let mut source = sim_clone.lock().unwrap();
                         if source.send_frame(frame).is_err() {
                             return;
