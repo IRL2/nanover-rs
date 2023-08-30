@@ -36,11 +36,15 @@ fn apply_forces(
     state_clone: &Arc<Mutex<StateBroadcaster>>,
     simulation: &mut OpenMMSimulation,
     simulation_tx: std::sync::mpsc::Sender<usize>,
-) {
+) -> Vec<(Option<String>, Option<f64>)> {
     let state_interactions = read_forces(state_clone);
     let imd_interactions = simulation.compute_forces(&state_interactions);
     simulation_tx.send(imd_interactions.len()).unwrap();
-    simulation.update_imd_forces(imd_interactions).unwrap();
+    simulation.update_imd_forces(&imd_interactions).unwrap();
+    imd_interactions
+        .into_iter()
+        .map(|interaction| (interaction.id, interaction.energy))
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -87,6 +91,8 @@ pub fn run_simulation_thread(
             info!("No simulation loaded yes.");
         }
         info!("Simulation interval: {simulation_interval}");
+
+        let mut user_energies: Vec<(Option<String>, Option<f64>)> = Vec::new();
 
         let mut current_simulation_frame: u64 = 0;
         loop {
@@ -148,15 +154,26 @@ pub fn run_simulation_thread(
                         next_stop(current_simulation_frame, frame_interval, force_interval);
                     simulation.step(delta_frames);
                     current_simulation_frame += delta_frames as u64;
+
+                    if do_forces {
+                        user_energies = apply_forces(&state_clone, simulation, simulation_tx.clone());
+                    }
+
+                    let system_energy = simulation.get_total_energy();
+
                     if do_frames {
-                        let frame = simulation.to_framedata();
+                        let mut frame = simulation.to_framedata();
+                        let mut energy_total = 0.0;
+                        for (_id, energy) in &user_energies {
+                            if let Some(energy) = energy {
+                                energy_total += energy;
+                            }
+                        }
+                        frame.insert_number_value("energy.user.total", energy_total).unwrap();
                         let mut source = sim_clone.lock().unwrap();
                         if source.send_frame(frame).is_err() {
                             return;
                         };
-                    }
-                    if do_forces {
-                        apply_forces(&state_clone, simulation, simulation_tx.clone());
                     }
 
                     let elapsed = now.elapsed();
@@ -164,13 +181,12 @@ pub fn run_simulation_thread(
                         Some(d) => d,
                         None => Duration::from_millis(0),
                     };
-                    let energy = simulation.get_total_energy();
                     if verbose {
                         info!(
-                            "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}. Total energy {energy:.2} kJ/mol."
+                            "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol."
                         );
                     };
-                    if auto_reset && !energy.is_finite() {
+                    if auto_reset && !system_energy.is_finite() {
                         simulation.reset();
                     }
                     thread::sleep(time_left);

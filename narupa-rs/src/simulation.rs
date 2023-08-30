@@ -52,6 +52,7 @@ pub struct IMDInteraction {
     pub kind: InteractionKind,
     max_force: Option<f64>,
     scale: f64,
+    id: Option<String>,
 }
 
 impl IMDInteraction {
@@ -61,6 +62,7 @@ impl IMDInteraction {
         kind: InteractionKind,
         max_force: Option<f64>,
         scale: f64,
+        id: Option<String>,
     ) -> Self {
         Self {
             position,
@@ -68,6 +70,7 @@ impl IMDInteraction {
             kind,
             max_force,
             scale,
+            id,
         }
     }
 }
@@ -79,6 +82,8 @@ pub struct InteractionForce {
 
 pub struct Interaction {
     pub forces: Vec<InteractionForce>,
+    pub energy: Option<f64>,
+    pub id: Option<String>,
 }
 
 pub trait Simulation {
@@ -101,7 +106,7 @@ pub struct ParticleOutOfRange {
 pub trait IMD {
     fn update_imd_forces(
         &mut self,
-        interactions: Vec<Interaction>,
+        interactions: &[Interaction],
     ) -> Result<(), ParticleOutOfRange>;
 }
 
@@ -507,7 +512,7 @@ impl OpenMMSimulation {
                         com[2] - interaction_position[2],
                     ];
                     let sigma = 1.0; // For now we use this as a constant. It is in the python version.
-                    let com_force = match imd.kind {
+                    let (com_force, energy) = match imd.kind {
                         InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
                         InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
                     };
@@ -518,6 +523,8 @@ impl OpenMMSimulation {
                         &selection,
                         &masses,
                         max_force,
+                        Some(energy),
+                        imd.id.clone(),
                     )
                 })
                 .collect();
@@ -739,7 +746,7 @@ impl ToFrameData for OpenMMSimulation {
 impl IMD for OpenMMSimulation {
     fn update_imd_forces(
         &mut self,
-        interactions: Vec<Interaction>,
+        interactions: &[Interaction],
     ) -> Result<(), ParticleOutOfRange> {
         let mut forces = zeroed_out(&self.previous_particle_touched);
         let accumulated_forces = accumulate_forces(interactions);
@@ -831,10 +838,10 @@ fn compute_com(positions: &[[f64; 3]], masses: &[f64]) -> [f64; 3] {
     ]
 }
 
-fn accumulate_forces(interactions: Vec<Interaction>) -> CoordMap {
+fn accumulate_forces(interactions: &[Interaction]) -> CoordMap {
     let mut btree: CoordMap = BTreeMap::new();
     for interaction in interactions {
-        for particle in interaction.forces {
+        for particle in &interaction.forces {
             let index: i32 = particle
                 .selection
                 .try_into()
@@ -859,6 +866,8 @@ fn build_interaction(
     selection: &[i32],
     masses: &[f64],
     max_force: f64,
+    energy: Option<f64>,
+    id: Option<String>,
 ) -> Interaction {
     let force_per_particle = [
         scale * com_force[0] / n_particles as f64,
@@ -878,6 +887,8 @@ fn build_interaction(
                 ],
             })
             .collect(),
+        energy,
+        id,
     }
 }
 
@@ -903,20 +914,25 @@ fn zeroed_out(indices: &HashSet<i32>) -> CoordMap {
     btree
 }
 
-fn compute_gaussian_force(diff: Coordinate, sigma: f64) -> Coordinate {
+fn compute_gaussian_force(diff: Coordinate, sigma: f64) -> (Coordinate, f64) {
     let sigma_sqr = sigma * sigma;
     let distance_sqr = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
     let gauss = (-distance_sqr / (2.0 * sigma_sqr)).exp();
-    [
+    let force = [
         -(diff[0] / sigma_sqr) * gauss,
         -(diff[1] / sigma_sqr) * gauss,
         -(diff[2] / sigma_sqr) * gauss,
-    ]
+    ];
+    let energy = -gauss;
+    (force, energy)
 }
 
-fn compute_harmonic_force(diff: Coordinate, k: f64) -> Coordinate {
+fn compute_harmonic_force(diff: Coordinate, k: f64) -> (Coordinate, f64) {
     let factor = -2.0 * k;
-    [factor * diff[0], factor * diff[1], factor * diff[2]]
+    let distance_sqr = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
+    let force = [factor * diff[0], factor * diff[1], factor * diff[2]];
+    let energy = k * distance_sqr;
+    (force, energy)
 }
 
 unsafe fn get_selection_masses_from_system(
@@ -963,15 +979,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-EXP_1, 0.0, 0.0])]
-    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ EXP_1, 0.0, 0.0])]
-    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -EXP_1, 0.0])]
-    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -EXP_1])]
-    #[case(UNIT, [0.0, 0.0, 0.0], [-EXP_1 * UNIT[0]; 3])]
+    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-EXP_1, 0.0, 0.0], -EXP_1)]
+    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ EXP_1, 0.0, 0.0], -EXP_1)]
+    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -EXP_1, 0.0], -EXP_1)]
+    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -EXP_1], -EXP_1)]
+    #[case(UNIT, [0.0, 0.0, 0.0], [-EXP_1 * UNIT[0]; 3], -EXP_1)]
     fn test_gaussian_force(
         #[case] position: Coordinate,
         #[case] interaction_position: Coordinate,
         #[case] expected_force: Coordinate,
+        #[case] expected_energy: f64,
     ) {
         let sigma = 1.0;
         let diff = [
@@ -979,25 +996,27 @@ mod tests {
             position[1] - interaction_position[1],
             position[2] - interaction_position[2],
         ];
-        let force = compute_gaussian_force(diff, sigma);
+        let (force, energy) = compute_gaussian_force(diff, sigma);
         assert_f64_near!(force[0], expected_force[0]);
         assert_f64_near!(force[1], expected_force[1]);
         assert_f64_near!(force[2], expected_force[2]);
+        assert_f64_near!(energy, expected_energy);
     }
 
     #[rstest]
-    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-2.0, 0.0, 0.0])]
-    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ 2.0, 0.0, 0.0])]
-    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -2.0, 0.0])]
-    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -2.0])]
-    #[case(UNIT, [0.0, 0.0, 0.0], [-2.0 * UNIT[0]; 3])]
-    #[case([1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [-2.0, -2.0, -2.0])]
-    #[case([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [0.0, 0.0, 0.0])]
-    #[case([-1.0, -1.0, -1.0], [0.0, 0.0, 0.0], [2.0, 2.0, 2.0])]
+    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-2.0, 0.0, 0.0], 1.0)]
+    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [ 2.0, 0.0, 0.0], 1.0)]
+    #[case([1.0, 3.0, 0.0], [1.0, 2.0, 0.0], [0.0, -2.0, 0.0], 1.0)]
+    #[case([1.0, 3.0, 3.0], [1.0, 3.0, 2.0], [0.0, 0.0, -2.0], 1.0)]
+    #[case(UNIT, [0.0, 0.0, 0.0], [-2.0 * UNIT[0]; 3], 1.0)]
+    #[case([1.0, 1.0, 1.0], [0.0, 0.0, 0.0], [-2.0, -2.0, -2.0], 3.0)]
+    #[case([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [0.0, 0.0, 0.0], 0.0)]
+    #[case([-1.0, -1.0, -1.0], [0.0, 0.0, 0.0], [2.0, 2.0, 2.0], 3.0)]
     fn test_harmonic_force(
         #[case] position: Coordinate,
         #[case] interaction_position: Coordinate,
         #[case] expected_force: Coordinate,
+        #[case] expected_energy: f64,
     ) {
         let k = 1.0;
         let diff = [
@@ -1005,10 +1024,11 @@ mod tests {
             position[1] - interaction_position[1],
             position[2] - interaction_position[2],
         ];
-        let force = compute_harmonic_force(diff, k);
+        let (force, energy) = compute_harmonic_force(diff, k);
         assert_f64_near!(force[0], expected_force[0]);
         assert_f64_near!(force[1], expected_force[1]);
         assert_f64_near!(force[2], expected_force[2]);
+        assert_f64_near!(energy, expected_energy);
     }
 
     #[test]
@@ -1025,21 +1045,27 @@ mod tests {
                         force: [2.1, 3.2, 4.3],
                     },
                 ],
+                energy: None,
+                id: None,
             },
             Interaction {
                 forces: vec![InteractionForce {
                     selection: 2,
                     force: [3.2, 4.3, 5.4],
                 }],
+                energy: None,
+                id: None,
             },
             Interaction {
                 forces: vec![InteractionForce {
                     selection: 43,
                     force: [4.3, 5.4, 6.5],
                 }],
+                energy: None,
+                id: None,
             },
         ];
-        let accumulated = accumulate_forces(interactions);
+        let accumulated = accumulate_forces(&interactions);
         let mut expected = BTreeMap::new();
         expected.insert(2, [3.2, 4.3, 5.4]);
         expected.insert(12, [2.1, 3.2, 4.3]);

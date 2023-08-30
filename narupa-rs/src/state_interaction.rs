@@ -8,11 +8,16 @@ pub fn read_forces(state_clone: &Arc<Mutex<StateBroadcaster>>) -> Vec<IMDInterac
         let state = state_clone.lock().unwrap();
         let interaction_iter = state.iter();
         interaction_iter
-            .filter(|kv| kv.0.starts_with("interaction."))
-            .map(|kv| {
-                let value = kv.1;
-                println!("{:?}", kv);
-                read_state_interaction(value)
+            .filter(|(key, _value)| key.starts_with("interaction."))
+            .map(|(key, value)| {
+                println!("{:?}", (key, value));
+                let id = key.strip_prefix("interaction.").unwrap_or_default();
+                let id = if id.is_empty() {
+                    None
+                } else {
+                    Some(id.to_string())
+                };
+                read_state_interaction(value, id)
             })
             .filter_map(|interaction| interaction.ok())
             .collect()
@@ -20,7 +25,7 @@ pub fn read_forces(state_clone: &Arc<Mutex<StateBroadcaster>>) -> Vec<IMDInterac
     state_interactions
 }
 
-fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDInteraction, ()> {
+fn read_state_interaction(state_interaction: &prost_types::Value, interaction_id: Option<String>) -> Result<IMDInteraction, ()> {
     // Extract the interaction content that is under several layers of enums.
     // Fail already if we cannot: it means the input does not have the expected format.
     let content = match &state_interaction.kind {
@@ -36,7 +41,7 @@ fn read_state_interaction(state_interaction: &prost_types::Value) -> Result<IMDI
     println!("Interaction with atoms {particles:?}");
 
     Ok(IMDInteraction::new(
-        position, particles, kind, max_force, scale,
+        position, particles, kind, max_force, scale, interaction_id,
     ))
 }
 
