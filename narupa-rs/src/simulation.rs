@@ -1,5 +1,6 @@
 extern crate openmm_sys;
 use log::{debug, trace, warn};
+use quick_xml::name::QName;
 use thiserror::Error;
 
 use openmm_sys::{
@@ -172,22 +173,24 @@ impl PreSimulation {
     }
 
     pub fn start_xml_element(&mut self, target: &XMLTarget, element: &BytesStart) {
-        let name = element.name();
-        let mut elem = BytesStart::owned(name.to_vec(), name.len());
+        let name: &str = std::str::from_utf8(element.name().into_inner()).unwrap();
+        let mut elem = BytesStart::from_content(name, name.len());
         elem.extend_attributes(element.attributes().map(|attr| attr.unwrap()));
         let writer = self.choose_writer(target);
         writer.write_event(Event::Start(elem)).unwrap();
     }
 
     pub fn end_xml_element(&mut self, target: &XMLTarget, element: &BytesEnd) {
+        let name: &str = std::str::from_utf8(element.name().into_inner()).unwrap();
         let writer = self.choose_writer(target);
-        let elem = BytesEnd::owned(element.name().to_vec());
+        let elem = BytesEnd::new(name);
         writer.write_event(Event::End(elem)).unwrap();
     }
 
     pub fn empty_xml_element(&mut self, target: &XMLTarget, element: &BytesStart) {
+        let name: &str = std::str::from_utf8(element.name().into_inner()).unwrap();
         let writer = self.choose_writer(target);
-        let mut elem = BytesStart::owned(element.name().to_vec(), element.name().len());
+        let mut elem = BytesStart::from_content(name, name.len());
         elem.extend_attributes(element.attributes().map(|attr| attr.unwrap()));
         writer.write_event(Event::Empty(elem)).unwrap();
     }
@@ -278,10 +281,10 @@ impl OpenMMSimulation {
         let mut sim_builder = PreSimulation::new();
 
         loop {
-            read_state = match (read_state, reader.read_event(&mut buf)) {
+            read_state = match (read_state, reader.read_event_into(&mut buf)) {
                 // Start
                 (ReadState::Unstarted, Ok(Event::Start(ref e)))
-                    if e.name() == b"OpenMMSimulation" =>
+                    if e.name() == QName(b"OpenMMSimulation") =>
                 {
                     ReadState::Ignore
                 }
@@ -291,13 +294,13 @@ impl OpenMMSimulation {
 
                 // Structure
                 (ReadState::Ignore, Ok(Event::Start(ref e)))
-                    if e.name() == b"pdbx" || e.name() == b"pdb" =>
+                    if e.name() == QName(b"pdbx") || e.name() == QName(b"pdb") =>
                 {
-                    sim_builder.set_structure_type(e.name())?;
+                    sim_builder.set_structure_type(e.name().into_inner())?;
                     ReadState::CopyStructure
                 }
                 (ReadState::CopyStructure, Ok(Event::End(ref e)))
-                    if e.name() == b"pdbx" || e.name() == b"pdb" =>
+                    if e.name() == QName(b"pdbx") || e.name() == QName(b"pdb") =>
                 {
                     ReadState::Ignore
                 }
@@ -308,16 +311,16 @@ impl OpenMMSimulation {
 
                 // System and Integrator XML
                 (ReadState::Ignore, Ok(Event::Start(ref e)))
-                    if e.name() == b"System" || e.name() == b"Integrator" =>
+                    if e.name() == QName(b"System") || e.name() == QName(b"Integrator") =>
                 {
-                    let target = e.name().try_into().unwrap();
+                    let target = e.name().into_inner().try_into().unwrap();
                     sim_builder.start_xml_element(&target, e);
                     ReadState::CopyXML(target)
                 }
                 (ReadState::Ignore, Ok(Event::Empty(ref e)))
-                    if e.name() == b"System" || e.name() == b"Integrator" =>
+                    if e.name() == QName(b"System") || e.name() == QName(b"Integrator") =>
                 {
-                    let target = e.name().try_into().unwrap();
+                    let target = e.name().into_inner().try_into().unwrap();
                     sim_builder.empty_xml_element(&target, e);
                     ReadState::CopyXML(target)
                 }
@@ -327,7 +330,7 @@ impl OpenMMSimulation {
                 }
                 (ReadState::CopyXML(target), Ok(Event::End(ref e))) => {
                     sim_builder.end_xml_element(&target, e);
-                    if e.name() == b"System" || e.name() == b"Integrator" {
+                    if e.name() == QName(b"System") || e.name() == QName(b"Integrator") {
                         sim_builder.close_xml(&target);
                         ReadState::Ignore
                     } else {

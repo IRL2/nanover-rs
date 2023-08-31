@@ -25,7 +25,8 @@ fn main() {
         "Narupa-RS server",
         native_options,
         Box::new(|cc| Box::new(MyEguiApp::new(cc))),
-    );
+    )
+    .unwrap();
 }
 
 static LOG_VECTOR: Mutex<Vec<(log::Level, String)>> = Mutex::new(Vec::new());
