@@ -104,10 +104,8 @@ pub struct ParticleOutOfRange {
 }
 
 pub trait IMD {
-    fn update_imd_forces(
-        &mut self,
-        interactions: &[Interaction],
-    ) -> Result<(), ParticleOutOfRange>;
+    fn update_imd_forces(&mut self, interactions: &[Interaction])
+        -> Result<(), ParticleOutOfRange>;
 }
 
 #[derive(Debug)]
