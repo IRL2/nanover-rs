@@ -898,6 +898,10 @@ impl MyEguiApp {
             let Some(server) = self.server.take() else {return};
             let Err(error) = self.runtime.block_on(server.close()).unwrap() else {return};
             self.error = Some(format!("{error}"));
+            // If we do not have a server anymore, we should not have a client
+            // either. Otherwise, we end up with a mismatch when we connect a
+            // different server and the interface gets stucked.
+            self.client = None;
         }
     }
 
