@@ -857,6 +857,7 @@ fn accumulate_forces(interactions: &[Interaction]) -> CoordMap {
     btree
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_interaction(
     com_force: &[f64; 3],
     n_particles: usize,
