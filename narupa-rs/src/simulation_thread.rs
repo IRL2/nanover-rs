@@ -156,7 +156,8 @@ pub fn run_simulation_thread(
                     current_simulation_frame += delta_frames as u64;
 
                     if do_forces {
-                        user_energies = apply_forces(&state_clone, simulation, simulation_tx.clone());
+                        user_energies =
+                            apply_forces(&state_clone, simulation, simulation_tx.clone());
                     }
 
                     let system_energy = simulation.get_total_energy();
@@ -169,7 +170,9 @@ pub fn run_simulation_thread(
                                 energy_total += energy;
                             }
                         }
-                        frame.insert_number_value("energy.user.total", energy_total).unwrap();
+                        frame
+                            .insert_number_value("energy.user.total", energy_total)
+                            .unwrap();
                         let mut source = sim_clone.lock().unwrap();
                         if source.send_frame(frame).is_err() {
                             return;

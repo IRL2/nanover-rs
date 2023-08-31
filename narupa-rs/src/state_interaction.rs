@@ -25,7 +25,10 @@ pub fn read_forces(state_clone: &Arc<Mutex<StateBroadcaster>>) -> Vec<IMDInterac
     state_interactions
 }
 
-fn read_state_interaction(state_interaction: &prost_types::Value, interaction_id: Option<String>) -> Result<IMDInteraction, ()> {
+fn read_state_interaction(
+    state_interaction: &prost_types::Value,
+    interaction_id: Option<String>,
+) -> Result<IMDInteraction, ()> {
     // Extract the interaction content that is under several layers of enums.
     // Fail already if we cannot: it means the input does not have the expected format.
     let content = match &state_interaction.kind {
@@ -41,7 +44,12 @@ fn read_state_interaction(state_interaction: &prost_types::Value, interaction_id
     println!("Interaction with atoms {particles:?}");
 
     Ok(IMDInteraction::new(
-        position, particles, kind, max_force, scale, interaction_id,
+        position,
+        particles,
+        kind,
+        max_force,
+        scale,
+        interaction_id,
     ))
 }
 
