@@ -14,7 +14,6 @@ pub async fn serve_essd(name: String, port: u16) {
         interval.tick().await;
         let network_interfaces = NetworkInterface::show().unwrap();
         for interface in network_interfaces.iter() {
-
             for address in &interface.addr {
                 let Some(broadcast_address) = address.broadcast() else {continue};
                 let server_address = address.ip();
