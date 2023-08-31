@@ -54,7 +54,7 @@ jobs:
         with:
           version: "7.7.0"
       - name: Clippy
-        run: cargo clippy
+        run: cargo clippy -- --deny warnings
         env:
           LD_LIBRARY_PATH: /home/runner/local/lib/
           OPENMM_HOME: /home/runner/local/
