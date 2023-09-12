@@ -15,7 +15,9 @@ pub async fn serve_essd(name: String, port: u16) {
         let network_interfaces = NetworkInterface::show().unwrap();
         for interface in network_interfaces.iter() {
             for address in &interface.addr {
-                let Some(broadcast_address) = address.broadcast() else {continue};
+                let Some(broadcast_address) = address.broadcast() else {
+                    continue;
+                };
                 let server_address = address.ip();
                 let message = format!("{{\"name\": \"{name}\", \"address\": \"{server_address}\", \"port\": {port}, \"id\": \"{id}\", \"essd_version\": \"1.0.0\", \"services\": {{\"imd\": {port}, \"trajectory\": {port}, \"multiplayer\": {port}}}}}");
                 let message = message.as_bytes();

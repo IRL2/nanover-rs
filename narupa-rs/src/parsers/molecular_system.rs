@@ -61,7 +61,9 @@ impl MolecularSystem {
             for (previous, current) in previous_residues.zip(current_residues) {
                 let template_previous = components.get(previous.name());
                 let template_current = components.get(current.name());
-                let (Some(template_previous), Some(template_current)) = (template_previous, template_current) else {
+                let (Some(template_previous), Some(template_current)) =
+                    (template_previous, template_current)
+                else {
                     continue;
                 };
                 let type_previous = &template_previous.residue_type;

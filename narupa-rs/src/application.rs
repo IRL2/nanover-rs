@@ -249,7 +249,7 @@ where
             Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
         };
         interval.tick().await;
-        let Some(frame) = receiver.lock().unwrap().recv()  else {
+        let Some(frame) = receiver.lock().unwrap().recv() else {
             continue;
         };
         let timestamp = Instant::now().saturating_duration_since(start).as_micros();

@@ -68,7 +68,10 @@ where
                     None => PDBXContext::Idle,
                     Some(first) if first.starts_with("data_") => {
                         let Some((_, name)) = first.split_once('_') else {
-                            return Err(ReadError::FormatError(FormatError::MissformatedData, lineno));
+                            return Err(ReadError::FormatError(
+                                FormatError::MissformatedData,
+                                lineno,
+                            ));
                         };
                         PDBXContext::Data(String::from(name))
                     }

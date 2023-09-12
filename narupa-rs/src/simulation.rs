@@ -18,10 +18,10 @@ use openmm_sys::{
     OpenMM_State_DataType_OpenMM_State_Parameters, OpenMM_State_DataType_OpenMM_State_Positions,
     OpenMM_State_DataType_OpenMM_State_Velocities, OpenMM_State_destroy,
     OpenMM_State_getKineticEnergy, OpenMM_State_getPeriodicBoxVectors, OpenMM_State_getPositions,
-    OpenMM_State_getPotentialEnergy, OpenMM_System, OpenMM_System_addForce, OpenMM_System_destroy,
-    OpenMM_System_getNumParticles, OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array,
-    OpenMM_Vec3Array_create, OpenMM_Vec3Array_destroy, OpenMM_Vec3Array_get,
-    OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set, OpenMM_Vec3_scale,
+    OpenMM_State_getPotentialEnergy, OpenMM_State_getTime, OpenMM_System, OpenMM_System_addForce,
+    OpenMM_System_destroy, OpenMM_System_getNumParticles, OpenMM_System_getParticleMass,
+    OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create, OpenMM_Vec3Array_destroy,
+    OpenMM_Vec3Array_get, OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set, OpenMM_Vec3_scale,
     OpenMM_XmlSerializer_deserializeIntegrator, OpenMM_XmlSerializer_deserializeSystem,
 };
 use quick_xml::events::{BytesEnd, BytesStart, Event};
@@ -594,6 +594,7 @@ impl ToFrameData for OpenMMSimulation {
         let potential_energy;
         let kinetic_energy;
         let total_energy;
+        let time;
         unsafe {
             let state = OpenMM_Context_getState(
                 self.context,
@@ -605,6 +606,8 @@ impl ToFrameData for OpenMMSimulation {
             potential_energy = OpenMM_State_getPotentialEnergy(state);
             kinetic_energy = OpenMM_State_getKineticEnergy(state);
             total_energy = potential_energy + kinetic_energy;
+
+            time = OpenMM_State_getTime(state);
 
             let pos_state = OpenMM_State_getPositions(state);
             let particle_count = OpenMM_Vec3Array_getSize(pos_state);
@@ -652,6 +655,9 @@ impl ToFrameData for OpenMMSimulation {
             .unwrap();
         frame
             .insert_number_value("energy.total", total_energy)
+            .unwrap();
+        frame
+            .insert_number_value("system.simulation.time", time)
             .unwrap();
         frame
             .insert_number_value("particle.count", (positions.len() / 3) as f64)
@@ -799,7 +805,7 @@ fn get_local_plugin_path() -> Option<PathBuf> {
     trace!("The executable is in {}", exe_path.display());
     let Some(exe_parent) = exe_path.parent() else {
         trace!("Could not get the executable parent path to find the OpenMM plugins.");
-        return None
+        return None;
     };
     let tentative_plugin_path = exe_parent.join("plugins");
     if tentative_plugin_path.is_dir() {

@@ -477,7 +477,7 @@ impl MyEguiApp {
 
     fn error_message(&mut self, ui: &mut egui::Ui) {
         self.collect_error();
-        let Some(ref error) = self.error else {return};
+        let Some(ref error) = self.error else { return };
         let error_text = egui::RichText::new(error)
             .color(egui::Color32::RED)
             .strong();
@@ -631,7 +631,7 @@ impl MyEguiApp {
                 "Radially orient origins",
             ),
         ]);
-        let hidden_commands = vec!["playback/list", "playback/load"];
+        let hidden_commands = ["playback/list", "playback/load"];
         egui::CollapsingHeader::new("Commands").show(ui, |ui| {
             let Some(commands) = self.get_command_list() else {
                 return;
@@ -896,8 +896,12 @@ impl MyEguiApp {
 impl MyEguiApp {
     fn collect_error(&mut self) {
         if self.server_has_issue() {
-            let Some(server) = self.server.take() else {return};
-            let Err(error) = self.runtime.block_on(server.close()).unwrap() else {return};
+            let Some(server) = self.server.take() else {
+                return;
+            };
+            let Err(error) = self.runtime.block_on(server.close()).unwrap() else {
+                return;
+            };
             self.error = Some(format!("{error}"));
             // If we do not have a server anymore, we should not have a client
             // either. Otherwise, we end up with a mismatch when we connect a
