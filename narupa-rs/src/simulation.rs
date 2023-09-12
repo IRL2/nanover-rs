@@ -18,11 +18,11 @@ use openmm_sys::{
     OpenMM_State_DataType_OpenMM_State_Parameters, OpenMM_State_DataType_OpenMM_State_Positions,
     OpenMM_State_DataType_OpenMM_State_Velocities, OpenMM_State_destroy,
     OpenMM_State_getKineticEnergy, OpenMM_State_getPeriodicBoxVectors, OpenMM_State_getPositions,
-    OpenMM_State_getPotentialEnergy, OpenMM_System, OpenMM_System_addForce, OpenMM_System_destroy,
-    OpenMM_System_getNumParticles, OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array,
-    OpenMM_Vec3Array_create, OpenMM_Vec3Array_destroy, OpenMM_Vec3Array_get,
-    OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set, OpenMM_Vec3_scale,
-    OpenMM_XmlSerializer_deserializeIntegrator, OpenMM_XmlSerializer_deserializeSystem, OpenMM_State_getTime,
+    OpenMM_State_getPotentialEnergy, OpenMM_State_getTime, OpenMM_System, OpenMM_System_addForce,
+    OpenMM_System_destroy, OpenMM_System_getNumParticles, OpenMM_System_getParticleMass,
+    OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create, OpenMM_Vec3Array_destroy,
+    OpenMM_Vec3Array_get, OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set, OpenMM_Vec3_scale,
+    OpenMM_XmlSerializer_deserializeIntegrator, OpenMM_XmlSerializer_deserializeSystem,
 };
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Reader;
