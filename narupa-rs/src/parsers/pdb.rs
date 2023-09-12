@@ -104,7 +104,7 @@ fn parse_pdb_conect_line(line: &str) -> Result<Vec<(isize, isize)>, FormatError>
         .map_err(|_| FormatError::FieldFormat(FieldError::Conect))?;
     for index in (11..31).step_by(5) {
         let other = line.get(index..(index + 5));
-        let Some(other) = other else {break};
+        let Some(other) = other else { break };
         let other = other
             .trim()
             .parse()

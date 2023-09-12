@@ -805,7 +805,7 @@ fn get_local_plugin_path() -> Option<PathBuf> {
     trace!("The executable is in {}", exe_path.display());
     let Some(exe_parent) = exe_path.parent() else {
         trace!("Could not get the executable parent path to find the OpenMM plugins.");
-        return None
+        return None;
     };
     let tentative_plugin_path = exe_parent.join("plugins");
     if tentative_plugin_path.is_dir() {
