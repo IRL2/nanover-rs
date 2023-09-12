@@ -631,7 +631,7 @@ impl MyEguiApp {
                 "Radially orient origins",
             ),
         ]);
-        let hidden_commands = vec!["playback/list", "playback/load"];
+        let hidden_commands = ["playback/list", "playback/load"];
         egui::CollapsingHeader::new("Commands").show(ui, |ui| {
             let Some(commands) = self.get_command_list() else {
                 return;
