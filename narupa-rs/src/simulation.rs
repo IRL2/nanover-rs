@@ -22,7 +22,7 @@ use openmm_sys::{
     OpenMM_System_getNumParticles, OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array,
     OpenMM_Vec3Array_create, OpenMM_Vec3Array_destroy, OpenMM_Vec3Array_get,
     OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set, OpenMM_Vec3_scale,
-    OpenMM_XmlSerializer_deserializeIntegrator, OpenMM_XmlSerializer_deserializeSystem,
+    OpenMM_XmlSerializer_deserializeIntegrator, OpenMM_XmlSerializer_deserializeSystem, OpenMM_State_getTime,
 };
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Reader;
@@ -594,6 +594,7 @@ impl ToFrameData for OpenMMSimulation {
         let potential_energy;
         let kinetic_energy;
         let total_energy;
+        let time;
         unsafe {
             let state = OpenMM_Context_getState(
                 self.context,
@@ -605,6 +606,8 @@ impl ToFrameData for OpenMMSimulation {
             potential_energy = OpenMM_State_getPotentialEnergy(state);
             kinetic_energy = OpenMM_State_getKineticEnergy(state);
             total_energy = potential_energy + kinetic_energy;
+
+            time = OpenMM_State_getTime(state);
 
             let pos_state = OpenMM_State_getPositions(state);
             let particle_count = OpenMM_Vec3Array_getSize(pos_state);
@@ -652,6 +655,9 @@ impl ToFrameData for OpenMMSimulation {
             .unwrap();
         frame
             .insert_number_value("energy.total", total_energy)
+            .unwrap();
+        frame
+            .insert_number_value("system.simulation.time", time)
             .unwrap();
         frame
             .insert_number_value("particle.count", (positions.len() / 3) as f64)
