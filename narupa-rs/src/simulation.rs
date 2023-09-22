@@ -40,8 +40,9 @@ use narupa_proto::frame::FrameData;
 type Coordinate = [f64; 3];
 type CoordMap = BTreeMap<i32, Coordinate>;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum InteractionKind {
+    #[default]
     GAUSSIAN,
     HARMONIC,
 }
@@ -76,11 +77,26 @@ impl IMDInteraction {
     }
 }
 
+impl Default for IMDInteraction {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0, 0.0],
+            particles: vec![],
+            kind: InteractionKind::default(),
+            max_force: Some(20000.0),
+            scale: 1.0,
+            id: None,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct InteractionForce {
     pub selection: usize,
     pub force: Coordinate,
 }
 
+#[derive(Debug)]
 pub struct Interaction {
     pub forces: Vec<InteractionForce>,
     pub energy: Option<f64>,
@@ -259,6 +275,7 @@ pub struct OpenMMSimulation {
     n_particles: usize,
     previous_particle_touched: HashSet<i32>,
     initial_state: *mut OpenMM_State,
+    masses: Vec<f64>,
 }
 
 // Warning! Here we say that it is OK to send the simulation
@@ -435,6 +452,9 @@ impl OpenMMSimulation {
                     as i32,
                 0,
             );
+            let masses = (0i32..n_atoms as i32)
+                .map(|index| OpenMM_System_getParticleMass(system, index))
+                .collect();
 
             let platform = OpenMM_Context_getPlatform(context);
             let platform_name = CStr::from_ptr(OpenMM_Platform_getName(platform))
@@ -455,6 +475,7 @@ impl OpenMMSimulation {
                 n_particles,
                 previous_particle_touched,
                 initial_state,
+                masses,
             }
         };
         Ok(sim)
@@ -489,7 +510,7 @@ impl OpenMMSimulation {
         force
     }
 
-    pub fn compute_forces(&self, imd_interaction: &[IMDInteraction]) -> Vec<Interaction> {
+    pub fn compute_forces(&self, imd_interactions: &[IMDInteraction]) -> Vec<Interaction> {
         unsafe {
             let state = OpenMM_Context_getState(
                 self.context,
@@ -497,38 +518,9 @@ impl OpenMMSimulation {
                 0,
             );
             let pos_state = OpenMM_State_getPositions(state);
-            let interactions = imd_interaction
-                .iter()
-                .map(|imd| {
-                    let max_force = imd.max_force.unwrap_or(f64::INFINITY);
-                    let selection = filter_selection(&imd.particles, self.n_particles);
-                    let masses = get_selection_masses_from_system(&selection, self.system);
-                    let particle_positions =
-                        get_selection_positions_from_state_positions(&selection, pos_state);
-                    let com = compute_com(&particle_positions, &masses);
-                    let interaction_position = imd.position;
-                    let diff = [
-                        com[0] - interaction_position[0],
-                        com[1] - interaction_position[1],
-                        com[2] - interaction_position[2],
-                    ];
-                    let sigma = 1.0; // For now we use this as a constant. It is in the python version.
-                    let (com_force, energy) = match imd.kind {
-                        InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
-                        InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
-                    };
-                    build_interaction(
-                        &com_force,
-                        self.n_particles,
-                        imd.scale,
-                        &selection,
-                        &masses,
-                        max_force,
-                        Some(energy),
-                        imd.id.clone(),
-                    )
-                })
-                .collect();
+
+            let interactions =
+                compute_forces_inner(pos_state, &self.masses, self.n_particles, imd_interactions);
 
             OpenMM_State_destroy(state);
 
@@ -869,7 +861,6 @@ fn accumulate_forces(interactions: &[Interaction]) -> CoordMap {
 #[allow(clippy::too_many_arguments)]
 fn build_interaction(
     com_force: &[f64; 3],
-    n_particles: usize,
     scale: f64,
     selection: &[i32],
     masses: &[f64],
@@ -877,6 +868,8 @@ fn build_interaction(
     energy: Option<f64>,
     id: Option<String>,
 ) -> Interaction {
+    assert_eq!(selection.len(), masses.len());
+    let n_particles = selection.len();
     let force_per_particle = [
         scale * com_force[0] / n_particles as f64,
         scale * com_force[1] / n_particles as f64,
@@ -886,16 +879,16 @@ fn build_interaction(
         forces: selection
             .iter()
             .zip(masses)
-            .map(|pm| InteractionForce {
-                selection: *pm.0 as usize,
+            .map(|(index, mass)| InteractionForce {
+                selection: *index as usize,
                 force: [
-                    (force_per_particle[0] * pm.1).clamp(-max_force, max_force),
-                    (force_per_particle[1] * pm.1).clamp(-max_force, max_force),
-                    (force_per_particle[2] * pm.1).clamp(-max_force, max_force),
+                    (force_per_particle[0] * mass).clamp(-max_force, max_force),
+                    (force_per_particle[1] * mass).clamp(-max_force, max_force),
+                    (force_per_particle[2] * mass).clamp(-max_force, max_force),
                 ],
             })
             .collect(),
-        energy,
+        energy: energy.map(|energy| masses.iter().map(|mass| mass * scale * energy).sum::<f64>()),
         id,
     }
 }
@@ -943,16 +936,6 @@ fn compute_harmonic_force(diff: Coordinate, k: f64) -> (Coordinate, f64) {
     (force, energy)
 }
 
-unsafe fn get_selection_masses_from_system(
-    selection: &[i32],
-    system: *mut OpenMM_System,
-) -> Vec<f64> {
-    selection
-        .iter()
-        .map(|p| OpenMM_System_getParticleMass(system, *p))
-        .collect()
-}
-
 unsafe fn get_selection_positions_from_state_positions(
     selection: &[i32],
     pos_state: *const OpenMM_Vec3Array,
@@ -966,6 +949,63 @@ unsafe fn get_selection_positions_from_state_positions(
         .collect()
 }
 
+fn get_masses_for_selection(selection: &[i32], masses: &[f64]) -> Vec<f64> {
+    selection
+        .iter()
+        .map(|index| {
+            let index: usize = *index as usize;
+            masses[index]
+        })
+        .collect()
+}
+
+unsafe fn compute_forces_inner(
+    positions: *const OpenMM_Vec3Array,
+    masses: &[f64],
+    n_particles: usize,
+    imd_interactions: &[IMDInteraction],
+) -> Vec<Interaction> {
+    let interactions = imd_interactions
+        .iter()
+        .map(|imd| compute_forces_single(imd, positions, masses, n_particles))
+        .collect();
+    interactions
+}
+
+unsafe fn compute_forces_single(
+    imd: &IMDInteraction,
+    positions: *const OpenMM_Vec3Array,
+    masses: &[f64],
+    n_particles: usize,
+) -> Interaction {
+    let max_force = imd.max_force.unwrap_or(f64::INFINITY);
+    let selection = filter_selection(&imd.particles, n_particles);
+    let masses_selection = get_masses_for_selection(&selection, masses);
+    let particle_positions =
+        unsafe { get_selection_positions_from_state_positions(&selection, positions) };
+    let com = compute_com(&particle_positions, &masses_selection);
+    let interaction_position = imd.position;
+    let diff = [
+        com[0] - interaction_position[0],
+        com[1] - interaction_position[1],
+        com[2] - interaction_position[2],
+    ];
+    let sigma = 1.0; // For now we use this as a constant. It is in the python version.
+    let (com_force, energy) = match imd.kind {
+        InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
+        InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
+    };
+    build_interaction(
+        &com_force,
+        imd.scale,
+        &selection,
+        &masses_selection,
+        max_force,
+        Some(energy),
+        imd.id.clone(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -973,6 +1013,7 @@ mod tests {
     use std::collections::HashSet;
 
     const EXP_1: f64 = 0.6065306597126334; // exp(-0.5)
+    const EXP_3: f64 = 0.22313016014842982; // exp(-3.0/2.0)
     const UNIT: Coordinate = [0.5773502691896258; 3]; // [1, 1, 1] / |[1, 1, 1]|
 
     #[test]
@@ -1089,5 +1130,151 @@ mod tests {
         let mut result = filter_selection(&input, n_particles);
         result.sort();
         assert_eq!(result, vec![4, 5, 6, 9]);
+    }
+
+    fn single_interaction() -> IMDInteraction {
+        IMDInteraction {
+            position: [0.0, 0.0, 0.0],
+            particles: vec![1],
+            ..Default::default()
+        }
+    }
+
+    struct SampleParticles {
+        positions: *mut OpenMM_Vec3Array,
+        masses: Vec<f64>,
+        n_particles: usize,
+    }
+
+    impl SampleParticles {
+        unsafe fn new() -> Self {
+            let n_particles: usize = 50;
+            let positions = OpenMM_Vec3Array_create(n_particles as i32);
+            (0..n_particles).for_each(|index| {
+                let coord = index as f64;
+                OpenMM_Vec3Array_set(
+                    positions,
+                    index as i32,
+                    OpenMM_Vec3 {
+                        x: coord,
+                        y: coord,
+                        z: coord,
+                    },
+                )
+            });
+            let masses = (0..n_particles).map(|i| i as f64 + 1.0).collect();
+            Self {
+                positions,
+                masses,
+                n_particles,
+            }
+        }
+    }
+
+    impl Drop for SampleParticles {
+        fn drop(&mut self) {
+            unsafe {
+                OpenMM_Vec3Array_destroy(self.positions);
+            }
+        }
+    }
+
+    fn assert_interaction_force_near(expected: &InteractionForce, actual: &InteractionForce) {
+        assert_eq!(expected.selection, actual.selection);
+        expected
+            .force
+            .iter()
+            .zip(actual.force)
+            .for_each(|(expected, actual)| assert_f64_near!(*expected, actual));
+    }
+
+    #[rstest]
+    #[case(-1.0)]
+    #[case(0.0)]
+    #[case(100.0)]
+    /// Tests that the interaction force calculation gives the expected result on a single atom, at
+    /// a particular position, with varying scale.
+    fn test_interaction_force_single(#[case] scale: f64) {
+        let mut single_interaction = single_interaction();
+        single_interaction.scale = scale;
+        let masses;
+        let interaction = unsafe {
+            let particles = SampleParticles::new();
+            masses = particles.masses.clone();
+            compute_forces_single(
+                &single_interaction,
+                particles.positions,
+                &particles.masses,
+                particles.n_particles,
+            )
+        };
+        let expected_energy = -EXP_3 * scale * masses[single_interaction.particles[0]];
+        let expected_interaction = Interaction {
+            forces: single_interaction
+                .particles
+                .iter()
+                .map(|index| InteractionForce {
+                    selection: *index,
+                    force: [-EXP_3 * scale * masses[*index]; 3],
+                })
+                .collect(),
+            energy: Some(expected_energy),
+            id: None,
+        };
+
+        assert_f64_near!(
+            interaction.energy.unwrap(),
+            expected_interaction.energy.unwrap()
+        );
+        assert!(expected_interaction.id.is_none());
+        assert_eq!(interaction.forces.len(), expected_interaction.forces.len());
+        interaction
+            .forces
+            .iter()
+            .zip(expected_interaction.forces)
+            .for_each(|(actual, expected)| assert_interaction_force_near(&expected, actual));
+    }
+
+    #[test]
+    fn test_build_interaction() {
+        let com_force = [1.0, 2.0, 3.0];
+        let scale = 2.0;
+        let selection = [3, 4, 5];
+        let masses = vec![3.0, 4.0, 5.0];
+        let max_force = 20000.0;
+        let energy = 42.24;
+        let id = None;
+
+        let expected = Interaction {
+            forces: selection
+                .iter()
+                .enumerate()
+                .map(|(index, particle)| InteractionForce {
+                    selection: *particle as usize,
+                    force: [
+                        scale * masses[index] * com_force[0] / selection.len() as f64,
+                        scale * masses[index] * com_force[1] / selection.len() as f64,
+                        scale * masses[index] * com_force[2] / selection.len() as f64,
+                    ],
+                })
+                .collect(),
+            energy: Some(masses.iter().map(|mass| scale * mass * energy).sum::<f64>()),
+            id: id.clone(),
+        };
+
+        let actual = build_interaction(
+            &com_force,
+            scale,
+            &selection,
+            &masses,
+            max_force,
+            Some(energy),
+            id,
+        );
+        expected
+            .forces
+            .iter()
+            .zip(actual.forces)
+            .for_each(|(e, a)| assert_interaction_force_near(e, &a));
     }
 }
