@@ -1,4 +1,5 @@
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
+use narupa_proto::trajectory::FrameData;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
@@ -30,6 +31,21 @@ fn next_frame_stop(current_frame: u64, frame_interval: u32) -> i32 {
     (frame_interval - current_frame % frame_interval)
         .try_into()
         .unwrap()
+}
+
+fn starting_frame(
+    simulation: &OpenMMSimulation,
+    simulation_counter: usize,
+    reset_counter: usize,
+) -> FrameData {
+    let mut frame = simulation.to_topology_framedata();
+    frame
+        .insert_number_value("system.simulation.counter", simulation_counter as f64)
+        .unwrap();
+    frame
+        .insert_number_value("system.reset.counter", reset_counter as f64)
+        .unwrap();
+    frame
 }
 
 fn apply_forces(
@@ -74,15 +90,18 @@ pub fn run_simulation_thread(
     };
 
     tokio::task::spawn_blocking(move || {
+        let mut simulation_counter = if maybe_simulation.is_some() {
+            Some(0usize)
+        } else {
+            None
+        };
+        let mut reset_counter = 0usize;
+
         let mut playback_state = PlaybackState::new(run_on_start);
         let interval = Duration::from_millis(simulation_interval);
         if let Some(ref simulation) = maybe_simulation {
-            if sim_clone
-                .lock()
-                .unwrap()
-                .send_reset_frame(simulation.to_topology_framedata())
-                .is_err()
-            {
+            let frame = starting_frame(simulation, simulation_counter.unwrap(), reset_counter);
+            if sim_clone.lock().unwrap().send_reset_frame(frame).is_err() {
                 return;
             }
             info!("Platform: {}", simulation.get_platform_name());
@@ -102,6 +121,7 @@ pub fn run_simulation_thread(
                 match order_result {
                     Ok(PlaybackOrder::Reset) => {
                         if let Some(ref mut simulation) = maybe_simulation {
+                            reset_counter += 1;
                             simulation.reset()
                         } else {
                             warn!("No simulation loaded, ignoring RESET command.");
@@ -122,7 +142,27 @@ pub fn run_simulation_thread(
                     }
                     Ok(PlaybackOrder::Load(simulation_index)) => {
                         maybe_simulation = match simulations_manifest.load_index(simulation_index) {
-                            Ok(new_simulation) => Some(new_simulation),
+                            Ok(new_simulation) => {
+                                simulation_counter = Some(
+                                    simulation_counter
+                                        .map(|count| count + 1)
+                                        .unwrap_or_default(),
+                                );
+                                reset_counter = 0;
+                                let frame = starting_frame(
+                                    &new_simulation,
+                                    simulation_counter.unwrap(),
+                                    reset_counter,
+                                );
+                                debug!(
+                                    "New simulation has counter value of {simulation_counter:?}."
+                                );
+                                if sim_clone.lock().unwrap().send_reset_frame(frame).is_err() {
+                                    return;
+                                }
+
+                                Some(new_simulation)
+                            }
                             Err(error) => {
                                 error!("Could not load simulation with index {simulation_index}: {error}");
                                 warn!("No new simulation loaded, keep using the previously loaded one if any.");
@@ -132,7 +172,27 @@ pub fn run_simulation_thread(
                     }
                     Ok(PlaybackOrder::Next) => {
                         maybe_simulation = match simulations_manifest.load_next() {
-                            Ok(new_simulation) => Some(new_simulation),
+                            Ok(new_simulation) => {
+                                simulation_counter = Some(
+                                    simulation_counter
+                                        .map(|count| count + 1)
+                                        .unwrap_or_default(),
+                                );
+                                reset_counter = 0;
+                                let frame = starting_frame(
+                                    &new_simulation,
+                                    simulation_counter.unwrap(),
+                                    reset_counter,
+                                );
+                                debug!(
+                                    "New simulation has counter value of {simulation_counter:?}."
+                                );
+                                if sim_clone.lock().unwrap().send_reset_frame(frame).is_err() {
+                                    return;
+                                }
+
+                                Some(new_simulation)
+                            }
                             Err(error) => {
                                 error!("Could not load the next simulation: {error}");
                                 warn!("No new simulation loaded, keep using the previously loaded one if any.");
@@ -172,6 +232,9 @@ pub fn run_simulation_thread(
                         }
                         frame
                             .insert_number_value("energy.user.total", energy_total)
+                            .unwrap();
+                        frame
+                            .insert_number_value("system.reset.counter", reset_counter as f64)
                             .unwrap();
                         let mut source = sim_clone.lock().unwrap();
                         if source.send_frame(frame).is_err() {
