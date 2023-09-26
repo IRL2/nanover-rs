@@ -9,8 +9,9 @@ use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::manifest::{LoadDefaultError, LoadSimulationError, Manifest};
+use crate::openmm::{OpenMMSimulation, XMLParsingError};
 use crate::playback::{PlaybackOrder, PlaybackState};
-use crate::simulation::{OpenMMSimulation, Simulation, ToFrameData, XMLParsingError, IMD};
+use crate::simulation::{Simulation, ToFrameData, IMD};
 use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
 
@@ -46,6 +47,14 @@ fn starting_frame(
         .insert_number_value("system.reset.counter", reset_counter as f64)
         .unwrap();
     frame
+}
+
+fn incremented_simulation_counter(simulation_counter: Option<usize>) -> Option<usize> {
+    Some(
+        simulation_counter
+            .map(|count| count + 1)
+            .unwrap_or_default(),
+    )
 }
 
 fn apply_forces(
@@ -143,11 +152,8 @@ pub fn run_simulation_thread(
                     Ok(PlaybackOrder::Load(simulation_index)) => {
                         maybe_simulation = match simulations_manifest.load_index(simulation_index) {
                             Ok(new_simulation) => {
-                                simulation_counter = Some(
-                                    simulation_counter
-                                        .map(|count| count + 1)
-                                        .unwrap_or_default(),
-                                );
+                                simulation_counter =
+                                    incremented_simulation_counter(simulation_counter);
                                 reset_counter = 0;
                                 let frame = starting_frame(
                                     &new_simulation,
@@ -173,11 +179,8 @@ pub fn run_simulation_thread(
                     Ok(PlaybackOrder::Next) => {
                         maybe_simulation = match simulations_manifest.load_next() {
                             Ok(new_simulation) => {
-                                simulation_counter = Some(
-                                    simulation_counter
-                                        .map(|count| count + 1)
-                                        .unwrap_or_default(),
-                                );
+                                simulation_counter =
+                                    incremented_simulation_counter(simulation_counter);
                                 reset_counter = 0;
                                 let frame = starting_frame(
                                     &new_simulation,

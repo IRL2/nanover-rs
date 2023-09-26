@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use thiserror::Error;
 
-use crate::simulation::{OpenMMSimulation, XMLParsingError};
+use crate::openmm::{OpenMMSimulation, XMLParsingError};
 
 #[derive(Error, Debug)]
 #[error("Something went wrong while reading the manifest.")]

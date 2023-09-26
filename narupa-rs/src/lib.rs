@@ -11,6 +11,7 @@ pub mod frame_broadcaster;
 pub mod manifest;
 pub mod multiuser;
 pub mod observer_thread;
+pub mod openmm;
 pub mod parsers;
 pub mod playback;
 pub mod services;
