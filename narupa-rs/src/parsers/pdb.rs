@@ -136,7 +136,7 @@ fn match_bonds_to_atoms(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::test_ressource;
+    use crate::test_ressource;
     use rstest::rstest;
     use std::fs::File;
     use std::io::BufReader;

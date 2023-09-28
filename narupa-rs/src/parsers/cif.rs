@@ -335,7 +335,7 @@ fn extract_string(line: &HashMap<String, String>, key: &str) -> Result<String, F
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::test_ressource;
+    use crate::test_ressource;
     use std::fs::File;
     use std::io::BufReader;
 

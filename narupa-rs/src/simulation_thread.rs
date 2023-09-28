@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 
+use crate::broadcaster::BroadcastSendError;
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::manifest::{LoadDefaultError, LoadSimulationError, Manifest};
 use crate::playback::{PlaybackOrder, PlaybackState};
@@ -63,6 +64,29 @@ fn apply_forces(
         .collect()
 }
 
+fn send_regular_frame(
+    simulation: &OpenMMSimulation,
+    user_energies: &[(Option<String>, Option<f64>)],
+    reset_counter: usize,
+    sim_clone: Arc<Mutex<FrameBroadcaster>>,
+) -> Result<(), BroadcastSendError> {
+    let mut frame = simulation.to_framedata();
+    let mut energy_total = 0.0;
+    for (_id, energy) in user_energies {
+        if let Some(energy) = energy {
+            energy_total += energy;
+        }
+    }
+    frame
+        .insert_number_value("energy.user.total", energy_total)
+        .unwrap();
+    frame
+        .insert_number_value("system.reset.counter", reset_counter as f64)
+        .unwrap();
+    let mut source = sim_clone.lock().unwrap();
+    source.send_frame(frame)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run_simulation_thread(
     mut simulations_manifest: Manifest,
@@ -82,8 +106,14 @@ pub fn run_simulation_thread(
         Err(LoadDefaultError::NoDefault) => None,
         Err(LoadDefaultError::LoadSimulationError(load_simulation_error)) => {
             match load_simulation_error {
-                LoadSimulationError::CannotOpen(_) => None,
-                LoadSimulationError::NoIndex(_) => None,
+                LoadSimulationError::CannotOpen(err) => {
+                    error!("Cannot read simulation file: {err}");
+                    None
+                }
+                LoadSimulationError::NoIndex(index) => {
+                    error!("No simulation with index {index}.");
+                    None
+                }
                 LoadSimulationError::XMLParsingError(error) => return Err(error),
             }
         }
@@ -133,8 +163,16 @@ pub fn run_simulation_thread(
                                 next_frame_stop(current_simulation_frame, frame_interval);
                             simulation.step(delta_frames);
                             current_simulation_frame += delta_frames as u64;
-                            let frame = simulation.to_framedata();
-                            sim_clone.lock().unwrap().send_frame(frame).unwrap();
+                            if send_regular_frame(
+                                simulation,
+                                &user_energies,
+                                reset_counter,
+                                Arc::clone(&sim_clone),
+                            )
+                            .is_err()
+                            {
+                                return;
+                            }
                             playback_state.update(PlaybackOrder::Step);
                         } else {
                             warn!("No simulation loaded, ignoring STEP command.");
@@ -222,25 +260,17 @@ pub fn run_simulation_thread(
 
                     let system_energy = simulation.get_total_energy();
 
-                    if do_frames {
-                        let mut frame = simulation.to_framedata();
-                        let mut energy_total = 0.0;
-                        for (_id, energy) in &user_energies {
-                            if let Some(energy) = energy {
-                                energy_total += energy;
-                            }
-                        }
-                        frame
-                            .insert_number_value("energy.user.total", energy_total)
-                            .unwrap();
-                        frame
-                            .insert_number_value("system.reset.counter", reset_counter as f64)
-                            .unwrap();
-                        let mut source = sim_clone.lock().unwrap();
-                        if source.send_frame(frame).is_err() {
-                            return;
-                        };
-                    }
+                    if do_frames
+                        && send_regular_frame(
+                            simulation,
+                            &user_energies,
+                            reset_counter,
+                            Arc::clone(&sim_clone),
+                        )
+                        .is_err()
+                    {
+                        return;
+                    };
 
                     let elapsed = now.elapsed();
                     let time_left = match interval.checked_sub(elapsed) {
