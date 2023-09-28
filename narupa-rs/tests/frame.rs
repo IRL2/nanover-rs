@@ -1,0 +1,246 @@
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+use log::info;
+use prost_types::Struct;
+use tokio::time::timeout;
+use tokio_stream::StreamExt;
+use tonic::transport::Channel;
+use tonic::Streaming;
+
+use narupa_proto::command::command_client::CommandClient;
+use narupa_proto::command::CommandMessage;
+use narupa_proto::trajectory::{
+    trajectory_service_client::TrajectoryServiceClient, GetFrameRequest,
+};
+use narupa_proto::trajectory::{FrameData, GetFrameResponse};
+use narupa_rs::application::{
+    cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli,
+};
+use narupa_rs::test_ressource;
+use pack_prost::{ToProstValue, UnPack};
+
+// Initialise the logging.
+// Adapted from https://stackoverflow.com/a/43093371
+use std::sync::Once;
+static INIT: Once = Once::new();
+/// Setup function that is only run once, even if called multiple times.
+fn setup_log() {
+    INIT.call_once(|| {
+        env_logger::init();
+    });
+}
+
+struct Server {
+    handle: tokio::task::JoinHandle<Result<(), AppError>>,
+    cancel_tx: Option<CancellationSenders>,
+}
+
+impl Server {
+    fn new(arguments: Cli) -> Self {
+        let (cancel_tx, cancel_rx) = cancellation_channels();
+        let handle = tokio::spawn(main_to_wrap(arguments, cancel_rx));
+        Server {
+            handle,
+            cancel_tx: Some(cancel_tx),
+        }
+    }
+
+    pub fn stop(&mut self) {
+        // We should be able to stop the server several time. Calling this
+        // method means we want the server to be stopped, not that we want
+        // that specific call to stop the server. Therefore, we can ignore
+        // the send failing or the transmitter being None.
+        if let Some(tx) = self.cancel_tx.take() {
+            tx.send().ok();
+        };
+    }
+
+    pub fn close(mut self) -> tokio::task::JoinHandle<Result<(), AppError>> {
+        self.stop();
+        self.handle
+    }
+}
+
+struct Client {
+    trajectory: TrajectoryServiceClient<Channel>,
+    command: CommandClient<Channel>,
+}
+
+impl Client {
+    async fn new(port: u16) -> Result<Self, tonic::transport::Error> {
+        let endpoint = format!("http://127.0.0.1:{port}");
+        let trajectory = TrajectoryServiceClient::connect(endpoint.clone()).await?;
+        let command = CommandClient::connect(endpoint.clone()).await?;
+        Ok(Self {
+            trajectory,
+            command,
+        })
+    }
+
+    async fn reset(&mut self) {
+        let reset_request = CommandMessage {
+            name: "playback/reset".into(),
+            arguments: None,
+        };
+        self.command.run_command(reset_request).await.unwrap();
+    }
+
+    async fn step(&mut self) {
+        let reset_request = CommandMessage {
+            name: "playback/step".into(),
+            arguments: None,
+        };
+        self.command.run_command(reset_request).await.unwrap();
+    }
+
+    async fn next(&mut self) {
+        let next_request = CommandMessage {
+            name: "playback/next".into(),
+            arguments: None,
+        };
+        self.command.run_command(next_request).await.unwrap();
+    }
+
+    async fn load(&mut self, index: usize) {
+        let arguments = Struct {
+            fields: BTreeMap::from([("index".into(), (index as f64).to_prost_value())]),
+        };
+
+        let load_request = CommandMessage {
+            name: "playback/load".into(),
+            arguments: Some(arguments),
+        };
+        self.command.run_command(load_request).await.unwrap();
+    }
+
+    async fn step_frame(&mut self, frames: &mut Streaming<GetFrameResponse>) -> GetFrameResponse {
+        self.step().await;
+        self.next_frame(frames).await
+    }
+
+    async fn next_frame(&mut self, frames: &mut Streaming<GetFrameResponse>) -> GetFrameResponse {
+        let frame_response = timeout(Duration::from_secs(1), frames.next())
+            .await
+            .unwrap() // Panic if we reached the timeout
+            .unwrap() // Panic if we reached the end of the stream
+            .unwrap(); // Panic if there was a transport error
+        let frame = frame_response.frame.as_ref().unwrap();
+        info!("Frame ({}): {frame:?}", frame_response.frame_index);
+        frame_response
+    }
+}
+
+async fn create_server_client_pair() -> Result<(Server, Client), tonic::transport::Error> {
+    let port: u16 = 5000;
+    let arguments = Cli {
+        port,
+        input_xml_path: vec![
+            test_ressource!("17-ala.xml").into(),
+            test_ressource!("buckyballs.xml").into(),
+            test_ressource!("helicene.xml").into(),
+        ],
+        start_paused: true,
+        ..Default::default()
+    };
+    let server = Server::new(arguments);
+    tokio::time::sleep(Duration::from_micros(100)).await;
+    let client = Client::new(port).await?;
+
+    Ok((server, client))
+}
+
+fn get_number(frame: &FrameData, key: &str) -> f64 {
+    frame.values.get(key).unwrap().unpack().unwrap()
+}
+
+fn has_value(frame: &FrameData, key: &str) -> bool {
+    frame.values.get(key).is_some()
+}
+
+#[tokio::test]
+async fn test_simulation_counter() {
+    setup_log();
+
+    let (server, mut client) = create_server_client_pair().await.unwrap();
+
+    let request = GetFrameRequest::default();
+    let mut frames = client
+        .trajectory
+        .subscribe_latest_frames(request)
+        .await
+        .unwrap()
+        .into_inner();
+
+    // We should not need to call playback/step to get a frame here. The first frame is sent before
+    // we start looking for blackback orders.
+    // TODO: Fix this so client.next_frame is enough here.
+    let frame_response = client.step_frame(&mut frames).await;
+    let frame = frame_response.frame.as_ref().unwrap();
+
+    // This is a frame from a new simulation, the frame_index should be 0 to tell the client to
+    // clear the aggregated frame.
+    assert_eq!(frame_response.frame_index, 0);
+    // This is the first simulation loaded by the server. The counter must be set to 0.
+    let simulation_counter: f64 = get_number(frame, "system.simulation.counter");
+    let simulation_counter = simulation_counter as usize;
+    assert_eq!(simulation_counter, 0);
+    // We have not reset yet, so the reset counter must be 0.
+    let reset_counter: f64 = get_number(frame, "system.reset.counter");
+    let reset_counter = reset_counter as usize;
+    assert_eq!(reset_counter, 0);
+
+    // The first frame is split into topology and coodinates.
+    let frame_response = client.next_frame(&mut frames).await;
+    assert_eq!(frame_response.frame_index, 1);
+
+    // RESETTING
+    client.reset().await;
+    let frame_response = client.step_frame(&mut frames).await;
+    let frame = frame_response.frame.as_ref().unwrap();
+    assert_eq!(frame_response.frame_index, 2);
+    // A reset should not affect the simulation counter
+    assert!(!has_value(frame, "system.simulation,counter"));
+    // The reset counter should be incremented, though.
+    let reset_counter: f64 = get_number(frame, "system.reset.counter");
+    let reset_counter = reset_counter as usize;
+    assert_eq!(reset_counter, 1);
+
+    // LOADING NEXT SIMULATION
+    client.next().await;
+    let frame_response = client.next_frame(&mut frames).await;
+    let frame = frame_response.frame.as_ref().unwrap();
+    // We loaded a new simulation so the frame index is 0 as we need to reset the accumulated
+    // frame.
+    assert_eq!(frame_response.frame_index, 0);
+    // We loaded a new simulation so the simulation counter must be upgraded.
+    let simulation_counter: f64 = get_number(frame, "system.simulation.counter");
+    let simulation_counter = simulation_counter as usize;
+    assert_eq!(simulation_counter, 1);
+    // Loading a simulation resets the reset counter.
+    let reset_counter: f64 = get_number(frame, "system.reset.counter");
+    let reset_counter = reset_counter as usize;
+    assert_eq!(reset_counter, 0);
+
+    // LOADING A SIMULATION WITH playback/load
+    client.load(2).await;
+    let frame_response = client.next_frame(&mut frames).await;
+    let frame = frame_response.frame.as_ref().unwrap();
+    // We loaded a new simulation so the frame index is 0 as we need to reset the accumulated
+    // frame.
+    assert_eq!(frame_response.frame_index, 0);
+    // We loaded a new simulation so the simulation counter must be upgraded.
+    let simulation_counter: f64 = get_number(frame, "system.simulation.counter");
+    let simulation_counter = simulation_counter as usize;
+    assert_eq!(simulation_counter, 2);
+    // Loading a simulation resets the reset counter.
+    let reset_counter: f64 = get_number(frame, "system.reset.counter");
+    let reset_counter = reset_counter as usize;
+    assert_eq!(reset_counter, 0);
+
+    // This prevents the test from hanging, but I do not know why.
+    // TODO: fix the server so this step is not necessary.
+    client.step().await;
+
+    server.close().await.unwrap().unwrap();
+}

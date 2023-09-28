@@ -1,8 +1,7 @@
 #[macro_use]
 extern crate assert_float_eq;
 
-#[cfg(test)]
-mod test_utils;
+pub mod test_utils;
 
 pub mod application;
 pub mod broadcaster;
