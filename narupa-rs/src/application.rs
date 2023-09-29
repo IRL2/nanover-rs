@@ -53,6 +53,7 @@ pub struct CancellationReceivers {
     state: tokio::sync::oneshot::Receiver<()>,
     traj_service: tokio::sync::oneshot::Receiver<()>,
     state_service: tokio::sync::oneshot::Receiver<()>,
+    essd: tokio::sync::oneshot::Receiver<()>,
 }
 
 impl CancellationReceivers {
@@ -65,6 +66,7 @@ impl CancellationReceivers {
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
     ) {
         (
             self.server,
@@ -72,6 +74,7 @@ impl CancellationReceivers {
             self.state,
             self.traj_service,
             self.state_service,
+            self.essd,
         )
     }
 }
@@ -86,6 +89,7 @@ pub struct CancellationSenders {
     state: tokio::sync::oneshot::Sender<()>,
     traj_service: tokio::sync::oneshot::Sender<()>,
     state_service: tokio::sync::oneshot::Sender<()>,
+    essd: tokio::sync::oneshot::Sender<()>,
 }
 
 impl CancellationSenders {
@@ -99,6 +103,7 @@ impl CancellationSenders {
         self.state_service
             .send(())
             .map_err(|_| CancellationError {})?;
+        self.essd.send(()).map_err(|_| CancellationError {})?;
         Ok(())
     }
 }
@@ -109,6 +114,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
     let (state_tx, state_rx) = tokio::sync::oneshot::channel();
     let (traj_service_tx, traj_service_rx) = tokio::sync::oneshot::channel();
     let (state_service_tx, state_service_rx) = tokio::sync::oneshot::channel();
+    let (essd_tx, essd_rx) = tokio::sync::oneshot::channel();
     (
         CancellationSenders {
             server: server_tx,
@@ -116,6 +122,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
             state: state_tx,
             traj_service: traj_service_tx,
             state_service: state_service_tx,
+            essd: essd_tx,
         },
         CancellationReceivers {
             server: server_rx,
@@ -123,6 +130,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
             state: state_rx,
             traj_service: traj_service_rx,
             state_service: state_service_rx,
+            essd: essd_rx,
         },
     )
 }
@@ -383,6 +391,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
         cancel_state_rx,
         cancel_traj_serv_rx,
         cancel_state_serv_rx,
+        cancel_essd_rx,
     ) = cancel_rx.unpack();
     let syncronous_start = Instant::now();
     if let Some(path) = cli.trajectory {
@@ -432,7 +441,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
 
     // Advertise the server with ESSD
     info!("Advertise the server with ESSD");
-    tokio::task::spawn(serve_essd(cli.name, cli.port));
+    tokio::task::spawn(serve_essd(cli.name, cli.port, cancel_essd_rx));
 
     // Run the GRPC server on the main thread.
     info!("Listening to {socket_address}");

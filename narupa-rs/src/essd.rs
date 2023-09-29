@@ -4,13 +4,22 @@ use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::time;
 
-pub async fn serve_essd(name: String, port: u16) {
+pub async fn serve_essd(
+    name: String,
+    port: u16,
+    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
+) {
     let mut interval = time::interval(Duration::from_secs_f32(0.5));
     let id = uuid::Uuid::new_v4();
 
     let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
     socket.set_broadcast(true).unwrap();
     loop {
+        match cancel_rx.try_recv() {
+            Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => break,
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+        };
+
         interval.tick().await;
         let network_interfaces = NetworkInterface::show().unwrap();
         for interface in network_interfaces.iter() {
