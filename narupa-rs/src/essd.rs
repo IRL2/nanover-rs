@@ -1,3 +1,4 @@
+use log::trace;
 use network_interface::NetworkInterface;
 use network_interface::NetworkInterfaceConfig;
 use std::time::Duration;
@@ -16,7 +17,10 @@ pub async fn serve_essd(
     socket.set_broadcast(true).unwrap();
     loop {
         match cancel_rx.try_recv() {
-            Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => break,
+            Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                trace!("ESSD received cancellation order.");
+                break;
+            }
             Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
         };
 

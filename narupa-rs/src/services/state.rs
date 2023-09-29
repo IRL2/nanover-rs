@@ -1,7 +1,7 @@
 use crate::broadcaster::{BroadcastReceiver, Broadcaster};
 use crate::state_broadcaster::StateBroadcaster;
 use futures::Stream;
-use log::trace;
+use log::{debug, trace};
 use narupa_proto::state::state_server::State;
 use narupa_proto::state::{
     StateUpdate, SubscribeStateUpdatesRequest, UpdateLocksRequest, UpdateLocksResponse,
@@ -94,6 +94,7 @@ impl State for StateService {
                     }
                 }
             }
+            debug!("Client disconnected from the state updates.");
         });
         let output_stream = ReceiverStream::new(rx);
         Ok(Response::new(

@@ -1,12 +1,18 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
+use std::time::{Duration, Instant};
 
 use log::info;
 use prost_types::Struct;
+use serde::Deserialize;
+use tokio::net::TcpListener;
+use tokio::net::UdpSocket;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tonic::Streaming;
+use uuid::Uuid;
 
 use narupa_proto::command::command_client::CommandClient;
 use narupa_proto::command::CommandMessage;
@@ -34,15 +40,23 @@ fn setup_log() {
 struct Server {
     handle: tokio::task::JoinHandle<Result<(), AppError>>,
     cancel_tx: Option<CancellationSenders>,
+    name: String,
+    port: u16,
 }
 
 impl Server {
-    fn new(arguments: Cli) -> Self {
+    async fn new(arguments: Cli) -> Self {
+        let name = arguments.name.clone();
         let (cancel_tx, cancel_rx) = cancellation_channels();
-        let handle = tokio::spawn(main_to_wrap(arguments, cancel_rx));
+        let socket_address = SocketAddr::new(arguments.address, arguments.port);
+        let listener = TcpListener::bind(socket_address).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = tokio::spawn(main_to_wrap(arguments, cancel_rx, Some(listener)));
         Server {
             handle,
             cancel_tx: Some(cancel_tx),
+            name,
+            port: address.port(),
         }
     }
 
@@ -60,6 +74,14 @@ impl Server {
         self.stop();
         self.handle
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
 }
 
 struct Client {
@@ -70,6 +92,7 @@ struct Client {
 impl Client {
     async fn new(port: u16) -> Result<Self, tonic::transport::Error> {
         let endpoint = format!("http://127.0.0.1:{port}");
+        info!("Client connecting to {endpoint}");
         let trajectory = TrajectoryServiceClient::connect(endpoint.clone()).await?;
         let command = CommandClient::connect(endpoint.clone()).await?;
         Ok(Self {
@@ -132,20 +155,26 @@ impl Client {
 }
 
 async fn create_server_client_pair() -> Result<(Server, Client), tonic::transport::Error> {
-    let port: u16 = 5000;
+    let essd_name = format!("Test Narupa server {}", Uuid::new_v4());
+    let port: u16 = 0;
     let arguments = Cli {
         port,
+        // Some tests need to identify this server in the ESSD records.
+        name: essd_name,
+        // Some tests need to switch simulation so we load several.
         input_xml_path: vec![
             test_ressource!("17-ala.xml").into(),
             test_ressource!("buckyballs.xml").into(),
             test_ressource!("helicene.xml").into(),
         ],
+        // Some tests need to access the actual first frame so we start paused.
         start_paused: true,
         ..Default::default()
     };
-    let server = Server::new(arguments);
+    let server = Server::new(arguments).await;
+    info!("Server started on port {}", server.port);
     tokio::time::sleep(Duration::from_micros(100)).await;
-    let client = Client::new(port).await?;
+    let client = Client::new(server.port()).await?;
 
     Ok((server, client))
 }
@@ -156,6 +185,98 @@ fn get_number(frame: &FrameData, key: &str) -> f64 {
 
 fn has_value(frame: &FrameData, key: &str) -> bool {
     frame.values.get(key).is_some()
+}
+
+pub const ESSD_DEFAULT_PORT: u16 = 54545;
+const MAXIMUM_MESSAGE_SIZE: usize = 1024;
+
+#[derive(Deserialize, PartialEq, Debug, Clone)]
+pub struct ServiceHub {
+    name: String,
+    address: IpAddr,
+    id: String,
+    essd_version: String,
+    services: HashMap<String, u16>,
+}
+
+impl ServiceHub {
+    pub fn new(
+        name: String,
+        address: IpAddr,
+        id: String,
+        essd_version: String,
+        services: HashMap<String, u16>,
+    ) -> Self {
+        Self {
+            name,
+            address,
+            id,
+            essd_version,
+            services,
+        }
+    }
+
+    pub fn trajectory(&self) -> Option<u16> {
+        self.services.get("trajectory").copied()
+    }
+
+    pub fn multiplayer(&self) -> Option<u16> {
+        self.services.get("multiplayer").copied()
+    }
+
+    pub fn address(&self) -> IpAddr {
+        self.address
+    }
+
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    pub fn essd_version(&self) -> String {
+        self.essd_version.clone()
+    }
+
+    pub fn services(&self) -> HashMap<String, u16> {
+        self.services.clone()
+    }
+}
+
+pub async fn find_servers(
+    port: u16,
+    search_time: Duration,
+) -> std::io::Result<HashMap<String, ServiceHub>> {
+    // We need a tokio socket to work with async, that socket needs the "reuse
+    // port" flag set which needs a socket2 socket. Socket2's socket are tricky
+    // to build, standard library's socket are easier to create.
+    let address = format!("0.0.0.0:{port}").parse::<SocketAddr>().unwrap();
+    let std_socket = std::net::UdpSocket::bind(address)?;
+    let flag_socket: socket2::Socket = std_socket.into();
+    flag_socket.set_nonblocking(true)?;
+    flag_socket.set_broadcast(true)?;
+
+    // set_reuse_port is not available on Windows
+    #[cfg(not(target_os = "windows"))]
+    flag_socket.set_reuse_port(true)?;
+
+    let socket = UdpSocket::from_std(flag_socket.into())?;
+
+    let mut buffer = [0u8; MAXIMUM_MESSAGE_SIZE];
+    let mut servers = HashMap::new();
+    let start_time = Instant::now();
+    while start_time.elapsed() < search_time {
+        let n_bytes = timeout(Duration::from_millis(100), socket.recv(&mut buffer))
+            .await
+            .unwrap_or(Ok(0))?;
+        if n_bytes > 0 {
+            let hub: ServiceHub = serde_json::from_slice(&buffer[..n_bytes])?;
+            servers.insert(hub.id.clone(), hub);
+        }
+    }
+    Ok(servers)
 }
 
 #[tokio::test]
@@ -243,4 +364,34 @@ async fn test_simulation_counter() {
     client.step().await;
 
     server.close().await.unwrap().unwrap();
+}
+
+async fn is_server_in_essd(name: &str) -> bool {
+    let available_servers = find_servers(ESSD_DEFAULT_PORT, Duration::from_secs(1))
+        .await
+        .unwrap();
+    info!("Servers from ESSD: {available_servers:?}");
+    available_servers.values().any(|hub| hub.name() == name)
+}
+
+#[tokio::test]
+async fn test_essd_stop() {
+    setup_log();
+    info!("TEST_ESSD_STOP");
+    let (server, _client) = create_server_client_pair().await.unwrap();
+    let server_name = server.name().to_owned();
+
+    // At this point, the ESSD server should be running.
+    info!("Requesting ESSD before closing the server.");
+    let server_is_found = is_server_in_essd(&server_name).await;
+    assert!(server_is_found);
+
+    // We stop the server and we give it some time to finish gracefully.
+    server.close().await.unwrap().unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Now, we should not receive anything from ESSD anymore.
+    info!("Requesting ESSD after closing the server.");
+    let server_is_found = is_server_in_essd(&server_name).await;
+    assert!(!server_is_found);
 }
