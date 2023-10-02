@@ -42,7 +42,7 @@ fn main() -> ExitCode {
 
     let run_status: Result<(), AppError> = std::thread::scope(|scope| {
         scope
-            .spawn(|| runtime.block_on(main_to_wrap(cli, cancel_rx)))
+            .spawn(|| runtime.block_on(main_to_wrap(cli, cancel_rx, None)))
             .join()
     })
     .unwrap();

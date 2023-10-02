@@ -195,7 +195,7 @@ struct Server {
 impl Server {
     pub fn new(arguments: Cli, runtime_handle: &tokio::runtime::Handle) -> Self {
         let (cancel_tx, cancel_rx) = cancellation_channels();
-        let handle = runtime_handle.spawn(main_to_wrap(arguments, cancel_rx));
+        let handle = runtime_handle.spawn(main_to_wrap(arguments, cancel_rx, None));
         Server {
             handle,
             cancel_tx: Some(cancel_tx),

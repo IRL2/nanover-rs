@@ -31,6 +31,7 @@ use std::time::Duration;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
 use tonic::transport::Server;
@@ -53,6 +54,7 @@ pub struct CancellationReceivers {
     state: tokio::sync::oneshot::Receiver<()>,
     traj_service: tokio::sync::oneshot::Receiver<()>,
     state_service: tokio::sync::oneshot::Receiver<()>,
+    essd: tokio::sync::oneshot::Receiver<()>,
 }
 
 impl CancellationReceivers {
@@ -65,6 +67,7 @@ impl CancellationReceivers {
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
+        oneshot::Receiver<()>,
     ) {
         (
             self.server,
@@ -72,6 +75,7 @@ impl CancellationReceivers {
             self.state,
             self.traj_service,
             self.state_service,
+            self.essd,
         )
     }
 }
@@ -86,6 +90,7 @@ pub struct CancellationSenders {
     state: tokio::sync::oneshot::Sender<()>,
     traj_service: tokio::sync::oneshot::Sender<()>,
     state_service: tokio::sync::oneshot::Sender<()>,
+    essd: tokio::sync::oneshot::Sender<()>,
 }
 
 impl CancellationSenders {
@@ -99,6 +104,7 @@ impl CancellationSenders {
         self.state_service
             .send(())
             .map_err(|_| CancellationError {})?;
+        self.essd.send(()).map_err(|_| CancellationError {})?;
         Ok(())
     }
 }
@@ -109,6 +115,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
     let (state_tx, state_rx) = tokio::sync::oneshot::channel();
     let (traj_service_tx, traj_service_rx) = tokio::sync::oneshot::channel();
     let (state_service_tx, state_service_rx) = tokio::sync::oneshot::channel();
+    let (essd_tx, essd_rx) = tokio::sync::oneshot::channel();
     (
         CancellationSenders {
             server: server_tx,
@@ -116,6 +123,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
             state: state_tx,
             traj_service: traj_service_tx,
             state_service: state_service_tx,
+            essd: essd_tx,
         },
         CancellationReceivers {
             server: server_rx,
@@ -123,6 +131,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
             state: state_rx,
             traj_service: traj_service_rx,
             state_service: state_service_rx,
+            essd: essd_rx,
         },
     )
 }
@@ -264,11 +273,15 @@ where
         trace!("Record {id}");
     }
 
-    println!("Terminate recorder {id}");
+    debug!("Terminate recorder {id}");
     Ok(())
 }
 
-pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<(), AppError> {
+pub async fn main_to_wrap(
+    cli: Cli,
+    cancel_rx: CancellationReceivers,
+    listener: Option<TcpListener>,
+) -> Result<(), AppError> {
     // Read the user arguments.
     let xml_path = cli.input_xml_path;
     let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
@@ -281,7 +294,12 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
         .transpose()
         .map_err(|_| CannotOpenStatisticFile)?;
     let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;
-    let socket_address = SocketAddr::new(cli.address, cli.port);
+    let requested_address = SocketAddr::new(cli.address, cli.port);
+    let listener = match listener {
+        None => TcpListener::bind(requested_address).await.unwrap(),
+        Some(listener) => listener,
+    };
+    let socket_address = listener.local_addr().unwrap();
 
     // We have 3 separate threads: one runs the simulation, one
     // runs the GRPC server, and one observes what is happening
@@ -383,6 +401,7 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
         cancel_state_rx,
         cancel_traj_serv_rx,
         cancel_state_serv_rx,
+        cancel_essd_rx,
     ) = cancel_rx.unpack();
     let syncronous_start = Instant::now();
     if let Some(path) = cli.trajectory {
@@ -432,10 +451,12 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
 
     // Advertise the server with ESSD
     info!("Advertise the server with ESSD");
-    tokio::task::spawn(serve_essd(cli.name, cli.port));
+    tokio::task::spawn(serve_essd(cli.name, socket_address.port(), cancel_essd_rx));
 
     // Run the GRPC server on the main thread.
-    info!("Listening to {socket_address}");
+
+    let addr = listener.local_addr().unwrap();
+    info!("Listening to {addr}");
     let server = Trajectory::new(Arc::clone(&frame_source), cancel_traj_serv_rx);
     let command_service = CommandService::new(commands);
     let state_service = StateService::new(Arc::clone(&shared_state), cancel_state_serv_rx);
@@ -444,7 +465,10 @@ pub async fn main_to_wrap(cli: Cli, cancel_rx: CancellationReceivers) -> Result<
             .add_service(TrajectoryServiceServer::new(server))
             .add_service(CommandServer::new(command_service))
             .add_service(StateServer::new(state_service))
-            .serve_with_shutdown(socket_address, cancel_server_rx.unwrap_or_else(|_| ())),
+            .serve_with_incoming_shutdown(
+                tokio_stream::wrappers::TcpListenerStream::new(listener),
+                cancel_server_rx.unwrap_or_else(|_| ()),
+            ),
     )
     .await??;
 

@@ -33,6 +33,8 @@ jobs:
         env:
           LD_LIBRARY_PATH: /home/runner/local/lib/
           OPENMM_HOME: /home/runner/local/
+          RUST_BACKTRACE: 1
+          RUST_LOG: trace
   lint:
       name: Lint
       runs-on: ubuntu-latest
