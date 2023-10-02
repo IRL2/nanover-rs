@@ -217,6 +217,8 @@ pub enum AppError {
     CannotOpenStatisticFile,
     #[error("Server cannot establish connection.")]
     TransportError(#[from] tonic::transport::Error),
+    #[error("Cannot open socket: {0}")]
+    ConnectionError(std::io::Error),
     #[error("Internal server error.")]
     JoinError(#[from] tokio::task::JoinError),
     #[error("Cannot open the trajectory file.")]
@@ -296,7 +298,9 @@ pub async fn main_to_wrap(
     let statistics_interval = ((1.0 / cli.statistics_fps) * 1000.0) as u64;
     let requested_address = SocketAddr::new(cli.address, cli.port);
     let listener = match listener {
-        None => TcpListener::bind(requested_address).await.unwrap(),
+        None => TcpListener::bind(requested_address)
+            .await
+            .map_err(AppError::ConnectionError)?,
         Some(listener) => listener,
     };
     let socket_address = listener.local_addr().unwrap();
