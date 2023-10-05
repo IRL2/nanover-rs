@@ -6904,5 +6904,5 @@ END
 		
 
 	</System>
-	<Integrator constraintTolerance="1e-05" friction="1" randomSeed="0" stepSize=".002" temperature="300" type="LangevinIntegrator" version="1"/>
+	<Integrator constraintTolerance="1e-05" friction="5" randomSeed="0" stepSize=".002" temperature="300" type="LangevinIntegrator" version="1"/>
 </OpenMMSimulation>
