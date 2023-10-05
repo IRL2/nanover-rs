@@ -789,6 +789,15 @@ impl MyEguiApp {
             arguments.trajectory = None;
         }
 
+        if self.record_state {
+            let Some(ref state) = self.state else {
+                return Err(());
+            };
+            arguments.state = Some(state.clone());
+        } else {
+            arguments.state = None;
+        }
+
         Ok(arguments)
     }
 
