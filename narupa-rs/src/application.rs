@@ -159,7 +159,7 @@ pub struct Cli {
     #[clap(long, value_parser, default_value_t = false)]
     pub progression: bool,
     /// Update the interactions every STEPS dynamics steps.
-    #[clap(short = 'i', long, value_parser, default_value_t = 10)]
+    #[clap(short = 'i', long, value_parser, default_value_t = 5)]
     pub force_interval: u32,
     /// Display more information about what the software does.
     #[clap(short, long, value_parser, default_value_t = false)]
