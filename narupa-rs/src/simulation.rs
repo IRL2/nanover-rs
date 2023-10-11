@@ -37,8 +37,8 @@ use std::str;
 use crate::parsers::{errors::ReadError, read_cif, read_pdb, MolecularSystem};
 use narupa_proto::frame::FrameData;
 
-type Coordinate = [f64; 3];
-type CoordMap = BTreeMap<usize, Coordinate>;
+pub type Coordinate = [f64; 3];
+pub type CoordMap = BTreeMap<usize, Coordinate>;
 
 #[derive(Debug, Default)]
 pub enum InteractionKind {
@@ -121,8 +121,10 @@ pub struct ParticleOutOfRange {
 }
 
 pub trait IMD {
-    fn update_imd_forces(&mut self, interactions: &[Interaction])
-        -> Result<(), ParticleOutOfRange>;
+    fn update_imd_forces(
+        &mut self,
+        interactions: &[Interaction],
+    ) -> Result<BTreeMap<usize, Coordinate>, ParticleOutOfRange>;
 }
 
 #[derive(Debug)]
@@ -289,6 +291,10 @@ pub struct OpenMMSimulation {
 unsafe impl Send for OpenMMSimulation {}
 
 impl OpenMMSimulation {
+    pub fn n_particles(&self) -> usize {
+        self.n_particles
+    }
+
     pub fn from_xml<R: Read>(input: BufReader<R>) -> Result<Self, XMLParsingError> {
         let mut reader = Reader::from_reader(input);
         reader.trim_text(true);
@@ -746,7 +752,7 @@ impl IMD for OpenMMSimulation {
     fn update_imd_forces(
         &mut self,
         interactions: &[Interaction],
-    ) -> Result<(), ParticleOutOfRange> {
+    ) -> Result<BTreeMap<usize, Coordinate>, ParticleOutOfRange> {
         let mut forces = zeroed_out(&self.previous_particle_touched);
         let accumulated_forces = accumulate_forces(interactions);
         self.previous_particle_touched = HashSet::new();
@@ -781,7 +787,7 @@ impl IMD for OpenMMSimulation {
             OpenMM_CustomExternalForce_updateParametersInContext(self.imd_force, self.context);
         }
 
-        Ok(())
+        Ok(forces)
     }
 }
 
