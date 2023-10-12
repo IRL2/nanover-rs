@@ -24,13 +24,13 @@ struct TrackedSimulation {
     reset_counter: usize,
     simulation_counter: usize,
     user_forces: CoordMap,
-    user_energies: Vec<(Option<String>, Option<f64>)>,
+    user_energies: f64,
 }
 
 impl TrackedSimulation {
     fn new(simulation: OpenMMSimulation, simulation_counter: usize) -> Self {
         let user_forces = BTreeMap::new();
-        let user_energies = Vec::new();
+        let user_energies = 0.0;
         let reset_counter = 0;
         let simulation_frame = 0;
         Self {
@@ -77,11 +77,11 @@ impl TrackedSimulation {
         self.user_forces = force_map;
     }
 
-    fn user_energies(&self) -> &[(Option<String>, Option<f64>)] {
-        &self.user_energies
+    fn user_energies(&self) -> f64 {
+        self.user_energies
     }
 
-    fn update_user_energies(&mut self, user_energies: Vec<(Option<String>, Option<f64>)>) {
+    fn update_user_energies(&mut self, user_energies: f64) {
         self.user_energies = user_energies;
     }
 
@@ -126,15 +126,15 @@ fn apply_forces(
     state_clone: &Arc<Mutex<StateBroadcaster>>,
     simulation: &mut OpenMMSimulation,
     simulation_tx: std::sync::mpsc::Sender<usize>,
-) -> (CoordMap, Vec<(Option<String>, Option<f64>)>) {
+) -> (CoordMap, f64) {
     let state_interactions = read_forces(state_clone);
     let imd_interactions = simulation.compute_forces(&state_interactions);
     simulation_tx.send(imd_interactions.len()).unwrap();
     let forces = simulation.update_imd_forces(&imd_interactions).unwrap();
     let interactions = imd_interactions
         .into_iter()
-        .map(|interaction| (interaction.id, interaction.energy))
-        .collect();
+        .filter_map(|interaction| interaction.energy)
+        .sum();
     (forces, interactions)
 }
 
@@ -158,12 +158,7 @@ fn send_regular_frame(
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
 ) -> Result<(), BroadcastSendError> {
     let mut frame = simulation.simulation.to_framedata();
-    let mut energy_total = 0.0;
-    for (_id, energy) in simulation.user_energies() {
-        if let Some(energy) = energy {
-            energy_total += energy;
-        }
-    }
+    let energy_total = simulation.user_energies();
     frame
         .insert_number_value("energy.user.total", energy_total)
         .unwrap();
