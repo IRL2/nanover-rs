@@ -1,6 +1,7 @@
 use log::{error, info, warn};
 use narupa_proto::trajectory::FrameData;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -12,7 +13,7 @@ use crate::frame_broadcaster::FrameBroadcaster;
 use crate::manifest::{LoadDefaultError, LoadSimulationError, Manifest};
 use crate::playback::{PlaybackOrder, PlaybackState};
 use crate::simulation::{
-    CoordMap, Coordinate, OpenMMSimulation, Simulation, ToFrameData, XMLParsingError, IMD,
+    CoordMap, OpenMMSimulation, Simulation, ToFrameData, XMLParsingError, IMD,
 };
 use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
@@ -22,12 +23,12 @@ struct TrackedSimulation {
     simulation: OpenMMSimulation,
     reset_counter: usize,
     simulation_counter: usize,
-    user_forces: Vec<Coordinate>,
+    user_forces: CoordMap,
 }
 
 impl TrackedSimulation {
     fn new(simulation: OpenMMSimulation, simulation_counter: usize) -> Self {
-        let user_forces = (0..simulation.n_particles()).map(|_| [0.0; 3]).collect();
+        let user_forces = BTreeMap::new();
         let reset_counter = 0;
         Self {
             simulation,
@@ -62,14 +63,12 @@ impl TrackedSimulation {
         &mut self.simulation
     }
 
-    fn user_forces(&self) -> &[Coordinate] {
+    fn user_forces(&self) -> &CoordMap {
         &self.user_forces
     }
 
-    fn update_user_forces(&mut self, force_map: &CoordMap) {
-        force_map
-            .iter()
-            .for_each(|(particle_index, force)| self.user_forces[*particle_index] = *force);
+    fn update_user_forces(&mut self, force_map: CoordMap) {
+        self.user_forces = force_map;
     }
 }
 
@@ -122,12 +121,19 @@ fn apply_forces(
     (forces, interactions)
 }
 
-fn flatten_coordinates(coordinates: &[Coordinate]) -> Vec<f32> {
-    coordinates
-        .iter()
+fn add_force_map_to_frame(force_map: &CoordMap, frame: &mut FrameData) {
+    let indices = force_map.keys().map(|index| *index as u32).collect();
+    let sparse = force_map
+        .values()
         .flatten()
         .map(|value| *value as f32)
-        .collect()
+        .collect();
+    frame
+        .insert_index_array("forces.user.index", indices)
+        .unwrap();
+    frame
+        .insert_float_array("forces.user.sparse", sparse)
+        .unwrap();
 }
 
 fn send_regular_frame(
@@ -148,9 +154,7 @@ fn send_regular_frame(
     frame
         .insert_number_value("system.reset.counter", simulation.reset_counter() as f64)
         .unwrap();
-    frame
-        .insert_float_array("forces.user", flatten_coordinates(simulation.user_forces()))
-        .unwrap();
+    add_force_map_to_frame(simulation.user_forces(), &mut frame);
     let mut source = sim_clone.lock().unwrap();
     source.send_frame(frame)
 }
@@ -313,7 +317,7 @@ pub fn run_simulation_thread(
                             simulation.simulation_mut(),
                             simulation_tx.clone(),
                         );
-                        simulation.update_user_forces(&force_map);
+                        simulation.update_user_forces(force_map);
                     }
 
                     let system_energy = simulation.simulation.get_total_energy();
