@@ -193,7 +193,7 @@ impl Default for Cli {
             port: 38801,
             simulation_fps: 30.0,
             frame_interval: 5,
-            force_interval: 10,
+            force_interval: 5,
             progression: false,
             verbose: false,
             trace: false,
