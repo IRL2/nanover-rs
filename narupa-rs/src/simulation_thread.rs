@@ -1,7 +1,7 @@
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use narupa_proto::trajectory::FrameData;
 use std::cmp::Ordering;
-use std::convert::TryInto;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{thread, time};
@@ -11,40 +11,113 @@ use crate::broadcaster::BroadcastSendError;
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::manifest::{LoadDefaultError, LoadSimulationError, Manifest};
 use crate::playback::{PlaybackOrder, PlaybackState};
-use crate::simulation::{OpenMMSimulation, Simulation, ToFrameData, XMLParsingError, IMD};
+use crate::simulation::{
+    CoordMap, OpenMMSimulation, Simulation, ToFrameData, XMLParsingError, IMD,
+};
 use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
 
-fn next_stop(current_frame: u64, frame_interval: u32, force_interval: u32) -> (i32, bool, bool) {
-    let frame_interval: u64 = frame_interval as u64;
-    let force_interval: u64 = force_interval as u64;
-    let next_frame_stop = frame_interval - current_frame % frame_interval;
-    let next_force_stop = force_interval - current_frame % force_interval;
-    match next_frame_stop.cmp(&next_force_stop) {
-        Ordering::Less => (next_frame_stop.try_into().unwrap(), true, false),
-        Ordering::Greater => (next_force_stop.try_into().unwrap(), false, true),
-        Ordering::Equal => (next_frame_stop.try_into().unwrap(), true, true),
+/// A simulation with all the book keeping required for the thread.
+struct TrackedSimulation {
+    simulation: OpenMMSimulation,
+    simulation_frame: usize,
+    reset_counter: usize,
+    simulation_counter: usize,
+    user_forces: CoordMap,
+    user_energies: f64,
+}
+
+impl TrackedSimulation {
+    fn new(simulation: OpenMMSimulation, simulation_counter: usize) -> Self {
+        let user_forces = BTreeMap::new();
+        let user_energies = 0.0;
+        let reset_counter = 0;
+        let simulation_frame = 0;
+        Self {
+            simulation,
+            simulation_frame,
+            reset_counter,
+            simulation_counter,
+            user_forces,
+            user_energies,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.simulation.reset();
+        self.reset_counter += 1;
+    }
+
+    fn step(&mut self, n_frames: usize) {
+        self.simulation.step(n_frames as i32);
+        self.simulation_frame += n_frames;
+    }
+
+    fn reset_counter(&self) -> usize {
+        self.reset_counter
+    }
+
+    fn simulation_counter(&self) -> usize {
+        self.simulation_counter
+    }
+
+    fn simulation(&self) -> &OpenMMSimulation {
+        &self.simulation
+    }
+
+    fn simulation_mut(&mut self) -> &mut OpenMMSimulation {
+        &mut self.simulation
+    }
+
+    fn user_forces(&self) -> &CoordMap {
+        &self.user_forces
+    }
+
+    fn update_user_forces(&mut self, force_map: CoordMap) {
+        self.user_forces = force_map;
+    }
+
+    fn user_energies(&self) -> f64 {
+        self.user_energies
+    }
+
+    fn update_user_energies(&mut self, user_energies: f64) {
+        self.user_energies = user_energies;
+    }
+
+    fn simulation_frame(&self) -> usize {
+        self.simulation_frame
     }
 }
 
-fn next_frame_stop(current_frame: u64, frame_interval: u32) -> i32 {
-    let frame_interval: u64 = frame_interval as u64;
-    (frame_interval - current_frame % frame_interval)
-        .try_into()
-        .unwrap()
+fn next_stop(
+    current_frame: usize,
+    frame_interval: usize,
+    force_interval: usize,
+) -> (usize, bool, bool) {
+    let next_frame_stop = frame_interval - current_frame % frame_interval;
+    let next_force_stop = force_interval - current_frame % force_interval;
+    match next_frame_stop.cmp(&next_force_stop) {
+        Ordering::Less => (next_frame_stop, true, false),
+        Ordering::Greater => (next_force_stop, false, true),
+        Ordering::Equal => (next_frame_stop, true, true),
+    }
 }
 
-fn starting_frame(
-    simulation: &OpenMMSimulation,
-    simulation_counter: usize,
-    reset_counter: usize,
-) -> FrameData {
-    let mut frame = simulation.to_topology_framedata();
+fn next_frame_stop(current_frame: usize, frame_interval: usize) -> usize {
+    frame_interval - current_frame % frame_interval
+}
+
+fn starting_frame(simulation: &TrackedSimulation) -> FrameData {
+    let mut frame = simulation.simulation().to_topology_framedata();
     frame
-        .insert_number_value("system.simulation.counter", simulation_counter as f64)
+        .insert_number_value(
+            "system.simulation.counter",
+            simulation.simulation_counter() as f64,
+        )
         .unwrap();
     frame
-        .insert_number_value("system.reset.counter", reset_counter as f64)
+        .insert_number_value("system.reset.counter", simulation.reset_counter() as f64)
         .unwrap();
     frame
 }
@@ -53,38 +126,62 @@ fn apply_forces(
     state_clone: &Arc<Mutex<StateBroadcaster>>,
     simulation: &mut OpenMMSimulation,
     simulation_tx: std::sync::mpsc::Sender<usize>,
-) -> Vec<(Option<String>, Option<f64>)> {
+) -> (CoordMap, f64) {
     let state_interactions = read_forces(state_clone);
     let imd_interactions = simulation.compute_forces(&state_interactions);
     simulation_tx.send(imd_interactions.len()).unwrap();
-    simulation.update_imd_forces(&imd_interactions).unwrap();
-    imd_interactions
+    let forces = simulation.update_imd_forces(&imd_interactions).unwrap();
+    let interactions = imd_interactions
         .into_iter()
-        .map(|interaction| (interaction.id, interaction.energy))
-        .collect()
+        .filter_map(|interaction| interaction.energy)
+        .sum();
+    (forces, interactions)
+}
+
+fn add_force_map_to_frame(force_map: &CoordMap, frame: &mut FrameData) {
+    let indices = force_map.keys().map(|index| *index as u32).collect();
+    let sparse = force_map
+        .values()
+        .flatten()
+        .map(|value| *value as f32)
+        .collect();
+    frame
+        .insert_index_array("forces.user.index", indices)
+        .unwrap();
+    frame
+        .insert_float_array("forces.user.sparse", sparse)
+        .unwrap();
 }
 
 fn send_regular_frame(
-    simulation: &OpenMMSimulation,
-    user_energies: &[(Option<String>, Option<f64>)],
-    reset_counter: usize,
+    simulation: &TrackedSimulation,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
 ) -> Result<(), BroadcastSendError> {
-    let mut frame = simulation.to_framedata();
-    let mut energy_total = 0.0;
-    for (_id, energy) in user_energies {
-        if let Some(energy) = energy {
-            energy_total += energy;
-        }
-    }
+    let mut frame = simulation.simulation.to_framedata();
+    let energy_total = simulation.user_energies();
     frame
         .insert_number_value("energy.user.total", energy_total)
         .unwrap();
     frame
-        .insert_number_value("system.reset.counter", reset_counter as f64)
+        .insert_number_value("system.reset.counter", simulation.reset_counter() as f64)
         .unwrap();
+    add_force_map_to_frame(simulation.user_forces(), &mut frame);
     let mut source = sim_clone.lock().unwrap();
     source.send_frame(frame)
+}
+
+fn send_reset_frame(
+    simulation: &TrackedSimulation,
+    sim_clone: Arc<Mutex<FrameBroadcaster>>,
+) -> Result<(), BroadcastSendError> {
+    let frame = starting_frame(simulation);
+    sim_clone.lock().unwrap().send_reset_frame(frame)
+}
+
+fn next_simulation_counter(maybe_simulation: Option<&TrackedSimulation>) -> usize {
+    maybe_simulation
+        .map(|simulation| simulation.simulation_counter() + 1)
+        .unwrap_or_default()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -93,16 +190,17 @@ pub fn run_simulation_thread(
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
     state_clone: Arc<Mutex<StateBroadcaster>>,
     simulation_interval: u64,
-    frame_interval: u32,
-    force_interval: u32,
+    frame_interval: usize,
+    force_interval: usize,
     verbose: bool,
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
     auto_reset: bool,
     run_on_start: bool,
 ) -> Result<(), XMLParsingError> {
-    let mut maybe_simulation: Option<OpenMMSimulation> = match simulations_manifest.load_default() {
-        Ok(simulation) => Some(simulation),
+    let mut maybe_simulation: Option<TrackedSimulation> = match simulations_manifest.load_default()
+    {
+        Ok(simulation) => Some(TrackedSimulation::new(simulation, 0)),
         Err(LoadDefaultError::NoDefault) => None,
         Err(LoadDefaultError::LoadSimulationError(load_simulation_error)) => {
             match load_simulation_error {
@@ -120,30 +218,19 @@ pub fn run_simulation_thread(
     };
 
     tokio::task::spawn_blocking(move || {
-        let mut simulation_counter = if maybe_simulation.is_some() {
-            Some(0usize)
-        } else {
-            None
-        };
-        let mut reset_counter = 0usize;
-
         let mut playback_state = PlaybackState::new(run_on_start);
         let interval = Duration::from_millis(simulation_interval);
         if let Some(ref simulation) = maybe_simulation {
-            let frame = starting_frame(simulation, simulation_counter.unwrap(), reset_counter);
-            if sim_clone.lock().unwrap().send_reset_frame(frame).is_err() {
+            if send_reset_frame(simulation, Arc::clone(&sim_clone)).is_err() {
                 return;
             }
-            info!("Platform: {}", simulation.get_platform_name());
+            info!("Platform: {}", simulation.simulation.get_platform_name());
             info!("Start simulating");
         } else {
             info!("No simulation loaded yes.");
         }
         info!("Simulation interval: {simulation_interval}");
 
-        let mut user_energies: Vec<(Option<String>, Option<f64>)> = Vec::new();
-
-        let mut current_simulation_frame: u64 = 0;
         loop {
             let now = time::Instant::now();
             loop {
@@ -151,7 +238,6 @@ pub fn run_simulation_thread(
                 match order_result {
                     Ok(PlaybackOrder::Reset) => {
                         if let Some(ref mut simulation) = maybe_simulation {
-                            reset_counter += 1;
                             simulation.reset()
                         } else {
                             warn!("No simulation loaded, ignoring RESET command.");
@@ -160,17 +246,9 @@ pub fn run_simulation_thread(
                     Ok(PlaybackOrder::Step) => {
                         if let Some(ref mut simulation) = maybe_simulation {
                             let delta_frames =
-                                next_frame_stop(current_simulation_frame, frame_interval);
+                                next_frame_stop(simulation.simulation_frame(), frame_interval);
                             simulation.step(delta_frames);
-                            current_simulation_frame += delta_frames as u64;
-                            if send_regular_frame(
-                                simulation,
-                                &user_energies,
-                                reset_counter,
-                                Arc::clone(&sim_clone),
-                            )
-                            .is_err()
-                            {
+                            if send_regular_frame(simulation, Arc::clone(&sim_clone)).is_err() {
                                 return;
                             }
                             playback_state.update(PlaybackOrder::Step);
@@ -181,25 +259,15 @@ pub fn run_simulation_thread(
                     Ok(PlaybackOrder::Load(simulation_index)) => {
                         maybe_simulation = match simulations_manifest.load_index(simulation_index) {
                             Ok(new_simulation) => {
-                                simulation_counter = Some(
-                                    simulation_counter
-                                        .map(|count| count + 1)
-                                        .unwrap_or_default(),
+                                let simulation = TrackedSimulation::new(
+                                    new_simulation,
+                                    next_simulation_counter(maybe_simulation.as_ref()),
                                 );
-                                reset_counter = 0;
-                                let frame = starting_frame(
-                                    &new_simulation,
-                                    simulation_counter.unwrap(),
-                                    reset_counter,
-                                );
-                                debug!(
-                                    "New simulation has counter value of {simulation_counter:?}."
-                                );
-                                if sim_clone.lock().unwrap().send_reset_frame(frame).is_err() {
+                                if send_reset_frame(&simulation, Arc::clone(&sim_clone)).is_err() {
                                     return;
                                 }
 
-                                Some(new_simulation)
+                                Some(simulation)
                             }
                             Err(error) => {
                                 error!("Could not load simulation with index {simulation_index}: {error}");
@@ -211,25 +279,15 @@ pub fn run_simulation_thread(
                     Ok(PlaybackOrder::Next) => {
                         maybe_simulation = match simulations_manifest.load_next() {
                             Ok(new_simulation) => {
-                                simulation_counter = Some(
-                                    simulation_counter
-                                        .map(|count| count + 1)
-                                        .unwrap_or_default(),
+                                let simulation = TrackedSimulation::new(
+                                    new_simulation,
+                                    next_simulation_counter(maybe_simulation.as_ref()),
                                 );
-                                reset_counter = 0;
-                                let frame = starting_frame(
-                                    &new_simulation,
-                                    simulation_counter.unwrap(),
-                                    reset_counter,
-                                );
-                                debug!(
-                                    "New simulation has counter value of {simulation_counter:?}."
-                                );
-                                if sim_clone.lock().unwrap().send_reset_frame(frame).is_err() {
+                                if send_reset_frame(&simulation, Arc::clone(&sim_clone)).is_err() {
                                     return;
                                 }
 
-                                Some(new_simulation)
+                                Some(simulation)
                             }
                             Err(error) => {
                                 error!("Could not load the next simulation: {error}");
@@ -248,26 +306,26 @@ pub fn run_simulation_thread(
 
             if let Some(ref mut simulation) = maybe_simulation {
                 if playback_state.is_playing() {
-                    let (delta_frames, do_frames, do_forces) =
-                        next_stop(current_simulation_frame, frame_interval, force_interval);
+                    let (delta_frames, do_frames, do_forces) = next_stop(
+                        simulation.simulation_frame(),
+                        frame_interval,
+                        force_interval,
+                    );
                     simulation.step(delta_frames);
-                    current_simulation_frame += delta_frames as u64;
 
                     if do_forces {
-                        user_energies =
-                            apply_forces(&state_clone, simulation, simulation_tx.clone());
+                        let (force_map, user_energies) = apply_forces(
+                            &state_clone,
+                            simulation.simulation_mut(),
+                            simulation_tx.clone(),
+                        );
+                        simulation.update_user_forces(force_map);
+                        simulation.update_user_energies(user_energies);
                     }
 
-                    let system_energy = simulation.get_total_energy();
+                    let system_energy = simulation.simulation.get_total_energy();
 
-                    if do_frames
-                        && send_regular_frame(
-                            simulation,
-                            &user_energies,
-                            reset_counter,
-                            Arc::clone(&sim_clone),
-                        )
-                        .is_err()
+                    if do_frames && send_regular_frame(simulation, Arc::clone(&sim_clone)).is_err()
                     {
                         return;
                     };
@@ -279,7 +337,8 @@ pub fn run_simulation_thread(
                     };
                     if verbose {
                         info!(
-                            "Simulation frame {current_simulation_frame}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol."
+                            "Simulation frame {}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol.",
+                            simulation.simulation_frame(),
                         );
                     };
                     if auto_reset && !system_energy.is_finite() {

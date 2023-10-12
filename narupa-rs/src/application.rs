@@ -154,13 +154,13 @@ pub struct Cli {
     pub simulation_fps: f64,
     /// Sends a frame every STEPS dynamics steps.
     #[clap(short = 'f', long, value_parser, default_value_t = 5)]
-    pub frame_interval: u32,
+    pub frame_interval: usize,
     /// Show the simulation progression and some performance data.
     #[clap(long, value_parser, default_value_t = false)]
     pub progression: bool,
     /// Update the interactions every STEPS dynamics steps.
     #[clap(short = 'i', long, value_parser, default_value_t = 5)]
-    pub force_interval: u32,
+    pub force_interval: usize,
     /// Display more information about what the software does.
     #[clap(short, long, value_parser, default_value_t = false)]
     pub verbose: bool,

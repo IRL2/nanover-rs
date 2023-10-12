@@ -37,8 +37,8 @@ use std::str;
 use crate::parsers::{errors::ReadError, read_cif, read_pdb, MolecularSystem};
 use narupa_proto::frame::FrameData;
 
-type Coordinate = [f64; 3];
-type CoordMap = BTreeMap<i32, Coordinate>;
+pub type Coordinate = [f64; 3];
+pub type CoordMap = BTreeMap<usize, Coordinate>;
 
 #[derive(Debug, Default)]
 pub enum InteractionKind {
@@ -116,13 +116,15 @@ pub trait ToFrameData {
 #[derive(Debug, Error)]
 #[error("Particle with index {index} out of range for {particle_count} particles.")]
 pub struct ParticleOutOfRange {
-    index: i32,
+    index: usize,
     particle_count: usize,
 }
 
 pub trait IMD {
-    fn update_imd_forces(&mut self, interactions: &[Interaction])
-        -> Result<(), ParticleOutOfRange>;
+    fn update_imd_forces(
+        &mut self,
+        interactions: &[Interaction],
+    ) -> Result<BTreeMap<usize, Coordinate>, ParticleOutOfRange>;
 }
 
 #[derive(Debug)]
@@ -273,7 +275,7 @@ pub struct OpenMMSimulation {
     platform_name: String,
     imd_force: *mut OpenMM_CustomExternalForce,
     n_particles: usize,
-    previous_particle_touched: HashSet<i32>,
+    previous_particle_touched: HashSet<usize>,
     initial_state: *mut OpenMM_State,
     masses: Vec<f64>,
 }
@@ -289,6 +291,10 @@ pub struct OpenMMSimulation {
 unsafe impl Send for OpenMMSimulation {}
 
 impl OpenMMSimulation {
+    pub fn n_particles(&self) -> usize {
+        self.n_particles
+    }
+
     pub fn from_xml<R: Read>(input: BufReader<R>) -> Result<Self, XMLParsingError> {
         let mut reader = Reader::from_reader(input);
         reader.trim_text(true);
@@ -746,22 +752,23 @@ impl IMD for OpenMMSimulation {
     fn update_imd_forces(
         &mut self,
         interactions: &[Interaction],
-    ) -> Result<(), ParticleOutOfRange> {
+    ) -> Result<BTreeMap<usize, Coordinate>, ParticleOutOfRange> {
         let mut forces = zeroed_out(&self.previous_particle_touched);
         let accumulated_forces = accumulate_forces(interactions);
         self.previous_particle_touched = HashSet::new();
-        accumulated_forces.iter().for_each(|kv| {
-            self.previous_particle_touched.insert(*kv.0);
+        accumulated_forces.iter().for_each(|(atom_index, _)| {
+            self.previous_particle_touched.insert(*atom_index);
         });
         forces.extend(accumulated_forces);
 
         for (index, force) in &forces {
-            if *index as usize >= self.n_particles {
+            if *index >= self.n_particles {
                 return Err(ParticleOutOfRange {
                     index: *index,
                     particle_count: self.n_particles,
                 });
             }
+            let index = *index as i32;
             unsafe {
                 let force_array = OpenMM_DoubleArray_create(3);
                 OpenMM_DoubleArray_set(force_array, 0, force[0]);
@@ -769,8 +776,8 @@ impl IMD for OpenMMSimulation {
                 OpenMM_DoubleArray_set(force_array, 2, force[2]);
                 OpenMM_CustomExternalForce_setParticleParameters(
                     self.imd_force,
-                    *index,
-                    *index,
+                    index,
+                    index,
                     force_array,
                 );
             }
@@ -780,7 +787,7 @@ impl IMD for OpenMMSimulation {
             OpenMM_CustomExternalForce_updateParametersInContext(self.imd_force, self.context);
         }
 
-        Ok(())
+        Ok(forces)
     }
 }
 
@@ -841,10 +848,7 @@ fn accumulate_forces(interactions: &[Interaction]) -> CoordMap {
     let mut btree: CoordMap = BTreeMap::new();
     for interaction in interactions {
         for particle in &interaction.forces {
-            let index: i32 = particle
-                .selection
-                .try_into()
-                .expect("Particle index does not fit an i32.");
+            let index = particle.selection;
             btree
                 .entry(index)
                 .and_modify(|f| {
@@ -907,7 +911,7 @@ fn filter_selection(particles: &[usize], n_particles: usize) -> Vec<i32> {
 }
 
 /// Create a map with the provided indices and arrays of zeros as values.
-fn zeroed_out(indices: &HashSet<i32>) -> CoordMap {
+fn zeroed_out(indices: &HashSet<usize>) -> CoordMap {
     let mut btree: CoordMap = BTreeMap::new();
     indices.iter().for_each(|i| {
         btree.insert(*i, [0.0, 0.0, 0.0]);
@@ -1018,8 +1022,8 @@ mod tests {
 
     #[test]
     fn test_zeroed_out() {
-        let request_indices: [i32; 4] = [2, 4, 7, 9];
-        let set_indices: HashSet<i32> = HashSet::from(request_indices);
+        let request_indices: [usize; 4] = [2, 4, 7, 9];
+        let set_indices: HashSet<usize> = HashSet::from(request_indices);
         let zeroed = zeroed_out(&set_indices);
         let keys: Vec<_> = zeroed.keys().cloned().collect();
         let values: Vec<_> = zeroed.values().cloned().collect();
