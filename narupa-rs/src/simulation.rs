@@ -16,13 +16,14 @@ use openmm_sys::{
     OpenMM_State_DataType_OpenMM_State_Energy, OpenMM_State_DataType_OpenMM_State_Forces,
     OpenMM_State_DataType_OpenMM_State_ParameterDerivatives,
     OpenMM_State_DataType_OpenMM_State_Parameters, OpenMM_State_DataType_OpenMM_State_Positions,
-    OpenMM_State_DataType_OpenMM_State_Velocities, OpenMM_State_destroy,
+    OpenMM_State_DataType_OpenMM_State_Velocities, OpenMM_State_destroy, OpenMM_State_getForces,
     OpenMM_State_getKineticEnergy, OpenMM_State_getPeriodicBoxVectors, OpenMM_State_getPositions,
-    OpenMM_State_getPotentialEnergy, OpenMM_State_getTime, OpenMM_System, OpenMM_System_addForce,
-    OpenMM_System_destroy, OpenMM_System_getNumParticles, OpenMM_System_getParticleMass,
-    OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create, OpenMM_Vec3Array_destroy,
-    OpenMM_Vec3Array_get, OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set, OpenMM_Vec3_scale,
-    OpenMM_XmlSerializer_deserializeIntegrator, OpenMM_XmlSerializer_deserializeSystem,
+    OpenMM_State_getPotentialEnergy, OpenMM_State_getTime, OpenMM_State_getVelocities,
+    OpenMM_System, OpenMM_System_addForce, OpenMM_System_destroy, OpenMM_System_getNumParticles,
+    OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create,
+    OpenMM_Vec3Array_destroy, OpenMM_Vec3Array_get, OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set,
+    OpenMM_Vec3_scale, OpenMM_XmlSerializer_deserializeIntegrator,
+    OpenMM_XmlSerializer_deserializeSystem,
 };
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Reader;
@@ -109,7 +110,7 @@ pub trait Simulation {
 }
 
 pub trait ToFrameData {
-    fn to_framedata(&self) -> FrameData;
+    fn to_framedata(&self, with_velocity: bool, with_forces: bool) -> FrameData;
     fn to_topology_framedata(&self) -> FrameData;
 }
 
@@ -586,20 +587,26 @@ impl Simulation for OpenMMSimulation {
 }
 
 impl ToFrameData for OpenMMSimulation {
-    fn to_framedata(&self) -> FrameData {
+    fn to_framedata(&self, with_velocity: bool, with_forces: bool) -> FrameData {
         let mut positions = Vec::<f32>::new();
+        let mut velocities = Vec::<f32>::new();
+        let mut forces = Vec::<f32>::new();
         let mut box_vectors = Vec::<f32>::new();
         let potential_energy;
         let kinetic_energy;
         let total_energy;
         let time;
+
+        let mut state_options = OpenMM_State_DataType_OpenMM_State_Positions
+            | OpenMM_State_DataType_OpenMM_State_Energy;
+        if with_velocity {
+            state_options |= OpenMM_State_DataType_OpenMM_State_Velocities;
+        }
+        if with_forces {
+            state_options |= OpenMM_State_DataType_OpenMM_State_Forces;
+        }
         unsafe {
-            let state = OpenMM_Context_getState(
-                self.context,
-                (OpenMM_State_DataType_OpenMM_State_Positions
-                    | OpenMM_State_DataType_OpenMM_State_Energy) as i32,
-                0,
-            );
+            let state = OpenMM_Context_getState(self.context, state_options as i32, 0);
 
             potential_energy = OpenMM_State_getPotentialEnergy(state);
             kinetic_energy = OpenMM_State_getKineticEnergy(state);
@@ -614,6 +621,26 @@ impl ToFrameData for OpenMMSimulation {
                 positions.push(pos.x as f32);
                 positions.push(pos.y as f32);
                 positions.push(pos.z as f32);
+            }
+
+            if with_velocity {
+                let velocities_state = OpenMM_State_getVelocities(state);
+                for i in 0..particle_count {
+                    let vel = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(velocities_state, i), 1.0);
+                    velocities.push(vel.x as f32);
+                    velocities.push(vel.y as f32);
+                    velocities.push(vel.z as f32);
+                }
+            }
+
+            if with_forces {
+                let forces_state = OpenMM_State_getForces(state);
+                for i in 0..particle_count {
+                    let force = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(forces_state, i), 1.0);
+                    forces.push(force.x as f32);
+                    forces.push(force.y as f32);
+                    forces.push(force.z as f32);
+                }
             }
 
             let mut a = OpenMM_Vec3 {
@@ -666,6 +693,14 @@ impl ToFrameData for OpenMMSimulation {
         frame
             .insert_float_array("system.box.vectors", box_vectors)
             .unwrap();
+        if with_velocity {
+            frame
+                .insert_float_array("particle.velocities", velocities)
+                .unwrap();
+        }
+        if with_forces {
+            frame.insert_float_array("particle.forces", forces).unwrap();
+        }
 
         frame
     }

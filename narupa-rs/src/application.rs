@@ -183,6 +183,12 @@ pub struct Cli {
     /// Start the simulation paused
     #[clap(long, value_parser, default_value_t = false)]
     pub start_paused: bool,
+    // Include the velocities in the FrameData
+    #[clap(long, value_parser, default_value_t = false)]
+    pub include_velocity: bool,
+    // Include the forces in the FrameData
+    #[clap(long, value_parser, default_value_t = false)]
+    pub include_forces: bool,
 }
 
 impl Default for Cli {
@@ -203,6 +209,8 @@ impl Default for Cli {
             trajectory: None,
             state: None,
             start_paused: false,
+            include_velocity: false,
+            include_forces: false,
         }
     }
 }
@@ -451,6 +459,8 @@ pub async fn main_to_wrap(
         simulation_tx,
         true,
         !cli.start_paused,
+        cli.include_velocity,
+        cli.include_forces,
     )?;
 
     // Advertise the server with ESSD

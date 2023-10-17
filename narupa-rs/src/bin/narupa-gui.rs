@@ -384,6 +384,8 @@ struct MyEguiApp {
     record_state: bool,
     state: Option<String>,
     start_paused: bool,
+    with_velocities: bool,
+    with_forces: bool,
 }
 
 impl Default for MyEguiApp {
@@ -417,6 +419,8 @@ impl Default for MyEguiApp {
             record_state: false,
             state: None,
             start_paused: reference.start_paused,
+            with_velocities: reference.include_velocity,
+            with_forces: reference.include_forces,
         }
     }
 }
@@ -527,6 +531,11 @@ impl MyEguiApp {
             self.frame_interval.widget(ui);
             self.force_interval.widget(ui);
             ui.checkbox(&mut self.start_paused, "Start simulation paused");
+            ui.checkbox(
+                &mut self.with_velocities,
+                "Include the velocities in the frames",
+            );
+            ui.checkbox(&mut self.with_forces, "Include the forces in the frames");
         });
     }
 
@@ -755,6 +764,8 @@ impl MyEguiApp {
         let frame_interval = self.frame_interval.convert().map_err(|_| ())?;
         let force_interval = self.force_interval.convert().map_err(|_| ())?;
         let start_paused = self.start_paused;
+        let include_velocity = self.with_velocities;
+        let include_forces = self.with_forces;
 
         let mut arguments = Cli {
             port,
@@ -764,6 +775,8 @@ impl MyEguiApp {
             progression: self.show_progression,
             name: self.server_name.clone(),
             start_paused,
+            include_velocity,
+            include_forces,
             ..Default::default()
         };
 

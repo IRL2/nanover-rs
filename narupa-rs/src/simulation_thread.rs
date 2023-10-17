@@ -156,8 +156,12 @@ fn add_force_map_to_frame(force_map: &CoordMap, frame: &mut FrameData) {
 fn send_regular_frame(
     simulation: &TrackedSimulation,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
+    with_velocities: bool,
+    with_forces: bool,
 ) -> Result<(), BroadcastSendError> {
-    let mut frame = simulation.simulation.to_framedata();
+    let mut frame = simulation
+        .simulation
+        .to_framedata(with_velocities, with_forces);
     let energy_total = simulation.user_energies();
     frame
         .insert_number_value("energy.user.total", energy_total)
@@ -197,6 +201,8 @@ pub fn run_simulation_thread(
     simulation_tx: std::sync::mpsc::Sender<usize>,
     auto_reset: bool,
     run_on_start: bool,
+    with_velocities: bool,
+    with_forces: bool,
 ) -> Result<(), XMLParsingError> {
     let mut maybe_simulation: Option<TrackedSimulation> = match simulations_manifest.load_default()
     {
@@ -248,7 +254,14 @@ pub fn run_simulation_thread(
                             let delta_frames =
                                 next_frame_stop(simulation.simulation_frame(), frame_interval);
                             simulation.step(delta_frames);
-                            if send_regular_frame(simulation, Arc::clone(&sim_clone)).is_err() {
+                            if send_regular_frame(
+                                simulation,
+                                Arc::clone(&sim_clone),
+                                with_velocities,
+                                with_forces,
+                            )
+                            .is_err()
+                            {
                                 return;
                             }
                             playback_state.update(PlaybackOrder::Step);
@@ -325,7 +338,14 @@ pub fn run_simulation_thread(
 
                     let system_energy = simulation.simulation.get_total_energy();
 
-                    if do_frames && send_regular_frame(simulation, Arc::clone(&sim_clone)).is_err()
+                    if do_frames
+                        && send_regular_frame(
+                            simulation,
+                            Arc::clone(&sim_clone),
+                            with_velocities,
+                            with_forces,
+                        )
+                        .is_err()
                     {
                         return;
                     };
