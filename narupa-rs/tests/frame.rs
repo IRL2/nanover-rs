@@ -26,16 +26,7 @@ use narupa_rs::application::{
 use narupa_rs::test_ressource;
 use pack_prost::{ToProstValue, UnPack};
 
-// Initialise the logging.
-// Adapted from https://stackoverflow.com/a/43093371
-use std::sync::Once;
-static INIT: Once = Once::new();
-/// Setup function that is only run once, even if called multiple times.
-fn setup_log() {
-    INIT.call_once(|| {
-        env_logger::init();
-    });
-}
+use test_log::test;
 
 struct Server {
     handle: tokio::task::JoinHandle<Result<(), AppError>>,
@@ -279,10 +270,8 @@ pub async fn find_servers(
     Ok(servers)
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn test_simulation_counter() {
-    setup_log();
-
     let (server, mut client) = create_server_client_pair().await.unwrap();
 
     let request = GetFrameRequest::default();
@@ -374,9 +363,8 @@ async fn is_server_in_essd(name: &str) -> bool {
     available_servers.values().any(|hub| hub.name() == name)
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn test_essd_stop() {
-    setup_log();
     info!("TEST_ESSD_STOP");
     let (server, _client) = create_server_client_pair().await.unwrap();
     let server_name = server.name().to_owned();
