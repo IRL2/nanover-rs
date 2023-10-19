@@ -285,8 +285,15 @@ async fn test_simulation_counter() {
     // We should not need to call playback/step to get a frame here. The first frame is sent before
     // we start looking for blackback orders.
     // TODO: Fix this so client.next_frame is enough here.
-    let frame_response = client.step_frame(&mut frames).await;
-    let frame = frame_response.frame.as_ref().unwrap();
+    let mut frame_response = client.step_frame(&mut frames).await;
+    let mut frame = frame_response.frame.as_ref().unwrap();
+    //We sometimes get the frame too early. In that case, we get the initial frame the broadcaster
+    //was built with as the frame of interest was not sent yet. If this is the case, we want to
+    //ignore that frame.
+    if frame.arrays.is_empty() && frame.values.is_empty() {
+        frame_response = client.next_frame(&mut frames).await;
+        frame = frame_response.frame.as_ref().unwrap();
+    };
 
     // This is a frame from a new simulation, the frame_index should be 0 to tell the client to
     // clear the aggregated frame.
