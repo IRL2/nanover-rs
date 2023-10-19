@@ -90,7 +90,7 @@ where
                     // We only read the first data block. If we encounter another one,
                     // it means we are done.
                     Some(first) if first.starts_with("data_") => break,
-                    Some(first) if first == "loop_" => PDBXContext::LoopKey(name, None),
+                    Some("loop_") => PDBXContext::LoopKey(name, None),
                     // Data items have a first token starting with '_' and the rest of the
                     // tokens are the value. We do not read any at the moment so we ignore
                     // these lines. However, the content of the item can span multiple lines.
