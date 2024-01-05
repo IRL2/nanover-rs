@@ -10,5 +10,5 @@ On Fedora, these requirements can be installed with the following commands:
 
 ```bash
 sudo dnf groupinstall "Development Tools" "Development Libraries" "C Development Tools and Libraries"
-sudo dnf install gtk3-devel protobuf-compiler
+sudo dnf install gtk3-devel protobuf-compiler protobuf-devel
 ```

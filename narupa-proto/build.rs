@@ -12,10 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // "proto/narupa/protocol/instance/representation_service.proto",
             "proto/narupa/protocol/command/command_service.proto",
         ],
-        &[
-            "proto",
-            "../../../Anaconda3/envs/narupa/Lib/site-packages/grpc_tools/_proto",
-        ],
+        &["proto"],
     )?;
 
     Ok(())
