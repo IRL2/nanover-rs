@@ -2,7 +2,7 @@
 /target
 .vscode
 neuraminidase.xml
-narupa-rs/libOpenMM.so*
+nanover-rs/libOpenMM.so*
 Untitled*.ipynb
 components/components.cif
 env.sh
