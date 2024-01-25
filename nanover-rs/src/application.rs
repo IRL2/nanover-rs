@@ -335,7 +335,7 @@ pub async fn main_to_wrap(
 
     let simulation_manifest = if !xml_path.is_empty() {
         if xml_path.len() == 1 {
-            info!("Running {}", xml_path.get(0).unwrap());
+            info!("Running {}", xml_path.first().unwrap());
         } else {
             info! {"Running a queue of {} simulations.", xml_path.len()};
             xml_path.iter().for_each(|path| debug!("* {path}"));
