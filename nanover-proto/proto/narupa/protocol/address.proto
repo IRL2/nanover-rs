@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package nanover.protocol;
+package narupa.protocol;
 
 message Address {
   string address = 1;

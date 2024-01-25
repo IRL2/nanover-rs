@@ -4,7 +4,7 @@
 syntax = "proto3";
 import "google/protobuf/struct.proto";
 
-package nanover.protocol.command;
+package narupa.protocol.command;
 
 service Command {
 

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package nanover.protocol;
+package narupa.protocol;
 
 message FloatArray {
   repeated float values = 1;

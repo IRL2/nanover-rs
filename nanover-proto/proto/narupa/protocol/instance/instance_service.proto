@@ -5,9 +5,9 @@ syntax = "proto3";
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/field_mask.proto";
-import "nanover/protocol/instance/connect_to_trajectory.proto";
+import "narupa/protocol/instance/connect_to_trajectory.proto";
 
-package nanover.protocol.instance;
+package narupa.protocol.instance;
 
 message LoadTrajectoryRequest {
   string instance_id = 1;
