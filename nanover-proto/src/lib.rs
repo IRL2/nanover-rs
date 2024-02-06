@@ -1,13 +1,13 @@
 pub mod protocol {
-    tonic::include_proto!("narupa.protocol");
+    tonic::include_proto!("nanover.protocol");
     pub mod trajectory {
-        tonic::include_proto!("narupa.protocol.trajectory");
+        tonic::include_proto!("nanover.protocol.trajectory");
     }
     pub mod state {
-        tonic::include_proto!("narupa.protocol.state");
+        tonic::include_proto!("nanover.protocol.state");
     }
     pub mod command {
-        tonic::include_proto!("narupa.protocol.command");
+        tonic::include_proto!("nanover.protocol.command");
     }
 }
 
