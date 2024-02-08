@@ -1,4 +1,4 @@
-# narups-rs --- A NanoVer-OpenMM server written in Rust
+# nanover-rs --- A NanoVer-OpenMM server written in Rust
 
 ## Dependencies
 
