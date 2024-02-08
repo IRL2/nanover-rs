@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "narupa-rs",
+    "nanover-rs",
     "components",
     "pack-prost",
-    "narupa-proto",
+    "nanover-proto",
 ]
 resolver = "2"
