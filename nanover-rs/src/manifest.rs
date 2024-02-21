@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use thiserror::Error;
 
-use crate::simulation::{OpenMMSimulation, XMLParsingError};
+use crate::simulation::{OpenMMSimulation, Simulation, ToFrameData, XMLParsingError};
 
 #[derive(Error, Debug)]
 #[error("Something went wrong while reading the manifest.")]
@@ -34,11 +34,49 @@ pub enum LoadSimulationError {
     XMLParsingError(#[from] XMLParsingError),
 }
 
-pub type SimulationEntry = String;
+pub enum SimulationEntry {
+    OpenMM(String),
+}
 
 enum ManifestContent {
     SingleBuffer(Vec<u8>),
     MultiplePath(Vec<SimulationEntry>),
+}
+
+pub enum LoadedSimulation {
+    OpenMM(OpenMMSimulation),
+}
+
+impl Simulation for LoadedSimulation {
+    fn step(&mut self, steps: i32) {
+        match self {
+            Self::OpenMM(simulation) => simulation.step(steps),
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::OpenMM(simulation) => simulation.reset(),
+        }
+    }
+}
+
+impl ToFrameData for LoadedSimulation {
+    fn to_framedata(
+        &self,
+        with_velocity: bool,
+        with_forces: bool,
+    ) -> nanover_proto::trajectory::FrameData {
+        match self {
+            Self::OpenMM(simulation) => simulation.to_framedata(with_velocity, with_forces),
+        }
+    }
+
+    fn to_topology_framedata(&self) -> nanover_proto::trajectory::FrameData {
+        match self {
+            Self::OpenMM(simulation) => simulation.to_topology_framedata(),
+        }
+    }
 }
 
 pub struct Manifest {
@@ -51,7 +89,10 @@ impl Manifest {
     where
         T: ToString,
     {
-        let entries = files.iter().map(|path| path.to_string()).collect();
+        let entries = files
+            .iter()
+            .map(|path| SimulationEntry::OpenMM(path.to_string()))
+            .collect();
         let content = ManifestContent::MultiplePath(entries);
         let current_index = None;
         Self {
@@ -67,14 +108,14 @@ impl Manifest {
         }
     }
 
-    pub fn load_default(&mut self) -> Result<OpenMMSimulation, LoadDefaultError> {
+    pub fn load_default(&mut self) -> Result<LoadedSimulation, LoadDefaultError> {
         let default_index = self
             .get_default_index()
             .ok_or(LoadDefaultError::NoDefault)?;
         Ok(self.load_index(default_index)?)
     }
 
-    pub fn load_index(&mut self, index: usize) -> Result<OpenMMSimulation, LoadSimulationError> {
+    pub fn load_index(&mut self, index: usize) -> Result<LoadedSimulation, LoadSimulationError> {
         match &self.content {
             ManifestContent::SingleBuffer(_) if index != 0 => {
                 Err(LoadSimulationError::NoIndex(index))
@@ -83,31 +124,39 @@ impl Manifest {
                 let buffer = BufReader::new(bytes.as_slice());
                 let simulation = OpenMMSimulation::from_xml(buffer)?;
                 self.current_index = Some(index);
-                Ok(simulation)
+                Ok(LoadedSimulation::OpenMM(simulation))
             }
             ManifestContent::MultiplePath(_) => {
-                let path = self
-                    .get_path_for_index(index)
-                    .ok_or(LoadSimulationError::NoIndex(index))?
-                    .clone();
                 self.current_index = Some(index);
-                let xml_file = File::open(path)?;
-                let buffer = BufReader::new(xml_file);
-                let simulation = OpenMMSimulation::from_xml(buffer)?;
-                Ok(simulation)
+                let entry = self
+                    .get_path_for_index(index)
+                    .ok_or(LoadSimulationError::NoIndex(index))?;
+                match entry {
+                    SimulationEntry::OpenMM(path) => {
+                        let xml_file = File::open(path)?;
+                        let buffer = BufReader::new(xml_file);
+                        let simulation = OpenMMSimulation::from_xml(buffer)?;
+                        Ok(LoadedSimulation::OpenMM(simulation))
+                    }
+                }
             }
         }
     }
 
-    pub fn load_next(&mut self) -> Result<OpenMMSimulation, LoadNextError> {
+    pub fn load_next(&mut self) -> Result<LoadedSimulation, LoadNextError> {
         let next_index = self.get_next_index().ok_or(LoadNextError::NoNext)?;
         Ok(self.load_index(next_index)?)
     }
 
-    pub fn list_simulations(&self) -> Vec<SimulationEntry> {
+    pub fn list_simulations(&self) -> Vec<String> {
         match &self.content {
             ManifestContent::SingleBuffer(_) => vec!["default".into()],
-            ManifestContent::MultiplePath(content) => content.clone(),
+            ManifestContent::MultiplePath(content) => content
+                .iter()
+                .map(|entry| match entry {
+                    SimulationEntry::OpenMM(path) => path.clone(),
+                })
+                .collect(),
         }
     }
 

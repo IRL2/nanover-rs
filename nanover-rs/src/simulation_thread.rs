@@ -9,7 +9,7 @@ use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 
 use crate::broadcaster::BroadcastSendError;
 use crate::frame_broadcaster::FrameBroadcaster;
-use crate::manifest::{LoadDefaultError, LoadSimulationError, Manifest};
+use crate::manifest::{LoadDefaultError, LoadSimulationError, LoadedSimulation, Manifest};
 use crate::playback::{PlaybackOrder, PlaybackState};
 use crate::simulation::{
     CoordMap, OpenMMSimulation, Simulation, ToFrameData, XMLParsingError, IMD,
@@ -19,7 +19,7 @@ use crate::state_interaction::read_forces;
 
 /// A simulation with all the book keeping required for the thread.
 struct TrackedSimulation {
-    simulation: OpenMMSimulation,
+    simulation: LoadedSimulation,
     simulation_frame: usize,
     reset_counter: usize,
     simulation_counter: usize,
@@ -28,7 +28,7 @@ struct TrackedSimulation {
 }
 
 impl TrackedSimulation {
-    fn new(simulation: OpenMMSimulation, simulation_counter: usize) -> Self {
+    fn new(simulation: LoadedSimulation, simulation_counter: usize) -> Self {
         let user_forces = BTreeMap::new();
         let user_energies = 0.0;
         let reset_counter = 0;
@@ -61,11 +61,11 @@ impl TrackedSimulation {
         self.simulation_counter
     }
 
-    fn simulation(&self) -> &OpenMMSimulation {
+    fn simulation(&self) -> &LoadedSimulation {
         &self.simulation
     }
 
-    fn simulation_mut(&mut self) -> &mut OpenMMSimulation {
+    fn simulation_mut(&mut self) -> &mut LoadedSimulation {
         &mut self.simulation
     }
 
@@ -230,7 +230,8 @@ pub fn run_simulation_thread(
             if send_reset_frame(simulation, Arc::clone(&sim_clone)).is_err() {
                 return;
             }
-            info!("Platform: {}", simulation.simulation.get_platform_name());
+            let LoadedSimulation::OpenMM(openmm_simulation) = &simulation.simulation;
+            info!("Platform: {}", openmm_simulation.get_platform_name());
             info!("Start simulating");
         } else {
             info!("No simulation loaded yes.");
@@ -327,16 +328,15 @@ pub fn run_simulation_thread(
                     simulation.step(delta_frames);
 
                     if do_forces {
-                        let (force_map, user_energies) = apply_forces(
-                            &state_clone,
-                            simulation.simulation_mut(),
-                            simulation_tx.clone(),
-                        );
+                        let LoadedSimulation::OpenMM(mut_simulation) = simulation.simulation_mut();
+                        let (force_map, user_energies) =
+                            apply_forces(&state_clone, mut_simulation, simulation_tx.clone());
                         simulation.update_user_forces(force_map);
                         simulation.update_user_energies(user_energies);
                     }
 
-                    let system_energy = simulation.simulation.get_total_energy();
+                    let LoadedSimulation::OpenMM(ref mut loaded_simulation) = simulation.simulation;
+                    let system_energy = loaded_simulation.get_total_energy();
 
                     if do_frames
                         && send_regular_frame(
