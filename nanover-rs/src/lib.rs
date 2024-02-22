@@ -12,6 +12,7 @@ pub mod multiuser;
 pub mod observer_thread;
 pub mod parsers;
 pub mod playback;
+pub mod recording;
 pub mod services;
 pub mod simulation;
 pub mod simulation_thread;

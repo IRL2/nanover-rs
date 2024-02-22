@@ -2,7 +2,10 @@ use std::fs::File;
 use std::io::BufReader;
 use thiserror::Error;
 
-use crate::simulation::{OpenMMSimulation, Simulation, ToFrameData, XMLParsingError};
+use crate::{
+    recording::ReplaySimulation,
+    simulation::{self, OpenMMSimulation, Simulation, ToFrameData, XMLParsingError},
+};
 
 #[derive(Error, Debug)]
 #[error("Something went wrong while reading the manifest.")]
@@ -45,18 +48,21 @@ enum ManifestContent {
 
 pub enum LoadedSimulation {
     OpenMM(OpenMMSimulation),
+    Recording(ReplaySimulation),
 }
 
 impl Simulation for LoadedSimulation {
     fn step(&mut self, steps: i32) {
         match self {
             Self::OpenMM(simulation) => simulation.step(steps),
+            Self::Recording(simulation) => simulation.step(steps),
         }
     }
 
     fn reset(&mut self) {
         match self {
             Self::OpenMM(simulation) => simulation.reset(),
+            Self::Recording(simulation) => simulation.reset(),
         }
     }
 }
@@ -69,12 +75,14 @@ impl ToFrameData for LoadedSimulation {
     ) -> nanover_proto::trajectory::FrameData {
         match self {
             Self::OpenMM(simulation) => simulation.to_framedata(with_velocity, with_forces),
+            Self::Recording(simulation) => simulation.to_framedata(with_velocity, with_forces),
         }
     }
 
     fn to_topology_framedata(&self) -> nanover_proto::trajectory::FrameData {
         match self {
             Self::OpenMM(simulation) => simulation.to_topology_framedata(),
+            Self::Recording(simulation) => simulation.to_topology_framedata(),
         }
     }
 }

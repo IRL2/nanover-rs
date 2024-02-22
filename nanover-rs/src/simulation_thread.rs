@@ -230,8 +230,9 @@ pub fn run_simulation_thread(
             if send_reset_frame(simulation, Arc::clone(&sim_clone)).is_err() {
                 return;
             }
-            let LoadedSimulation::OpenMM(openmm_simulation) = &simulation.simulation;
-            info!("Platform: {}", openmm_simulation.get_platform_name());
+            if let LoadedSimulation::OpenMM(openmm_simulation) = &simulation.simulation {
+                info!("Platform: {}", openmm_simulation.get_platform_name());
+            }
             info!("Start simulating");
         } else {
             info!("No simulation loaded yes.");
@@ -319,52 +320,66 @@ pub fn run_simulation_thread(
             }
 
             if let Some(ref mut simulation) = maybe_simulation {
-                if playback_state.is_playing() {
-                    let (delta_frames, do_frames, do_forces) = next_stop(
-                        simulation.simulation_frame(),
-                        frame_interval,
-                        force_interval,
-                    );
-                    simulation.step(delta_frames);
+                match simulation.simulation {
+                    LoadedSimulation::Recording(_) => {}
+                    LoadedSimulation::OpenMM(_) => {
+                        if playback_state.is_playing() {
+                            let (delta_frames, do_frames, do_forces) = next_stop(
+                                simulation.simulation_frame(),
+                                frame_interval,
+                                force_interval,
+                            );
+                            simulation.step(delta_frames);
 
-                    if do_forces {
-                        let LoadedSimulation::OpenMM(mut_simulation) = simulation.simulation_mut();
-                        let (force_map, user_energies) =
-                            apply_forces(&state_clone, mut_simulation, simulation_tx.clone());
-                        simulation.update_user_forces(force_map);
-                        simulation.update_user_energies(user_energies);
-                    }
+                            if do_forces {
+                                if let LoadedSimulation::OpenMM(mut_simulation) =
+                                    simulation.simulation_mut()
+                                {
+                                    let (force_map, user_energies) = apply_forces(
+                                        &state_clone,
+                                        mut_simulation,
+                                        simulation_tx.clone(),
+                                    );
+                                    simulation.update_user_forces(force_map);
+                                    simulation.update_user_energies(user_energies);
+                                }
+                            }
 
-                    let LoadedSimulation::OpenMM(ref mut loaded_simulation) = simulation.simulation;
-                    let system_energy = loaded_simulation.get_total_energy();
+                            if let LoadedSimulation::OpenMM(ref mut loaded_simulation) =
+                                simulation.simulation
+                            {
+                                let system_energy = loaded_simulation.get_total_energy();
 
-                    if do_frames
-                        && send_regular_frame(
-                            simulation,
-                            Arc::clone(&sim_clone),
-                            with_velocities,
-                            with_forces,
-                        )
-                        .is_err()
-                    {
-                        return;
-                    };
+                                if do_frames
+                                    && send_regular_frame(
+                                        simulation,
+                                        Arc::clone(&sim_clone),
+                                        with_velocities,
+                                        with_forces,
+                                    )
+                                    .is_err()
+                                {
+                                    return;
+                                };
 
-                    let elapsed = now.elapsed();
-                    let time_left = match interval.checked_sub(elapsed) {
-                        Some(d) => d,
-                        None => Duration::from_millis(0),
-                    };
-                    if verbose {
-                        info!(
+                                let elapsed = now.elapsed();
+                                let time_left = match interval.checked_sub(elapsed) {
+                                    Some(d) => d,
+                                    None => Duration::from_millis(0),
+                                };
+                                if verbose {
+                                    info!(
                             "Simulation frame {}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol.",
                             simulation.simulation_frame(),
                         );
-                    };
-                    if auto_reset && !system_energy.is_finite() {
-                        simulation.reset();
+                                };
+                                if auto_reset && !system_energy.is_finite() {
+                                    simulation.reset();
+                                }
+                                thread::sleep(time_left);
+                            }
+                        }
                     }
-                    thread::sleep(time_left);
                 }
             }
         }
