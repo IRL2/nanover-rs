@@ -188,6 +188,104 @@ fn next_simulation_counter(maybe_simulation: Option<&TrackedSimulation>) -> usiz
         .unwrap_or_default()
 }
 
+fn playback_loop(
+    playback_rx: &mut Receiver<PlaybackOrder>,
+    playback_state: &mut PlaybackState,
+    simulations_manifest: &mut Manifest,
+    mut maybe_simulation: Option<TrackedSimulation>,
+    sim_clone: &Arc<Mutex<FrameBroadcaster>>,
+    frame_interval: usize,
+    with_velocities: bool,
+    with_forces: bool,
+) -> (Option<TrackedSimulation>, bool) {
+    let mut keep_going = true;
+    loop {
+        let order_result = playback_rx.try_recv();
+        match order_result {
+            Ok(PlaybackOrder::Reset) => {
+                if let Some(ref mut simulation) = maybe_simulation {
+                    simulation.reset()
+                } else {
+                    warn!("No simulation loaded, ignoring RESET command.");
+                };
+            }
+            Ok(PlaybackOrder::Step) => {
+                if let Some(ref mut simulation) = maybe_simulation {
+                    let delta_frames =
+                        next_frame_stop(simulation.simulation_frame(), frame_interval);
+                    simulation.step(delta_frames);
+                    if send_regular_frame(
+                        simulation,
+                        Arc::clone(sim_clone),
+                        with_velocities,
+                        with_forces,
+                    )
+                    .is_err()
+                    {
+                        keep_going = false;
+                        break;
+                    }
+                    playback_state.update(PlaybackOrder::Step);
+                } else {
+                    warn!("No simulation loaded, ignoring STEP command.");
+                }
+            }
+            Ok(PlaybackOrder::Load(simulation_index)) => {
+                maybe_simulation = match simulations_manifest.load_index(simulation_index) {
+                    Ok(new_simulation) => {
+                        let simulation = TrackedSimulation::new(
+                            new_simulation,
+                            next_simulation_counter(maybe_simulation.as_ref()),
+                        );
+                        if send_reset_frame(&simulation, Arc::clone(sim_clone)).is_err() {
+                            keep_going = false;
+                            break;
+                        }
+
+                        Some(simulation)
+                    }
+                    Err(error) => {
+                        error!("Could not load simulation with index {simulation_index}: {error}");
+                        warn!("No new simulation loaded, keep using the previously loaded one if any.");
+                        maybe_simulation
+                    }
+                }
+            }
+            Ok(PlaybackOrder::Next) => {
+                maybe_simulation = match simulations_manifest.load_next() {
+                    Ok(new_simulation) => {
+                        let simulation = TrackedSimulation::new(
+                            new_simulation,
+                            next_simulation_counter(maybe_simulation.as_ref()),
+                        );
+                        if send_reset_frame(&simulation, Arc::clone(sim_clone)).is_err() {
+                            keep_going = false;
+                            break;
+                        }
+
+                        Some(simulation)
+                    }
+                    Err(error) => {
+                        error!("Could not load the next simulation: {error}");
+                        warn!("No new simulation loaded, keep using the previously loaded one if any.");
+                        maybe_simulation
+                    }
+                }
+            }
+            Ok(order) => playback_state.update(order),
+            // The queue of order is empty so we are done handling them.
+            Err(TryRecvError::Empty) => break,
+            // The server thread is done so we sould end the simulation.
+            Err(TryRecvError::Disconnected) => {
+                keep_going = false;
+                break;
+            }
+        }
+    }
+
+    (maybe_simulation, keep_going)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run_simulation_thread(
     mut simulations_manifest: Manifest,
@@ -241,82 +339,19 @@ pub fn run_simulation_thread(
 
         loop {
             let now = time::Instant::now();
-            loop {
-                let order_result = playback_rx.try_recv();
-                match order_result {
-                    Ok(PlaybackOrder::Reset) => {
-                        if let Some(ref mut simulation) = maybe_simulation {
-                            simulation.reset()
-                        } else {
-                            warn!("No simulation loaded, ignoring RESET command.");
-                        };
-                    }
-                    Ok(PlaybackOrder::Step) => {
-                        if let Some(ref mut simulation) = maybe_simulation {
-                            let delta_frames =
-                                next_frame_stop(simulation.simulation_frame(), frame_interval);
-                            simulation.step(delta_frames);
-                            if send_regular_frame(
-                                simulation,
-                                Arc::clone(&sim_clone),
-                                with_velocities,
-                                with_forces,
-                            )
-                            .is_err()
-                            {
-                                return;
-                            }
-                            playback_state.update(PlaybackOrder::Step);
-                        } else {
-                            warn!("No simulation loaded, ignoring STEP command.");
-                        }
-                    }
-                    Ok(PlaybackOrder::Load(simulation_index)) => {
-                        maybe_simulation = match simulations_manifest.load_index(simulation_index) {
-                            Ok(new_simulation) => {
-                                let simulation = TrackedSimulation::new(
-                                    new_simulation,
-                                    next_simulation_counter(maybe_simulation.as_ref()),
-                                );
-                                if send_reset_frame(&simulation, Arc::clone(&sim_clone)).is_err() {
-                                    return;
-                                }
-
-                                Some(simulation)
-                            }
-                            Err(error) => {
-                                error!("Could not load simulation with index {simulation_index}: {error}");
-                                warn!("No new simulation loaded, keep using the previously loaded one if any.");
-                                maybe_simulation
-                            }
-                        }
-                    }
-                    Ok(PlaybackOrder::Next) => {
-                        maybe_simulation = match simulations_manifest.load_next() {
-                            Ok(new_simulation) => {
-                                let simulation = TrackedSimulation::new(
-                                    new_simulation,
-                                    next_simulation_counter(maybe_simulation.as_ref()),
-                                );
-                                if send_reset_frame(&simulation, Arc::clone(&sim_clone)).is_err() {
-                                    return;
-                                }
-
-                                Some(simulation)
-                            }
-                            Err(error) => {
-                                error!("Could not load the next simulation: {error}");
-                                warn!("No new simulation loaded, keep using the previously loaded one if any.");
-                                maybe_simulation
-                            }
-                        }
-                    }
-                    Ok(order) => playback_state.update(order),
-                    // The queue of order is empty so we are done handling them.
-                    Err(TryRecvError::Empty) => break,
-                    // The server thread is done so we sould end the simulation.
-                    Err(TryRecvError::Disconnected) => return,
-                }
+            let keep_going;
+            (maybe_simulation, keep_going) = playback_loop(
+                &mut playback_rx,
+                &mut playback_state,
+                &mut simulations_manifest,
+                maybe_simulation,
+                &sim_clone,
+                frame_interval,
+                with_velocities,
+                with_forces,
+            );
+            if !keep_going {
+                return;
             }
 
             if let Some(ref mut simulation) = maybe_simulation {
