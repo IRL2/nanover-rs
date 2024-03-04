@@ -3,7 +3,7 @@ use crate::simulation::{Simulation, ToFrameData};
 pub struct ReplaySimulation {}
 
 impl Simulation for ReplaySimulation {
-    fn step(&mut self, steps: i32) {
+    fn step(&mut self, _steps: i32) {
         unimplemented!();
     }
 
@@ -15,8 +15,8 @@ impl Simulation for ReplaySimulation {
 impl ToFrameData for ReplaySimulation {
     fn to_framedata(
         &self,
-        with_velocity: bool,
-        with_forces: bool,
+        _with_velocity: bool,
+        _with_forces: bool,
     ) -> nanover_proto::trajectory::FrameData {
         unimplemented!();
     }

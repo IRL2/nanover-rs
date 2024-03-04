@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::{
     recording::ReplaySimulation,
-    simulation::{self, OpenMMSimulation, Simulation, ToFrameData, XMLParsingError},
+    simulation::{OpenMMSimulation, Simulation, ToFrameData, XMLParsingError},
 };
 
 #[derive(Error, Debug)]

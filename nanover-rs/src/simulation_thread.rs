@@ -3,7 +3,7 @@ use nanover_proto::trajectory::FrameData;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 
@@ -11,6 +11,7 @@ use crate::broadcaster::BroadcastSendError;
 use crate::frame_broadcaster::FrameBroadcaster;
 use crate::manifest::{LoadDefaultError, LoadSimulationError, LoadedSimulation, Manifest};
 use crate::playback::{PlaybackOrder, PlaybackState};
+use crate::recording::ReplaySimulation;
 use crate::simulation::{
     CoordMap, OpenMMSimulation, Simulation, ToFrameData, XMLParsingError, IMD,
 };
@@ -18,8 +19,8 @@ use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
 
 /// A simulation with all the book keeping required for the thread.
-struct TrackedSimulation {
-    simulation: LoadedSimulation,
+struct TrackedSimulation<SimulationType> {
+    simulation: SimulationType,
     simulation_frame: usize,
     reset_counter: usize,
     simulation_counter: usize,
@@ -27,8 +28,102 @@ struct TrackedSimulation {
     user_energies: f64,
 }
 
-impl TrackedSimulation {
+enum SpecificSimulationTracked {
+    OpenMM(TrackedSimulation<OpenMMSimulation>),
+    Recording(TrackedSimulation<ReplaySimulation>),
+}
+
+impl SpecificSimulationTracked {
     fn new(simulation: LoadedSimulation, simulation_counter: usize) -> Self {
+        match simulation {
+            LoadedSimulation::OpenMM(sim) => {
+                let tracked = TrackedSimulation::new(sim, simulation_counter);
+                Self::OpenMM(tracked)
+            }
+            LoadedSimulation::Recording(sim) => {
+                let tracked = TrackedSimulation::new(sim, simulation_counter);
+                Self::Recording(tracked)
+            }
+        }
+    }
+
+    fn step(&mut self, steps: usize) {
+        match self {
+            Self::OpenMM(simulation) => simulation.step(steps),
+            Self::Recording(simulation) => simulation.step(steps),
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::OpenMM(simulation) => simulation.reset(),
+            Self::Recording(simulation) => simulation.reset(),
+        }
+    }
+
+    fn simulation_frame(&self) -> usize {
+        match self {
+            Self::OpenMM(simulation) => simulation.simulation_frame(),
+            Self::Recording(simulation) => simulation.simulation_frame(),
+        }
+    }
+
+    fn reset_counter(&self) -> usize {
+        match self {
+            Self::OpenMM(simulation) => simulation.reset_counter(),
+            Self::Recording(simulation) => simulation.reset_counter(),
+        }
+    }
+
+    fn simulation_counter(&self) -> usize {
+        match self {
+            Self::OpenMM(simulation) => simulation.simulation_counter(),
+            Self::Recording(simulation) => simulation.simulation_counter(),
+        }
+    }
+
+    fn send_regular_frame(
+        &self,
+        sim_clone: Arc<Mutex<FrameBroadcaster>>,
+        with_velocities: bool,
+        with_forces: bool,
+    ) -> Result<(), BroadcastSendError> {
+        match self {
+            Self::OpenMM(simulation) => {
+                simulation.send_regular_frame(sim_clone, with_velocities, with_forces)
+            }
+            Self::Recording(simulation) => {
+                simulation.send_regular_frame(sim_clone, with_velocities, with_forces)
+            }
+        }
+    }
+}
+
+impl ToFrameData for SpecificSimulationTracked {
+    fn to_framedata(&self, with_velocity: bool, with_forces: bool) -> FrameData {
+        match self {
+            Self::OpenMM(simulation) => simulation
+                .simulation
+                .to_framedata(with_velocity, with_forces),
+            Self::Recording(simulation) => simulation
+                .simulation
+                .to_framedata(with_velocity, with_forces),
+        }
+    }
+
+    fn to_topology_framedata(&self) -> FrameData {
+        match self {
+            Self::OpenMM(simulation) => simulation.simulation.to_topology_framedata(),
+            Self::Recording(simulation) => simulation.simulation.to_topology_framedata(),
+        }
+    }
+}
+
+impl<SimulationType> TrackedSimulation<SimulationType>
+where
+    SimulationType: Simulation,
+{
+    fn new(simulation: SimulationType, simulation_counter: usize) -> Self {
         let user_forces = BTreeMap::new();
         let user_energies = 0.0;
         let reset_counter = 0;
@@ -61,11 +156,7 @@ impl TrackedSimulation {
         self.simulation_counter
     }
 
-    fn simulation(&self) -> &LoadedSimulation {
-        &self.simulation
-    }
-
-    fn simulation_mut(&mut self) -> &mut LoadedSimulation {
+    fn simulation_mut(&mut self) -> &mut SimulationType {
         &mut self.simulation
     }
 
@@ -88,89 +179,45 @@ impl TrackedSimulation {
     fn simulation_frame(&self) -> usize {
         self.simulation_frame
     }
-
-    fn tracked_openmmm(&mut self) -> Option<TrackedOpenMMSimulation> {
-        TrackedOpenMMSimulation::try_new(self)
-    }
 }
 
-struct TrackedOpenMMSimulation<'a> {
-    simulation: &'a mut OpenMMSimulation,
-    tracked: &'a mut TrackedSimulation,
-}
-
-impl<'a> TrackedOpenMMSimulation<'a> {
-    fn try_new(tracked_simulation: &'a mut TrackedSimulation) -> Option<Self> {
-        let mut simulation = match &mut tracked_simulation.simulation {
-            LoadedSimulation::OpenMM(sim) => Some(sim),
-            _ => None,
-        }?;
-        Some(Self {
-            simulation: &mut simulation,
-            tracked: tracked_simulation,
-        })
+impl TrackedSimulation<OpenMMSimulation> {
+    fn get_platform_name(&self) -> String {
+        self.simulation.get_platform_name()
     }
 
-    fn step_iteration(
-        &mut self,
-        now: &Instant,
-        interval: &Duration,
-        state_clone: &Arc<Mutex<StateBroadcaster>>,
-        sim_clone: &Arc<Mutex<FrameBroadcaster>>,
-        simulation_tx: &std::sync::mpsc::Sender<usize>,
-        is_playing: bool,
-        frame_interval: usize,
-        force_interval: usize,
+    fn get_total_energy(&self) -> f64 {
+        self.simulation.get_total_energy()
+    }
+
+    fn send_regular_frame(
+        &self,
+        sim_clone: Arc<Mutex<FrameBroadcaster>>,
         with_velocities: bool,
         with_forces: bool,
-        auto_reset: bool,
-        verbose: bool,
-    ) {
-        if is_playing {
-            let (delta_frames, do_frames, do_forces) = next_stop(
-                self.tracked.simulation_frame(),
-                frame_interval,
-                force_interval,
-            );
-            self.tracked.step(delta_frames);
+    ) -> Result<(), BroadcastSendError> {
+        let mut frame = self.simulation.to_framedata(with_velocities, with_forces);
+        let energy_total = self.user_energies();
+        frame
+            .insert_number_value("energy.user.total", energy_total)
+            .unwrap();
+        frame
+            .insert_number_value("system.reset.counter", self.reset_counter() as f64)
+            .unwrap();
+        add_force_map_to_frame(self.user_forces(), &mut frame);
+        let mut source = sim_clone.lock().unwrap();
+        source.send_frame(frame)
+    }
+}
 
-            if do_forces {
-                let (force_map, user_energies) =
-                    apply_forces(&state_clone, self.simulation, simulation_tx.clone());
-                self.tracked.update_user_forces(force_map);
-                self.tracked.update_user_energies(user_energies);
-            }
-
-            let system_energy = self.simulation.get_total_energy();
-
-            if do_frames
-                && send_regular_frame(
-                    self.tracked,
-                    Arc::clone(&sim_clone),
-                    with_velocities,
-                    with_forces,
-                )
-                .is_err()
-            {
-                return;
-            };
-
-            let elapsed = now.elapsed();
-            let time_left = match interval.checked_sub(elapsed) {
-                Some(d) => d,
-                None => Duration::from_millis(0),
-            };
-            if verbose {
-                info!(
-        "Simulation frame {}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol.",
-        self.tracked.simulation_frame(),
-    );
-            };
-            if auto_reset && !system_energy.is_finite() {
-                self.tracked.reset();
-            }
-            thread::sleep(time_left);
-        }
+impl TrackedSimulation<ReplaySimulation> {
+    fn send_regular_frame(
+        &self,
+        _sim_clone: Arc<Mutex<FrameBroadcaster>>,
+        _with_velocities: bool,
+        _with_forces: bool,
+    ) -> Result<(), BroadcastSendError> {
+        unimplemented!()
     }
 }
 
@@ -192,8 +239,8 @@ fn next_frame_stop(current_frame: usize, frame_interval: usize) -> usize {
     frame_interval - current_frame % frame_interval
 }
 
-fn starting_frame(simulation: &TrackedSimulation) -> FrameData {
-    let mut frame = simulation.simulation().to_topology_framedata();
+fn starting_frame(simulation: &SpecificSimulationTracked) -> FrameData {
+    let mut frame = simulation.to_topology_framedata();
     frame
         .insert_number_value(
             "system.simulation.counter",
@@ -237,36 +284,15 @@ fn add_force_map_to_frame(force_map: &CoordMap, frame: &mut FrameData) {
         .unwrap();
 }
 
-fn send_regular_frame(
-    simulation: &TrackedSimulation,
-    sim_clone: Arc<Mutex<FrameBroadcaster>>,
-    with_velocities: bool,
-    with_forces: bool,
-) -> Result<(), BroadcastSendError> {
-    let mut frame = simulation
-        .simulation
-        .to_framedata(with_velocities, with_forces);
-    let energy_total = simulation.user_energies();
-    frame
-        .insert_number_value("energy.user.total", energy_total)
-        .unwrap();
-    frame
-        .insert_number_value("system.reset.counter", simulation.reset_counter() as f64)
-        .unwrap();
-    add_force_map_to_frame(simulation.user_forces(), &mut frame);
-    let mut source = sim_clone.lock().unwrap();
-    source.send_frame(frame)
-}
-
 fn send_reset_frame(
-    simulation: &TrackedSimulation,
+    simulation: &SpecificSimulationTracked,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
 ) -> Result<(), BroadcastSendError> {
     let frame = starting_frame(simulation);
     sim_clone.lock().unwrap().send_reset_frame(frame)
 }
 
-fn next_simulation_counter(maybe_simulation: Option<&TrackedSimulation>) -> usize {
+fn next_simulation_counter(maybe_simulation: Option<&SpecificSimulationTracked>) -> usize {
     maybe_simulation
         .map(|simulation| simulation.simulation_counter() + 1)
         .unwrap_or_default()
@@ -276,12 +302,12 @@ fn playback_loop(
     playback_rx: &mut Receiver<PlaybackOrder>,
     playback_state: &mut PlaybackState,
     simulations_manifest: &mut Manifest,
-    mut maybe_simulation: Option<TrackedSimulation>,
+    mut maybe_simulation: Option<SpecificSimulationTracked>,
     sim_clone: &Arc<Mutex<FrameBroadcaster>>,
     frame_interval: usize,
     with_velocities: bool,
     with_forces: bool,
-) -> (Option<TrackedSimulation>, bool) {
+) -> (Option<SpecificSimulationTracked>, bool) {
     let mut keep_going = true;
     loop {
         let order_result = playback_rx.try_recv();
@@ -298,13 +324,9 @@ fn playback_loop(
                     let delta_frames =
                         next_frame_stop(simulation.simulation_frame(), frame_interval);
                     simulation.step(delta_frames);
-                    if send_regular_frame(
-                        simulation,
-                        Arc::clone(sim_clone),
-                        with_velocities,
-                        with_forces,
-                    )
-                    .is_err()
+                    if simulation
+                        .send_regular_frame(Arc::clone(sim_clone), with_velocities, with_forces)
+                        .is_err()
                     {
                         keep_going = false;
                         break;
@@ -317,7 +339,7 @@ fn playback_loop(
             Ok(PlaybackOrder::Load(simulation_index)) => {
                 maybe_simulation = match simulations_manifest.load_index(simulation_index) {
                     Ok(new_simulation) => {
-                        let simulation = TrackedSimulation::new(
+                        let simulation = SpecificSimulationTracked::new(
                             new_simulation,
                             next_simulation_counter(maybe_simulation.as_ref()),
                         );
@@ -338,7 +360,7 @@ fn playback_loop(
             Ok(PlaybackOrder::Next) => {
                 maybe_simulation = match simulations_manifest.load_next() {
                     Ok(new_simulation) => {
-                        let simulation = TrackedSimulation::new(
+                        let simulation = SpecificSimulationTracked::new(
                             new_simulation,
                             next_simulation_counter(maybe_simulation.as_ref()),
                         );
@@ -386,24 +408,24 @@ pub fn run_simulation_thread(
     with_velocities: bool,
     with_forces: bool,
 ) -> Result<(), XMLParsingError> {
-    let mut maybe_simulation: Option<TrackedSimulation> = match simulations_manifest.load_default()
-    {
-        Ok(simulation) => Some(TrackedSimulation::new(simulation, 0)),
-        Err(LoadDefaultError::NoDefault) => None,
-        Err(LoadDefaultError::LoadSimulationError(load_simulation_error)) => {
-            match load_simulation_error {
-                LoadSimulationError::CannotOpen(err) => {
-                    error!("Cannot read simulation file: {err}");
-                    None
+    let mut maybe_simulation: Option<SpecificSimulationTracked> =
+        match simulations_manifest.load_default() {
+            Ok(simulation) => Some(SpecificSimulationTracked::new(simulation, 0)),
+            Err(LoadDefaultError::NoDefault) => None,
+            Err(LoadDefaultError::LoadSimulationError(load_simulation_error)) => {
+                match load_simulation_error {
+                    LoadSimulationError::CannotOpen(err) => {
+                        error!("Cannot read simulation file: {err}");
+                        None
+                    }
+                    LoadSimulationError::NoIndex(index) => {
+                        error!("No simulation with index {index}.");
+                        None
+                    }
+                    LoadSimulationError::XMLParsingError(error) => return Err(error),
                 }
-                LoadSimulationError::NoIndex(index) => {
-                    error!("No simulation with index {index}.");
-                    None
-                }
-                LoadSimulationError::XMLParsingError(error) => return Err(error),
             }
-        }
-    };
+        };
 
     tokio::task::spawn_blocking(move || {
         let mut playback_state = PlaybackState::new(run_on_start);
@@ -412,7 +434,7 @@ pub fn run_simulation_thread(
             if send_reset_frame(simulation, Arc::clone(&sim_clone)).is_err() {
                 return;
             }
-            if let LoadedSimulation::OpenMM(openmm_simulation) = &simulation.simulation {
+            if let SpecificSimulationTracked::OpenMM(openmm_simulation) = &simulation {
                 info!("Platform: {}", openmm_simulation.get_platform_name());
             }
             info!("Start simulating");
@@ -439,9 +461,9 @@ pub fn run_simulation_thread(
             }
 
             if let Some(ref mut simulation) = maybe_simulation {
-                match simulation.simulation {
-                    LoadedSimulation::Recording(_) => {}
-                    LoadedSimulation::OpenMM(_) => {
+                match simulation {
+                    SpecificSimulationTracked::Recording(_) => {}
+                    SpecificSimulationTracked::OpenMM(simulation) => {
                         if playback_state.is_playing() {
                             let (delta_frames, do_frames, do_forces) = next_stop(
                                 simulation.simulation_frame(),
@@ -451,52 +473,45 @@ pub fn run_simulation_thread(
                             simulation.step(delta_frames);
 
                             if do_forces {
-                                if let LoadedSimulation::OpenMM(mut_simulation) =
-                                    simulation.simulation_mut()
-                                {
-                                    let (force_map, user_energies) = apply_forces(
-                                        &state_clone,
-                                        mut_simulation,
-                                        simulation_tx.clone(),
-                                    );
-                                    simulation.update_user_forces(force_map);
-                                    simulation.update_user_energies(user_energies);
-                                }
+                                let mut_simulation = simulation.simulation_mut();
+                                let (force_map, user_energies) = apply_forces(
+                                    &state_clone,
+                                    mut_simulation,
+                                    simulation_tx.clone(),
+                                );
+                                simulation.update_user_forces(force_map);
+                                simulation.update_user_energies(user_energies);
                             }
 
-                            if let LoadedSimulation::OpenMM(ref mut loaded_simulation) =
-                                simulation.simulation
-                            {
-                                let system_energy = loaded_simulation.get_total_energy();
+                            let system_energy = simulation.get_total_energy();
 
-                                if do_frames
-                                    && send_regular_frame(
-                                        simulation,
+                            if do_frames
+                                && simulation
+                                    .send_regular_frame(
                                         Arc::clone(&sim_clone),
                                         with_velocities,
                                         with_forces,
                                     )
                                     .is_err()
-                                {
-                                    return;
-                                };
+                            {
+                                return;
+                            };
 
-                                let elapsed = now.elapsed();
-                                let time_left = match interval.checked_sub(elapsed) {
-                                    Some(d) => d,
-                                    None => Duration::from_millis(0),
-                                };
-                                if verbose {
-                                    info!(
+                            let elapsed = now.elapsed();
+                            let time_left = match interval.checked_sub(elapsed) {
+                                Some(d) => d,
+                                None => Duration::from_millis(0),
+                            };
+                            if verbose {
+                                info!(
                             "Simulation frame {}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol.",
                             simulation.simulation_frame(),
                         );
-                                };
-                                if auto_reset && !system_energy.is_finite() {
-                                    simulation.reset();
-                                }
-                                thread::sleep(time_left);
+                            };
+                            if auto_reset && !system_energy.is_finite() {
+                                simulation.reset();
                             }
+                            thread::sleep(time_left);
                         }
                     }
                 }
