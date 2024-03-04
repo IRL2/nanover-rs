@@ -3,7 +3,7 @@ use nanover_proto::trajectory::FrameData;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 
@@ -207,6 +207,59 @@ impl TrackedSimulation<OpenMMSimulation> {
         add_force_map_to_frame(self.user_forces(), &mut frame);
         let mut source = sim_clone.lock().unwrap();
         source.send_frame(frame)
+    }
+
+    fn simulation_loop_iteration(
+        &mut self,
+        sim_clone: &Arc<Mutex<FrameBroadcaster>>,
+        state_clone: &Arc<Mutex<StateBroadcaster>>,
+        simulation_tx: &std::sync::mpsc::Sender<usize>,
+        now: &Instant,
+        interval: &Duration,
+        frame_interval: usize,
+        force_interval: usize,
+        with_velocities: bool,
+        with_forces: bool,
+        verbose: bool,
+        auto_reset: bool,
+    ) {
+        let (delta_frames, do_frames, do_forces) =
+            next_stop(self.simulation_frame(), frame_interval, force_interval);
+        self.step(delta_frames);
+
+        if do_forces {
+            let mut_simulation = self.simulation_mut();
+            let (force_map, user_energies) =
+                apply_forces(state_clone, mut_simulation, simulation_tx.clone());
+            self.update_user_forces(force_map);
+            self.update_user_energies(user_energies);
+        }
+
+        let system_energy = self.get_total_energy();
+
+        if do_frames
+            && self
+                .send_regular_frame(Arc::clone(sim_clone), with_velocities, with_forces)
+                .is_err()
+        {
+            return;
+        };
+
+        let elapsed = now.elapsed();
+        let time_left = match interval.checked_sub(elapsed) {
+            Some(d) => d,
+            None => Duration::from_millis(0),
+        };
+        if verbose {
+            info!(
+                "Simulation frame {}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol.",
+                self.simulation_frame(),
+            );
+        };
+        if auto_reset && !system_energy.is_finite() {
+            self.reset();
+        }
+        thread::sleep(time_left);
     }
 }
 
@@ -465,53 +518,19 @@ pub fn run_simulation_thread(
                     SpecificSimulationTracked::Recording(_) => {}
                     SpecificSimulationTracked::OpenMM(simulation) => {
                         if playback_state.is_playing() {
-                            let (delta_frames, do_frames, do_forces) = next_stop(
-                                simulation.simulation_frame(),
+                            simulation.simulation_loop_iteration(
+                                &sim_clone,
+                                &state_clone,
+                                &simulation_tx,
+                                &now,
+                                &interval,
                                 frame_interval,
                                 force_interval,
-                            );
-                            simulation.step(delta_frames);
-
-                            if do_forces {
-                                let mut_simulation = simulation.simulation_mut();
-                                let (force_map, user_energies) = apply_forces(
-                                    &state_clone,
-                                    mut_simulation,
-                                    simulation_tx.clone(),
-                                );
-                                simulation.update_user_forces(force_map);
-                                simulation.update_user_energies(user_energies);
-                            }
-
-                            let system_energy = simulation.get_total_energy();
-
-                            if do_frames
-                                && simulation
-                                    .send_regular_frame(
-                                        Arc::clone(&sim_clone),
-                                        with_velocities,
-                                        with_forces,
-                                    )
-                                    .is_err()
-                            {
-                                return;
-                            };
-
-                            let elapsed = now.elapsed();
-                            let time_left = match interval.checked_sub(elapsed) {
-                                Some(d) => d,
-                                None => Duration::from_millis(0),
-                            };
-                            if verbose {
-                                info!(
-                            "Simulation frame {}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol.",
-                            simulation.simulation_frame(),
-                        );
-                            };
-                            if auto_reset && !system_energy.is_finite() {
-                                simulation.reset();
-                            }
-                            thread::sleep(time_left);
+                                with_velocities,
+                                with_forces,
+                                verbose,
+                                auto_reset,
+                            )
                         }
                     }
                 }
