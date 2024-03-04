@@ -445,6 +445,28 @@ fn playback_loop(
     (maybe_simulation, keep_going)
 }
 
+fn load_initial_simulation(
+    simulations_manifest: &mut Manifest,
+) -> Result<Option<SpecificSimulationTracked>, XMLParsingError> {
+    match simulations_manifest.load_default() {
+        Ok(simulation) => Ok(Some(SpecificSimulationTracked::new(simulation, 0))),
+        Err(LoadDefaultError::NoDefault) => Ok(None),
+        Err(LoadDefaultError::LoadSimulationError(load_simulation_error)) => {
+            match load_simulation_error {
+                LoadSimulationError::CannotOpen(err) => {
+                    error!("Cannot read simulation file: {err}");
+                    Ok(None)
+                }
+                LoadSimulationError::NoIndex(index) => {
+                    error!("No simulation with index {index}.");
+                    Ok(None)
+                }
+                LoadSimulationError::XMLParsingError(error) => Err(error),
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run_simulation_thread(
     mut simulations_manifest: Manifest,
@@ -461,24 +483,7 @@ pub fn run_simulation_thread(
     with_velocities: bool,
     with_forces: bool,
 ) -> Result<(), XMLParsingError> {
-    let mut maybe_simulation: Option<SpecificSimulationTracked> =
-        match simulations_manifest.load_default() {
-            Ok(simulation) => Some(SpecificSimulationTracked::new(simulation, 0)),
-            Err(LoadDefaultError::NoDefault) => None,
-            Err(LoadDefaultError::LoadSimulationError(load_simulation_error)) => {
-                match load_simulation_error {
-                    LoadSimulationError::CannotOpen(err) => {
-                        error!("Cannot read simulation file: {err}");
-                        None
-                    }
-                    LoadSimulationError::NoIndex(index) => {
-                        error!("No simulation with index {index}.");
-                        None
-                    }
-                    LoadSimulationError::XMLParsingError(error) => return Err(error),
-                }
-            }
-        };
+    let mut maybe_simulation = load_initial_simulation(&mut simulations_manifest)?;
 
     tokio::task::spawn_blocking(move || {
         let mut playback_state = PlaybackState::new(run_on_start);
