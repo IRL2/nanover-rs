@@ -3,7 +3,7 @@ use nanover_proto::trajectory::FrameData;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{thread, time};
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 
@@ -87,6 +87,90 @@ impl TrackedSimulation {
 
     fn simulation_frame(&self) -> usize {
         self.simulation_frame
+    }
+
+    fn tracked_openmmm(&mut self) -> Option<TrackedOpenMMSimulation> {
+        TrackedOpenMMSimulation::try_new(self)
+    }
+}
+
+struct TrackedOpenMMSimulation<'a> {
+    simulation: &'a mut OpenMMSimulation,
+    tracked: &'a mut TrackedSimulation,
+}
+
+impl<'a> TrackedOpenMMSimulation<'a> {
+    fn try_new(tracked_simulation: &'a mut TrackedSimulation) -> Option<Self> {
+        let mut simulation = match &mut tracked_simulation.simulation {
+            LoadedSimulation::OpenMM(sim) => Some(sim),
+            _ => None,
+        }?;
+        Some(Self {
+            simulation: &mut simulation,
+            tracked: tracked_simulation,
+        })
+    }
+
+    fn step_iteration(
+        &mut self,
+        now: &Instant,
+        interval: &Duration,
+        state_clone: &Arc<Mutex<StateBroadcaster>>,
+        sim_clone: &Arc<Mutex<FrameBroadcaster>>,
+        simulation_tx: &std::sync::mpsc::Sender<usize>,
+        is_playing: bool,
+        frame_interval: usize,
+        force_interval: usize,
+        with_velocities: bool,
+        with_forces: bool,
+        auto_reset: bool,
+        verbose: bool,
+    ) {
+        if is_playing {
+            let (delta_frames, do_frames, do_forces) = next_stop(
+                self.tracked.simulation_frame(),
+                frame_interval,
+                force_interval,
+            );
+            self.tracked.step(delta_frames);
+
+            if do_forces {
+                let (force_map, user_energies) =
+                    apply_forces(&state_clone, self.simulation, simulation_tx.clone());
+                self.tracked.update_user_forces(force_map);
+                self.tracked.update_user_energies(user_energies);
+            }
+
+            let system_energy = self.simulation.get_total_energy();
+
+            if do_frames
+                && send_regular_frame(
+                    self.tracked,
+                    Arc::clone(&sim_clone),
+                    with_velocities,
+                    with_forces,
+                )
+                .is_err()
+            {
+                return;
+            };
+
+            let elapsed = now.elapsed();
+            let time_left = match interval.checked_sub(elapsed) {
+                Some(d) => d,
+                None => Duration::from_millis(0),
+            };
+            if verbose {
+                info!(
+        "Simulation frame {}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol.",
+        self.tracked.simulation_frame(),
+    );
+            };
+            if auto_reset && !system_energy.is_finite() {
+                self.tracked.reset();
+            }
+            thread::sleep(time_left);
+        }
     }
 }
 
