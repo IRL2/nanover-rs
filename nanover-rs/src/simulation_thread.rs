@@ -18,6 +18,8 @@ use crate::simulation::{
 use crate::state_broadcaster::StateBroadcaster;
 use crate::state_interaction::read_forces;
 
+const DEFAULT_DELAY: f32 = 1.0 / 30.0;
+
 /// A simulation with all the book keeping required for the thread.
 struct TrackedSimulation<SimulationType> {
     simulation: SimulationType,
@@ -272,6 +274,14 @@ impl TrackedSimulation<ReplaySimulation> {
     ) -> Result<(), BroadcastSendError> {
         unimplemented!()
     }
+
+    fn delay_to_next_frame(&self) -> Option<u128> {
+        self.simulation.delay_to_next_frame()
+    }
+
+    fn read_next_frame(&mut self) {
+        self.simulation.next_frame();
+    }
 }
 
 fn next_stop(
@@ -520,7 +530,27 @@ pub fn run_simulation_thread(
 
             if let Some(ref mut simulation) = maybe_simulation {
                 match simulation {
-                    SpecificSimulationTracked::Recording(_) => {}
+                    SpecificSimulationTracked::Recording(simulation) => {
+                        if playback_state.is_playing() {
+                            simulation
+                                .send_regular_frame(sim_clone.clone(), with_velocities, with_forces)
+                                .expect("Cannot send replay frame");
+                            let delay_to_next_frame = simulation.delay_to_next_frame();
+                            simulation.read_next_frame();
+                            if let Some(delay) = delay_to_next_frame {
+                                let elapsed = now.elapsed();
+                                let time_left = match Duration::from_millis(delay as u64)
+                                    .checked_sub(elapsed)
+                                {
+                                    Some(d) => d,
+                                    None => Duration::from_millis(0),
+                                };
+                                thread::sleep(time_left);
+                            } else {
+                                thread::sleep(Duration::from_secs_f32(DEFAULT_DELAY));
+                            }
+                        }
+                    }
                     SpecificSimulationTracked::OpenMM(simulation) => {
                         if playback_state.is_playing() {
                             simulation.simulation_loop_iteration(

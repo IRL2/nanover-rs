@@ -43,7 +43,6 @@ where
 
 #[derive(Clone)]
 enum LastRead<T> {
-    NoneReadYet,
     NoMoreToRead(Option<RecordPair<T>>),
     Read(RecordPair<T>),
 }
@@ -81,12 +80,24 @@ where
             return Err(RecordingReadError::UnsuportedFormatVersion(format_version));
         }
         let first_record_position = buffered_source.stream_position()?;
+        let first_read = Self::first_read(&mut buffered_source);
         Ok(Self {
             source: buffered_source,
             first_record_position,
-            last_read: LastRead::NoneReadYet,
+            last_read: first_read,
             aggregate: T::default(),
             _phantom: PhantomData,
+        })
+    }
+
+    fn first_read(source: &mut BufReader<File>) -> LastRead<T> {
+        let next_record = read_one_frame(source).ok();
+        LastRead::Read(RecordPair {
+            current: TimedRecord {
+                record: T::default(),
+                timestamp: 0,
+            },
+            next: next_record,
         })
     }
 
@@ -95,25 +106,24 @@ where
             LastRead::Read(record) => record.current.record.clone(),
             LastRead::NoMoreToRead(Some(record)) => record.current.record.clone(),
             LastRead::NoMoreToRead(None) => T::default(),
-            LastRead::NoneReadYet => T::default(),
         }
+    }
+
+    fn delay_to_next_record(&self) -> Option<u128> {
+        unimplemented!()
     }
 
     fn reset(&mut self) {
         self.source
             .seek(io::SeekFrom::Start(self.first_record_position))
             .expect("Seeking failed.");
-        self.last_read = LastRead::NoneReadYet;
+        self.last_read = Self::first_read(&mut self.source);
         self.aggregate = T::default();
     }
 
     fn next_frame_pair(&mut self) -> std::io::Result<LastRead<T>> {
         let last_read: TimedRecord<T> = match &self.last_read {
             LastRead::NoMoreToRead(record) => return Ok(LastRead::NoMoreToRead(record.clone())),
-            LastRead::NoneReadYet => match read_one_frame(&mut self.source) {
-                Ok(record) => record,
-                Err(_) => return Ok(LastRead::NoMoreToRead(None)),
-            },
             LastRead::Read(pair) => match &pair.next {
                 Some(record) => record.clone(),
                 None => return Ok(LastRead::NoMoreToRead(Some(pair.clone()))),
@@ -148,7 +158,6 @@ where
             LastRead::NoMoreToRead(None) => {
                 return Ok(LastRead::NoMoreToRead(None));
             }
-            LastRead::NoneReadYet => 0,
             LastRead::Read(pair) => pair.current.timestamp(),
         };
         if time < start_time {
@@ -157,7 +166,6 @@ where
         loop {
             match &self.last_read {
                 LastRead::NoMoreToRead(_) => break,
-                LastRead::NoneReadYet => {}
                 LastRead::Read(ref record) => match record.next {
                     Some(ref next) => {
                         if next.timestamp() > time {
@@ -201,7 +209,6 @@ impl ReplaySimulation {
             return Ok(None);
         };
         match source.seek(time)? {
-            LastRead::NoneReadYet => Ok(None),
             LastRead::NoMoreToRead(None) => Ok(None),
             LastRead::NoMoreToRead(Some(pair)) => Ok(Some(pair.current)),
             LastRead::Read(pair) => Ok(Some(pair.current)),
@@ -213,7 +220,6 @@ impl ReplaySimulation {
             return Ok(None);
         };
         match source.seek(time)? {
-            LastRead::NoneReadYet => Ok(None),
             LastRead::NoMoreToRead(None) => Ok(None),
             LastRead::NoMoreToRead(Some(pair)) => Ok(Some(pair.current)),
             LastRead::Read(pair) => Ok(Some(pair.current)),
@@ -230,6 +236,16 @@ impl ReplaySimulation {
         let frame = self.seek_frame(time)?;
         let state = self.seek_state(time)?;
         Ok((frame, state))
+    }
+
+    pub fn delay_to_next_frame(&self) -> Option<u128> {
+        self.frame_source.as_ref()?.delay_to_next_record()
+    }
+
+    pub fn next_frame(&mut self) {
+        if let Some(ref mut source) = self.frame_source {
+            source.next_frame_pair().expect("Could not load next frame");
+        };
     }
 }
 
