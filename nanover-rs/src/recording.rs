@@ -110,7 +110,13 @@ where
     }
 
     fn delay_to_next_record(&self) -> Option<u128> {
-        unimplemented!()
+        match &self.last_read {
+            LastRead::Read(pair) => pair
+                .next
+                .as_ref()
+                .map(|record| record.timestamp() - pair.current.timestamp()),
+            LastRead::NoMoreToRead(_) => None,
+        }
     }
 
     fn reset(&mut self) {

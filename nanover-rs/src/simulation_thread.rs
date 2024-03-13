@@ -268,11 +268,12 @@ impl TrackedSimulation<OpenMMSimulation> {
 impl TrackedSimulation<ReplaySimulation> {
     fn send_regular_frame(
         &self,
-        _sim_clone: Arc<Mutex<FrameBroadcaster>>,
-        _with_velocities: bool,
-        _with_forces: bool,
+        sim_clone: Arc<Mutex<FrameBroadcaster>>,
+        with_velocities: bool,
+        with_forces: bool,
     ) -> Result<(), BroadcastSendError> {
-        unimplemented!()
+        let frame = self.simulation.to_framedata(with_velocities, with_forces);
+        sim_clone.lock().unwrap().send_frame(frame)
     }
 
     fn delay_to_next_frame(&self) -> Option<u128> {
