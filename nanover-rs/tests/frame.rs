@@ -4,6 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use log::info;
+use nanover_rs::application::InputPath;
 use prost_types::Struct;
 use serde::Deserialize;
 use tokio::net::TcpListener;
@@ -154,9 +155,9 @@ async fn create_server_client_pair() -> Result<(Server, Client), tonic::transpor
         name: essd_name,
         // Some tests need to switch simulation so we load several.
         input_xml_path: vec![
-            test_ressource!("17-ala.xml").into(),
-            test_ressource!("buckyballs.xml").into(),
-            test_ressource!("helicene.xml").into(),
+            InputPath::OpenMM(test_ressource!("17-ala.xml").into()),
+            InputPath::OpenMM(test_ressource!("buckyballs.xml").into()),
+            InputPath::OpenMM(test_ressource!("helicene.xml").into()),
         ],
         // Some tests need to access the actual first frame so we start paused.
         start_paused: true,

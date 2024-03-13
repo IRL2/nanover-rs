@@ -455,6 +455,7 @@ fn playback_loop(
     (maybe_simulation, keep_going)
 }
 
+// TODO: Redo error handling
 fn load_initial_simulation(
     simulations_manifest: &mut Manifest,
 ) -> Result<Option<SpecificSimulationTracked>, XMLParsingError> {
@@ -472,6 +473,18 @@ fn load_initial_simulation(
                     Ok(None)
                 }
                 LoadSimulationError::XMLParsingError(error) => Err(error),
+                LoadSimulationError::ReadError(error) => {
+                    error!("An error occured while reading the recording: {error}.");
+                    Ok(None)
+                }
+                LoadSimulationError::UnsuportedFormatVersion(version) => {
+                    error!("The file use a version of the recording format that is unsuported ({version}).");
+                    Ok(None)
+                }
+                LoadSimulationError::NotARecording => {
+                    error!("The file is not a recording.");
+                    Ok(None)
+                }
             }
         }
     }

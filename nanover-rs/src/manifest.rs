@@ -3,7 +3,8 @@ use std::io::BufReader;
 use thiserror::Error;
 
 use crate::{
-    recording::ReplaySimulation,
+    application::InputPath,
+    recording::{RecordingReadError, ReplaySimulation},
     simulation::{OpenMMSimulation, Simulation, ToFrameData, XMLParsingError},
 };
 
@@ -35,15 +36,29 @@ pub enum LoadSimulationError {
     NoIndex(usize),
     #[error("{0}")]
     XMLParsingError(#[from] XMLParsingError),
+    #[error("The input file is not a NanoVer recording.")]
+    NotARecording,
+    #[error("Recording file version {0} is not supported.")]
+    UnsuportedFormatVersion(u64),
+    #[error("An error occured while reading a recording file: {0}")]
+    ReadError(std::io::Error),
 }
 
-pub enum SimulationEntry {
-    OpenMM(String),
+impl From<RecordingReadError> for LoadSimulationError {
+    fn from(value: RecordingReadError) -> Self {
+        match value {
+            RecordingReadError::IOError(error) => Self::ReadError(error),
+            RecordingReadError::NotARecording => Self::NotARecording,
+            RecordingReadError::UnsuportedFormatVersion(version) => {
+                Self::UnsuportedFormatVersion(version)
+            }
+        }
+    }
 }
 
 enum ManifestContent {
     SingleBuffer(Vec<u8>),
-    MultiplePath(Vec<SimulationEntry>),
+    MultiplePath(Vec<InputPath>),
 }
 
 pub enum LoadedSimulation {
@@ -93,15 +108,8 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    pub fn from_simulation_xml_paths<T>(files: Vec<T>) -> Self
-    where
-        T: ToString,
-    {
-        let entries = files
-            .iter()
-            .map(|path| SimulationEntry::OpenMM(path.to_string()))
-            .collect();
-        let content = ManifestContent::MultiplePath(entries);
+    pub fn from_simulation_input_paths(files: Vec<InputPath>) -> Self {
+        let content = ManifestContent::MultiplePath(files);
         let current_index = None;
         Self {
             content,
@@ -140,11 +148,16 @@ impl Manifest {
                     .get_path_for_index(index)
                     .ok_or(LoadSimulationError::NoIndex(index))?;
                 match entry {
-                    SimulationEntry::OpenMM(path) => {
+                    InputPath::OpenMM(path) => {
                         let xml_file = File::open(path)?;
                         let buffer = BufReader::new(xml_file);
                         let simulation = OpenMMSimulation::from_xml(buffer)?;
                         Ok(LoadedSimulation::OpenMM(simulation))
+                    }
+                    InputPath::Recording(path) => {
+                        let file = File::open(path)?;
+                        let simulation = ReplaySimulation::try_new(Some(file), None)?;
+                        Ok(LoadedSimulation::Recording(simulation))
                     }
                 }
             }
@@ -162,7 +175,8 @@ impl Manifest {
             ManifestContent::MultiplePath(content) => content
                 .iter()
                 .map(|entry| match entry {
-                    SimulationEntry::OpenMM(path) => path.clone(),
+                    InputPath::OpenMM(path) => path.clone(),
+                    InputPath::Recording(path) => path.clone(),
                 })
                 .collect(),
         }
@@ -188,7 +202,7 @@ impl Manifest {
         }
     }
 
-    fn get_path_for_index(&self, index: usize) -> Option<&SimulationEntry> {
+    fn get_path_for_index(&self, index: usize) -> Option<&InputPath> {
         match &self.content {
             ManifestContent::SingleBuffer(_) => None,
             ManifestContent::MultiplePath(content) => content.get(index),

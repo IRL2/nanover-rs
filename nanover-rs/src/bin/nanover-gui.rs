@@ -4,7 +4,7 @@ use nanover_proto::command::{
     command_client::CommandClient, CommandMessage, CommandReply, GetCommandsRequest,
 };
 use nanover_rs::application::{
-    cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli,
+    cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli, InputPath,
 };
 use pack_prost::{ToProstValue, UnPack};
 use prost_types::Struct;
@@ -272,11 +272,11 @@ where
     }
 }
 
-struct FileField {
+struct OpenMMFileField {
     value: String,
 }
 
-impl FileField {
+impl OpenMMFileField {
     pub fn new() -> Self {
         Self {
             value: String::new(),
@@ -306,13 +306,13 @@ impl FileField {
 }
 
 struct MultiFileField {
-    fields: Vec<FileField>,
+    fields: Vec<OpenMMFileField>,
 }
 
 impl MultiFileField {
     pub fn new() -> Self {
         Self {
-            fields: vec![FileField::new()],
+            fields: vec![OpenMMFileField::new()],
         }
     }
 
@@ -335,14 +335,14 @@ impl MultiFileField {
     }
 
     fn add_field(&mut self) {
-        self.fields.push(FileField::new());
+        self.fields.push(OpenMMFileField::new());
     }
 
     fn remove_field(&mut self) {
         self.fields.pop();
     }
 
-    pub fn paths(&self) -> Vec<String> {
+    pub fn paths(&self) -> Vec<InputPath> {
         self.fields
             .iter()
             .filter_map(|field| {
@@ -350,7 +350,7 @@ impl MultiFileField {
                 if trimmed.is_empty() {
                     None
                 } else {
-                    Some(trimmed.to_string())
+                    Some(InputPath::OpenMM(trimmed.to_string()))
                 }
             })
             .collect()

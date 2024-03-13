@@ -23,6 +23,7 @@ use log::{debug, error, info, trace};
 use nanover_proto::frame::FrameData;
 use nanover_proto::trajectory::GetFrameResponse;
 use prost::Message;
+use std::fmt::Display;
 use std::fs::File;
 use std::net::IpAddr;
 use std::net::SocketAddr;
@@ -136,13 +137,28 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
     )
 }
 
+#[derive(Clone)]
+pub enum InputPath {
+    OpenMM(String),
+    Recording(String),
+}
+
+impl Display for InputPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OpenMM(path) => path.fmt(f),
+            Self::Recording(path) => path.fmt(f),
+        }
+    }
+}
+
 /// A NanoVer IMD server.
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 pub struct Cli {
     /// The path to the NanoVer XML file describing the simulation to run.
-    #[clap(value_parser)]
-    pub input_xml_path: Vec<String>,
+    #[clap(value_parser=parse_input_path)]
+    pub input_xml_path: Vec<InputPath>,
     /// IP address to bind.
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
     pub address: IpAddr,
@@ -212,6 +228,20 @@ impl Default for Cli {
             include_velocity: false,
             include_forces: false,
         }
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("Could not identify the type of input.")]
+struct UnrecognisedInput {}
+
+fn parse_input_path(value: &str) -> Result<InputPath, UnrecognisedInput> {
+    if value.ends_with(".xml") {
+        Ok(InputPath::OpenMM(value.to_string()))
+    } else if value.ends_with(".traj") {
+        Ok(InputPath::Recording(value.to_string()))
+    } else {
+        Err(UnrecognisedInput {})
     }
 }
 
@@ -340,7 +370,7 @@ pub async fn main_to_wrap(
             info! {"Running a queue of {} simulations.", xml_path.len()};
             xml_path.iter().for_each(|path| debug!("* {path}"));
         }
-        Manifest::from_simulation_xml_paths(xml_path)
+        Manifest::from_simulation_input_paths(xml_path)
     } else {
         let bytes = include_bytes!("../17-ala.xml");
         info!("Running the demo simulation.");
