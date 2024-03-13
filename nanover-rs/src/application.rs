@@ -487,23 +487,24 @@ pub async fn main_to_wrap(
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
 
-    let configuration = Configuration { frame_interval };
+    let simulation_configuration = Configuration {
+        simulation_interval,
+        frame_interval,
+        force_interval,
+        with_velocities: cli.include_velocity,
+        with_forces: cli.include_forces,
+        auto_reset: true,
+    };
     run_simulation_thread(
         cancel_simulation_rx,
         simulation_manifest,
         sim_clone,
         state_clone,
-        simulation_interval,
-        frame_interval,
-        force_interval,
         verbose,
         playback_rx,
         simulation_tx,
-        true,
         !cli.start_paused,
-        cli.include_velocity,
-        cli.include_forces,
-        configuration,
+        simulation_configuration,
     )?;
 
     // Advertise the server with ESSD

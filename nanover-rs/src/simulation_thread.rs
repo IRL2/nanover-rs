@@ -21,7 +21,12 @@ use crate::state_interaction::read_forces;
 const DEFAULT_DELAY: f32 = 1.0 / 30.0;
 
 pub struct Configuration {
+    pub simulation_interval: u64,
     pub frame_interval: usize,
+    pub force_interval: usize,
+    pub with_velocities: bool,
+    pub with_forces: bool,
+    pub auto_reset: bool,
 }
 
 enum SpecificSimulationTracked {
@@ -235,15 +240,14 @@ impl TrackedOpenMMSimulation {
         simulation_tx: &std::sync::mpsc::Sender<usize>,
         now: &Instant,
         interval: &Duration,
-        frame_interval: usize,
-        force_interval: usize,
-        with_velocities: bool,
-        with_forces: bool,
         verbose: bool,
-        auto_reset: bool,
+        configuration: &Configuration,
     ) {
-        let (delta_frames, do_frames, do_forces) =
-            next_stop(self.simulation_frame, frame_interval, force_interval);
+        let (delta_frames, do_frames, do_forces) = next_stop(
+            self.simulation_frame,
+            configuration.frame_interval,
+            configuration.force_interval,
+        );
         self.simulation.step(delta_frames as i32);
 
         if do_forces {
@@ -258,7 +262,11 @@ impl TrackedOpenMMSimulation {
 
         if do_frames
             && self
-                .send_regular_frame(Arc::clone(sim_clone), with_velocities, with_forces)
+                .send_regular_frame(
+                    Arc::clone(sim_clone),
+                    configuration.with_velocities,
+                    configuration.with_forces,
+                )
                 .is_err()
         {
             return;
@@ -275,7 +283,7 @@ impl TrackedOpenMMSimulation {
                 self.simulation_frame,
             );
         };
-        if auto_reset && !system_energy.is_finite() {
+        if configuration.auto_reset && !system_energy.is_finite() {
             self.simulation.reset();
         }
         thread::sleep(time_left);
@@ -469,8 +477,6 @@ fn playback_loop(
     mut maybe_simulation: Option<SpecificSimulationTracked>,
     sim_clone: &Arc<Mutex<FrameBroadcaster>>,
     configuration: &Configuration,
-    with_velocities: bool,
-    with_forces: bool,
 ) -> (Option<SpecificSimulationTracked>, bool) {
     let mut keep_going = true;
     loop {
@@ -487,7 +493,11 @@ fn playback_loop(
                 if let Some(ref mut simulation) = maybe_simulation {
                     simulation.step();
                     if simulation
-                        .send_regular_frame(Arc::clone(sim_clone), with_velocities, with_forces)
+                        .send_regular_frame(
+                            Arc::clone(sim_clone),
+                            configuration.with_velocities,
+                            configuration.with_forces,
+                        )
                         .is_err()
                     {
                         keep_going = false;
@@ -602,23 +612,17 @@ pub fn run_simulation_thread(
     mut simulations_manifest: Manifest,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
     state_clone: Arc<Mutex<StateBroadcaster>>,
-    simulation_interval: u64,
-    frame_interval: usize,
-    force_interval: usize,
     verbose: bool,
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
-    auto_reset: bool,
     run_on_start: bool,
-    with_velocities: bool,
-    with_forces: bool,
     configuration: Configuration,
 ) -> Result<(), XMLParsingError> {
     let mut maybe_simulation = load_initial_simulation(&mut simulations_manifest, &configuration)?;
 
     tokio::task::spawn_blocking(move || {
         let mut playback_state = PlaybackState::new(run_on_start);
-        let interval = Duration::from_millis(simulation_interval);
+        let interval = Duration::from_millis(configuration.simulation_interval);
         if let Some(ref simulation) = maybe_simulation {
             if send_reset_frame(simulation, Arc::clone(&sim_clone)).is_err() {
                 return;
@@ -630,7 +634,7 @@ pub fn run_simulation_thread(
         } else {
             info!("No simulation loaded yes.");
         }
-        info!("Simulation interval: {simulation_interval}");
+        info!("Simulation interval: {}", configuration.simulation_interval);
 
         loop {
             let now = time::Instant::now();
@@ -651,8 +655,6 @@ pub fn run_simulation_thread(
                 maybe_simulation,
                 &sim_clone,
                 &configuration,
-                with_velocities,
-                with_forces,
             );
             if !keep_going {
                 return;
@@ -663,7 +665,11 @@ pub fn run_simulation_thread(
                     SpecificSimulationTracked::Recording(simulation) => {
                         if playback_state.is_playing() {
                             simulation
-                                .send_regular_frame(sim_clone.clone(), with_velocities, with_forces)
+                                .send_regular_frame(
+                                    sim_clone.clone(),
+                                    configuration.with_velocities,
+                                    configuration.with_forces,
+                                )
                                 .expect("Cannot send replay frame");
                             let delay_to_next_frame = simulation.delay_to_next_frame();
                             simulation.read_next_frame();
@@ -689,12 +695,8 @@ pub fn run_simulation_thread(
                                 &simulation_tx,
                                 &now,
                                 &interval,
-                                frame_interval,
-                                force_interval,
-                                with_velocities,
-                                with_forces,
                                 verbose,
-                                auto_reset,
+                                &configuration,
                             )
                         }
                     }
