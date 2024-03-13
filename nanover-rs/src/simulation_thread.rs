@@ -27,6 +27,7 @@ pub struct Configuration {
     pub with_velocities: bool,
     pub with_forces: bool,
     pub auto_reset: bool,
+    pub verbose: bool,
 }
 
 enum SpecificSimulationTracked {
@@ -134,50 +135,6 @@ impl ToFrameData for SpecificSimulationTracked {
     }
 }
 
-/*
-impl<SimulationType> TrackedSimulation<SimulationType>
-where
-    SimulationType: Simulation,
-{
-    fn new(simulation: SimulationType, simulation_counter: usize) -> Self {
-        let user_forces = BTreeMap::new();
-        let user_energies = 0.0;
-        let reset_counter = 0;
-        let simulation_frame = 0;
-        Self {
-            simulation,
-            simulation_frame,
-            reset_counter,
-            simulation_counter,
-            user_forces,
-            user_energies,
-        }
-    }
-
-    fn reset(&mut self) {
-        self.simulation.reset();
-        self.reset_counter += 1;
-    }
-
-    fn step(&mut self, n_frames: usize) {
-        self.simulation.step(n_frames as i32);
-        self.simulation_frame += n_frames;
-    }
-
-    fn reset_counter(&self) -> usize {
-        self.reset_counter
-    }
-
-    fn simulation_counter(&self) -> usize {
-        self.simulation_counter
-    }
-
-    fn simulation_frame(&self) -> usize {
-        self.simulation_frame
-    }
-}
-*/
-
 struct TrackedOpenMMSimulation {
     simulation: OpenMMSimulation,
     simulation_frame: usize,
@@ -240,7 +197,6 @@ impl TrackedOpenMMSimulation {
         simulation_tx: &std::sync::mpsc::Sender<usize>,
         now: &Instant,
         interval: &Duration,
-        verbose: bool,
         configuration: &Configuration,
     ) {
         let (delta_frames, do_frames, do_forces) = next_stop(
@@ -277,7 +233,7 @@ impl TrackedOpenMMSimulation {
             Some(d) => d,
             None => Duration::from_millis(0),
         };
-        if verbose {
+        if configuration.verbose {
             info!(
                 "Simulation frame {}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol.",
                 self.simulation_frame,
@@ -332,26 +288,17 @@ impl TrackedSimulation for TrackedOpenMMSimulation {
 
 struct TrackedReplaySimulation {
     simulation: ReplaySimulation,
-    simulation_frame: usize,
     reset_counter: usize,
     simulation_counter: usize,
-    user_forces: CoordMap,
-    user_energies: f64,
 }
 
 impl TrackedReplaySimulation {
     fn new(simulation: ReplaySimulation, simulation_counter: usize) -> Self {
-        let user_forces = BTreeMap::new();
-        let user_energies = 0.0;
         let reset_counter = 0;
-        let simulation_frame = 0;
         Self {
             simulation,
-            simulation_frame,
             reset_counter,
             simulation_counter,
-            user_forces,
-            user_energies,
         }
     }
 
@@ -612,7 +559,6 @@ pub fn run_simulation_thread(
     mut simulations_manifest: Manifest,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
     state_clone: Arc<Mutex<StateBroadcaster>>,
-    verbose: bool,
     mut playback_rx: Receiver<PlaybackOrder>,
     simulation_tx: std::sync::mpsc::Sender<usize>,
     run_on_start: bool,
@@ -695,7 +641,6 @@ pub fn run_simulation_thread(
                                 &simulation_tx,
                                 &now,
                                 &interval,
-                                verbose,
                                 &configuration,
                             )
                         }

@@ -494,13 +494,13 @@ pub async fn main_to_wrap(
         with_velocities: cli.include_velocity,
         with_forces: cli.include_forces,
         auto_reset: true,
+        verbose,
     };
     run_simulation_thread(
         cancel_simulation_rx,
         simulation_manifest,
         sim_clone,
         state_clone,
-        verbose,
         playback_rx,
         simulation_tx,
         !cli.start_paused,
