@@ -145,11 +145,6 @@ where
         Ok(LastRead::Read(pair))
     }
 
-    fn first_frame_pair(&mut self) -> std::io::Result<LastRead<T>> {
-        self.reset();
-        self.next_frame_pair()
-    }
-
     fn seek(&mut self, time: u128) -> std::io::Result<LastRead<T>> {
         let start_time = match &self.last_read {
             LastRead::NoMoreToRead(Some(pair)) => {
