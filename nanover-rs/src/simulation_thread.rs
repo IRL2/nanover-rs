@@ -1,4 +1,4 @@
-use log::{error, info, warn};
+use log::{error, info, trace, warn};
 use nanover_proto::trajectory::FrameData;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -493,6 +493,7 @@ fn load_initial_simulation(
 
 #[allow(clippy::too_many_arguments)]
 pub fn run_simulation_thread(
+    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
     mut simulations_manifest: Manifest,
     sim_clone: Arc<Mutex<FrameBroadcaster>>,
     state_clone: Arc<Mutex<StateBroadcaster>>,
@@ -527,6 +528,15 @@ pub fn run_simulation_thread(
 
         loop {
             let now = time::Instant::now();
+            match cancel_rx.try_recv() {
+                Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    trace!("Simulation loop ended.");
+                    break;
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                    trace!("Tick simulation loop");
+                }
+            };
             let keep_going;
             (maybe_simulation, keep_going) = playback_loop(
                 &mut playback_rx,

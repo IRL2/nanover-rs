@@ -56,6 +56,7 @@ pub struct CancellationReceivers {
     traj_service: tokio::sync::oneshot::Receiver<()>,
     state_service: tokio::sync::oneshot::Receiver<()>,
     essd: tokio::sync::oneshot::Receiver<()>,
+    simulation: tokio::sync::oneshot::Receiver<()>,
 }
 
 impl CancellationReceivers {
@@ -63,6 +64,7 @@ impl CancellationReceivers {
     pub fn unpack(
         self,
     ) -> (
+        oneshot::Receiver<()>,
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
@@ -77,6 +79,7 @@ impl CancellationReceivers {
             self.traj_service,
             self.state_service,
             self.essd,
+            self.simulation,
         )
     }
 }
@@ -92,6 +95,7 @@ pub struct CancellationSenders {
     traj_service: tokio::sync::oneshot::Sender<()>,
     state_service: tokio::sync::oneshot::Sender<()>,
     essd: tokio::sync::oneshot::Sender<()>,
+    simulation: tokio::sync::oneshot::Sender<()>,
 }
 
 impl CancellationSenders {
@@ -106,6 +110,7 @@ impl CancellationSenders {
             .send(())
             .map_err(|_| CancellationError {})?;
         self.essd.send(()).map_err(|_| CancellationError {})?;
+        self.simulation.send(()).map_err(|_| CancellationError {})?;
         Ok(())
     }
 }
@@ -117,6 +122,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
     let (traj_service_tx, traj_service_rx) = tokio::sync::oneshot::channel();
     let (state_service_tx, state_service_rx) = tokio::sync::oneshot::channel();
     let (essd_tx, essd_rx) = tokio::sync::oneshot::channel();
+    let (simulation_tx, simulation_rx) = tokio::sync::oneshot::channel();
     (
         CancellationSenders {
             server: server_tx,
@@ -125,6 +131,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
             traj_service: traj_service_tx,
             state_service: state_service_tx,
             essd: essd_tx,
+            simulation: simulation_tx,
         },
         CancellationReceivers {
             server: server_rx,
@@ -133,6 +140,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
             traj_service: traj_service_rx,
             state_service: state_service_rx,
             essd: essd_rx,
+            simulation: simulation_rx,
         },
     )
 }
@@ -444,6 +452,7 @@ pub async fn main_to_wrap(
         cancel_traj_serv_rx,
         cancel_state_serv_rx,
         cancel_essd_rx,
+        cancel_simulation_rx,
     ) = cancel_rx.unpack();
     let syncronous_start = Instant::now();
     if let Some(path) = cli.trajectory {
@@ -478,6 +487,7 @@ pub async fn main_to_wrap(
     let state_clone = Arc::clone(&shared_state);
 
     run_simulation_thread(
+        cancel_simulation_rx,
         simulation_manifest,
         sim_clone,
         state_clone,
