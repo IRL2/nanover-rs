@@ -1,7 +1,6 @@
 use log::{error, info, trace, warn};
 use std::sync::{Arc, Mutex};
 use std::time;
-use std::time::Duration;
 use tokio::sync::mpsc::{error::TryRecvError, Receiver};
 
 use crate::frame_broadcaster::FrameBroadcaster;
@@ -165,7 +164,6 @@ pub fn run_simulation_thread(
 
     tokio::task::spawn_blocking(move || {
         let mut playback_state = PlaybackState::new(run_on_start);
-        let interval = Duration::from_millis(configuration.simulation_interval);
         if let Some(ref simulation) = maybe_simulation {
             if send_reset_frame(simulation, Arc::clone(&sim_clone)).is_err() {
                 return;
@@ -177,7 +175,10 @@ pub fn run_simulation_thread(
         } else {
             info!("No simulation loaded yes.");
         }
-        info!("Simulation interval: {}", configuration.simulation_interval);
+        info!(
+            "Simulation interval: {} ms",
+            configuration.simulation_interval.as_millis()
+        );
 
         loop {
             let now = time::Instant::now();
@@ -217,7 +218,6 @@ pub fn run_simulation_thread(
                                 &state_clone,
                                 &simulation_tx,
                                 &now,
-                                &interval,
                                 &configuration,
                             )
                         }

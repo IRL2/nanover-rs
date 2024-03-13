@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use nanover_proto::trajectory::FrameData;
 
@@ -9,7 +12,7 @@ use crate::{
 };
 
 pub struct Configuration {
-    pub simulation_interval: u64,
+    pub simulation_interval: Duration,
     pub frame_interval: usize,
     pub force_interval: usize,
     pub with_velocities: bool,

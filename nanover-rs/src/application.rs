@@ -333,7 +333,7 @@ pub async fn main_to_wrap(
 ) -> Result<(), AppError> {
     // Read the user arguments.
     let xml_path = cli.input_xml_path;
-    let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
+    let simulation_interval = Duration::from_secs_f64(1.0 / cli.simulation_fps);
     let frame_interval = cli.frame_interval;
     let force_interval = cli.force_interval;
     let verbose = cli.progression;

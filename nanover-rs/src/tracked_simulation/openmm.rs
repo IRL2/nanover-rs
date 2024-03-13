@@ -84,7 +84,6 @@ impl TrackedOpenMMSimulation {
         state_clone: &Arc<Mutex<StateBroadcaster>>,
         simulation_tx: &std::sync::mpsc::Sender<usize>,
         now: &Instant,
-        interval: &Duration,
         configuration: &Configuration,
     ) {
         let (delta_frames, do_frames, do_forces) = next_stop(
@@ -117,7 +116,7 @@ impl TrackedOpenMMSimulation {
         };
 
         let elapsed = now.elapsed();
-        let time_left = match interval.checked_sub(elapsed) {
+        let time_left = match configuration.simulation_interval.checked_sub(elapsed) {
             Some(d) => d,
             None => Duration::from_millis(0),
         };
