@@ -16,6 +16,7 @@ use crate::services::state::{StateServer, StateService};
 use crate::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use crate::simulation::XMLParsingError;
 use crate::simulation_thread::run_simulation_thread;
+use crate::simulation_thread::Configuration;
 use crate::state_broadcaster::StateBroadcaster;
 use futures::TryFutureExt;
 use indexmap::IndexMap;
@@ -486,6 +487,7 @@ pub async fn main_to_wrap(
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
 
+    let configuration = Configuration { frame_interval };
     run_simulation_thread(
         cancel_simulation_rx,
         simulation_manifest,
@@ -501,6 +503,7 @@ pub async fn main_to_wrap(
         !cli.start_paused,
         cli.include_velocity,
         cli.include_forces,
+        configuration,
     )?;
 
     // Advertise the server with ESSD

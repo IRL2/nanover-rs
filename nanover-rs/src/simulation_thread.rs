@@ -20,39 +20,54 @@ use crate::state_interaction::read_forces;
 
 const DEFAULT_DELAY: f32 = 1.0 / 30.0;
 
-/// A simulation with all the book keeping required for the thread.
-struct TrackedSimulation<SimulationType> {
-    simulation: SimulationType,
-    simulation_frame: usize,
-    reset_counter: usize,
-    simulation_counter: usize,
-    user_forces: CoordMap,
-    user_energies: f64,
+pub struct Configuration {
+    pub frame_interval: usize,
 }
 
 enum SpecificSimulationTracked {
-    OpenMM(TrackedSimulation<OpenMMSimulation>),
-    Recording(TrackedSimulation<ReplaySimulation>),
+    OpenMM(TrackedOpenMMSimulation),
+    Recording(TrackedReplaySimulation),
+}
+
+trait TrackedSimulation {
+    fn step(&mut self);
+    fn reset(&mut self);
+    fn reset_counter(&self) -> usize;
+    fn simulation_counter(&self) -> usize;
+    fn send_regular_frame(
+        &self,
+        sim_clone: Arc<Mutex<FrameBroadcaster>>,
+        with_velocities: bool,
+        with_forces: bool,
+    ) -> Result<(), BroadcastSendError>;
 }
 
 impl SpecificSimulationTracked {
-    fn new(simulation: LoadedSimulation, simulation_counter: usize) -> Self {
+    fn new(
+        simulation: LoadedSimulation,
+        simulation_counter: usize,
+        configuration: &Configuration,
+    ) -> Self {
         match simulation {
             LoadedSimulation::OpenMM(sim) => {
-                let tracked = TrackedSimulation::new(sim, simulation_counter);
+                let tracked = TrackedOpenMMSimulation::new(
+                    sim,
+                    simulation_counter,
+                    configuration.frame_interval,
+                );
                 Self::OpenMM(tracked)
             }
             LoadedSimulation::Recording(sim) => {
-                let tracked = TrackedSimulation::new(sim, simulation_counter);
+                let tracked = TrackedReplaySimulation::new(sim, simulation_counter);
                 Self::Recording(tracked)
             }
         }
     }
 
-    fn step(&mut self, steps: usize) {
+    fn step(&mut self) {
         match self {
-            Self::OpenMM(simulation) => simulation.step(steps),
-            Self::Recording(simulation) => simulation.step(steps),
+            Self::OpenMM(simulation) => simulation.step(),
+            Self::Recording(simulation) => simulation.step(),
         }
     }
 
@@ -60,13 +75,6 @@ impl SpecificSimulationTracked {
         match self {
             Self::OpenMM(simulation) => simulation.reset(),
             Self::Recording(simulation) => simulation.reset(),
-        }
-    }
-
-    fn simulation_frame(&self) -> usize {
-        match self {
-            Self::OpenMM(simulation) => simulation.simulation_frame(),
-            Self::Recording(simulation) => simulation.simulation_frame(),
         }
     }
 
@@ -121,6 +129,7 @@ impl ToFrameData for SpecificSimulationTracked {
     }
 }
 
+/*
 impl<SimulationType> TrackedSimulation<SimulationType>
 where
     SimulationType: Simulation,
@@ -158,8 +167,45 @@ where
         self.simulation_counter
     }
 
-    fn simulation_mut(&mut self) -> &mut SimulationType {
-        &mut self.simulation
+    fn simulation_frame(&self) -> usize {
+        self.simulation_frame
+    }
+}
+*/
+
+struct TrackedOpenMMSimulation {
+    simulation: OpenMMSimulation,
+    simulation_frame: usize,
+    reset_counter: usize,
+    simulation_counter: usize,
+    user_forces: CoordMap,
+    user_energies: f64,
+    frame_interval: usize,
+}
+
+impl TrackedOpenMMSimulation {
+    fn new(simulation: OpenMMSimulation, simulation_counter: usize, frame_interval: usize) -> Self {
+        let user_forces = BTreeMap::new();
+        let user_energies = 0.0;
+        let reset_counter = 0;
+        let simulation_frame = 0;
+        Self {
+            simulation,
+            simulation_frame,
+            reset_counter,
+            simulation_counter,
+            user_forces,
+            user_energies,
+            frame_interval,
+        }
+    }
+
+    fn get_platform_name(&self) -> String {
+        self.simulation.get_platform_name()
+    }
+
+    fn get_total_energy(&self) -> f64 {
+        self.simulation.get_total_energy()
     }
 
     fn user_forces(&self) -> &CoordMap {
@@ -178,37 +224,8 @@ where
         self.user_energies = user_energies;
     }
 
-    fn simulation_frame(&self) -> usize {
-        self.simulation_frame
-    }
-}
-
-impl TrackedSimulation<OpenMMSimulation> {
-    fn get_platform_name(&self) -> String {
-        self.simulation.get_platform_name()
-    }
-
-    fn get_total_energy(&self) -> f64 {
-        self.simulation.get_total_energy()
-    }
-
-    fn send_regular_frame(
-        &self,
-        sim_clone: Arc<Mutex<FrameBroadcaster>>,
-        with_velocities: bool,
-        with_forces: bool,
-    ) -> Result<(), BroadcastSendError> {
-        let mut frame = self.simulation.to_framedata(with_velocities, with_forces);
-        let energy_total = self.user_energies();
-        frame
-            .insert_number_value("energy.user.total", energy_total)
-            .unwrap();
-        frame
-            .insert_number_value("system.reset.counter", self.reset_counter() as f64)
-            .unwrap();
-        add_force_map_to_frame(self.user_forces(), &mut frame);
-        let mut source = sim_clone.lock().unwrap();
-        source.send_frame(frame)
+    fn simulation_mut(&mut self) -> &mut OpenMMSimulation {
+        &mut self.simulation
     }
 
     fn simulation_loop_iteration(
@@ -226,8 +243,8 @@ impl TrackedSimulation<OpenMMSimulation> {
         auto_reset: bool,
     ) {
         let (delta_frames, do_frames, do_forces) =
-            next_stop(self.simulation_frame(), frame_interval, force_interval);
-        self.step(delta_frames);
+            next_stop(self.simulation_frame, frame_interval, force_interval);
+        self.simulation.step(delta_frames as i32);
 
         if do_forces {
             let mut_simulation = self.simulation_mut();
@@ -255,25 +272,79 @@ impl TrackedSimulation<OpenMMSimulation> {
         if verbose {
             info!(
                 "Simulation frame {}. Time to sleep {time_left:?}. Total energy {system_energy:.2} kJ/mol.",
-                self.simulation_frame(),
+                self.simulation_frame,
             );
         };
         if auto_reset && !system_energy.is_finite() {
-            self.reset();
+            self.simulation.reset();
         }
         thread::sleep(time_left);
     }
 }
 
-impl TrackedSimulation<ReplaySimulation> {
+impl TrackedSimulation for TrackedOpenMMSimulation {
+    fn step(&mut self) {
+        let delta_frames = next_frame_stop(self.simulation_frame, self.frame_interval);
+        self.simulation.step(delta_frames as i32);
+        self.simulation_frame += delta_frames;
+    }
+
+    fn reset(&mut self) {
+        self.simulation.reset();
+        self.reset_counter += 1;
+    }
+
+    fn reset_counter(&self) -> usize {
+        self.reset_counter
+    }
+
+    fn simulation_counter(&self) -> usize {
+        self.simulation_counter
+    }
+
     fn send_regular_frame(
         &self,
         sim_clone: Arc<Mutex<FrameBroadcaster>>,
         with_velocities: bool,
         with_forces: bool,
     ) -> Result<(), BroadcastSendError> {
-        let frame = self.simulation.to_framedata(with_velocities, with_forces);
-        sim_clone.lock().unwrap().send_frame(frame)
+        let mut frame = self.simulation.to_framedata(with_velocities, with_forces);
+        let energy_total = self.user_energies();
+        frame
+            .insert_number_value("energy.user.total", energy_total)
+            .unwrap();
+        frame
+            .insert_number_value("system.reset.counter", self.reset_counter as f64)
+            .unwrap();
+        add_force_map_to_frame(self.user_forces(), &mut frame);
+        let mut source = sim_clone.lock().unwrap();
+        source.send_frame(frame)
+    }
+}
+
+struct TrackedReplaySimulation {
+    simulation: ReplaySimulation,
+    simulation_frame: usize,
+    reset_counter: usize,
+    simulation_counter: usize,
+    user_forces: CoordMap,
+    user_energies: f64,
+}
+
+impl TrackedReplaySimulation {
+    fn new(simulation: ReplaySimulation, simulation_counter: usize) -> Self {
+        let user_forces = BTreeMap::new();
+        let user_energies = 0.0;
+        let reset_counter = 0;
+        let simulation_frame = 0;
+        Self {
+            simulation,
+            simulation_frame,
+            reset_counter,
+            simulation_counter,
+            user_forces,
+            user_energies,
+        }
     }
 
     fn delay_to_next_frame(&self) -> Option<u128> {
@@ -282,6 +353,35 @@ impl TrackedSimulation<ReplaySimulation> {
 
     fn read_next_frame(&mut self) {
         self.simulation.next_frame();
+    }
+}
+
+impl TrackedSimulation for TrackedReplaySimulation {
+    fn step(&mut self) {
+        unimplemented!();
+    }
+
+    fn reset(&mut self) {
+        self.simulation.reset();
+        self.reset_counter += 1;
+    }
+
+    fn reset_counter(&self) -> usize {
+        self.reset_counter
+    }
+
+    fn simulation_counter(&self) -> usize {
+        self.simulation_counter
+    }
+
+    fn send_regular_frame(
+        &self,
+        sim_clone: Arc<Mutex<FrameBroadcaster>>,
+        with_velocities: bool,
+        with_forces: bool,
+    ) -> Result<(), BroadcastSendError> {
+        let frame = self.simulation.to_framedata(with_velocities, with_forces);
+        sim_clone.lock().unwrap().send_frame(frame)
     }
 }
 
@@ -368,7 +468,7 @@ fn playback_loop(
     simulations_manifest: &mut Manifest,
     mut maybe_simulation: Option<SpecificSimulationTracked>,
     sim_clone: &Arc<Mutex<FrameBroadcaster>>,
-    frame_interval: usize,
+    configuration: &Configuration,
     with_velocities: bool,
     with_forces: bool,
 ) -> (Option<SpecificSimulationTracked>, bool) {
@@ -385,9 +485,7 @@ fn playback_loop(
             }
             Ok(PlaybackOrder::Step) => {
                 if let Some(ref mut simulation) = maybe_simulation {
-                    let delta_frames =
-                        next_frame_stop(simulation.simulation_frame(), frame_interval);
-                    simulation.step(delta_frames);
+                    simulation.step();
                     if simulation
                         .send_regular_frame(Arc::clone(sim_clone), with_velocities, with_forces)
                         .is_err()
@@ -406,6 +504,7 @@ fn playback_loop(
                         let simulation = SpecificSimulationTracked::new(
                             new_simulation,
                             next_simulation_counter(maybe_simulation.as_ref()),
+                            configuration,
                         );
                         if send_reset_frame(&simulation, Arc::clone(sim_clone)).is_err() {
                             keep_going = false;
@@ -427,6 +526,7 @@ fn playback_loop(
                         let simulation = SpecificSimulationTracked::new(
                             new_simulation,
                             next_simulation_counter(maybe_simulation.as_ref()),
+                            configuration,
                         );
                         if send_reset_frame(&simulation, Arc::clone(sim_clone)).is_err() {
                             keep_going = false;
@@ -459,9 +559,14 @@ fn playback_loop(
 // TODO: Redo error handling
 fn load_initial_simulation(
     simulations_manifest: &mut Manifest,
+    configuration: &Configuration,
 ) -> Result<Option<SpecificSimulationTracked>, XMLParsingError> {
     match simulations_manifest.load_default() {
-        Ok(simulation) => Ok(Some(SpecificSimulationTracked::new(simulation, 0))),
+        Ok(simulation) => Ok(Some(SpecificSimulationTracked::new(
+            simulation,
+            0,
+            configuration,
+        ))),
         Err(LoadDefaultError::NoDefault) => Ok(None),
         Err(LoadDefaultError::LoadSimulationError(load_simulation_error)) => {
             match load_simulation_error {
@@ -507,8 +612,9 @@ pub fn run_simulation_thread(
     run_on_start: bool,
     with_velocities: bool,
     with_forces: bool,
+    configuration: Configuration,
 ) -> Result<(), XMLParsingError> {
-    let mut maybe_simulation = load_initial_simulation(&mut simulations_manifest)?;
+    let mut maybe_simulation = load_initial_simulation(&mut simulations_manifest, &configuration)?;
 
     tokio::task::spawn_blocking(move || {
         let mut playback_state = PlaybackState::new(run_on_start);
@@ -544,7 +650,7 @@ pub fn run_simulation_thread(
                 &mut simulations_manifest,
                 maybe_simulation,
                 &sim_clone,
-                frame_interval,
+                &configuration,
                 with_velocities,
                 with_forces,
             );
