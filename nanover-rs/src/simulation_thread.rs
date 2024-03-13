@@ -563,11 +563,11 @@ pub fn run_simulation_thread(
                             simulation.read_next_frame();
                             if let Some(delay) = delay_to_next_frame {
                                 let elapsed = now.elapsed();
-                                let time_left = match Duration::from_millis(delay as u64)
+                                let time_left = match Duration::from_micros(delay as u64)
                                     .checked_sub(elapsed)
                                 {
                                     Some(d) => d,
-                                    None => Duration::from_millis(0),
+                                    None => Duration::from_micros(0),
                                 };
                                 thread::sleep(time_left);
                             } else {
