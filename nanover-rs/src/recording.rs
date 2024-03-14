@@ -41,16 +41,10 @@ where
     }
 }
 
-#[derive(Clone)]
-enum LastRead<T> {
-    NoMoreToRead(Option<RecordPair<T>>),
-    Read(RecordPair<T>),
-}
-
 struct RecordingFile<T> {
     source: BufReader<File>,
     first_record_position: u64,
-    last_read: LastRead<T>,
+    last_read: RecordPair<T>,
     aggregate: T,
     _phantom: PhantomData<T>,
 }
@@ -90,33 +84,23 @@ where
         })
     }
 
-    fn first_read(source: &mut BufReader<File>) -> LastRead<T> {
+    fn first_read(source: &mut BufReader<File>) -> RecordPair<T> {
         let next_record = read_one_frame(source).ok();
-        LastRead::Read(RecordPair {
+        RecordPair {
             current: TimedRecord {
                 record: T::default(),
                 timestamp: 0,
             },
             next: next_record,
-        })
+        }
     }
 
     fn current_record(&self) -> T {
-        match &self.last_read {
-            LastRead::Read(record) => record.current.record.clone(),
-            LastRead::NoMoreToRead(Some(record)) => record.current.record.clone(),
-            LastRead::NoMoreToRead(None) => T::default(),
-        }
+        self.last_read.current.record.clone()
     }
 
     fn delay_to_next_record(&self) -> Option<u128> {
-        match &self.last_read {
-            LastRead::Read(pair) => pair
-                .next
-                .as_ref()
-                .map(|record| record.timestamp() - pair.current.timestamp()),
-            LastRead::NoMoreToRead(_) => None,
-        }
+        Some(self.last_read.next.as_ref()?.timestamp())
     }
 
     fn reset(&mut self) {
@@ -127,54 +111,38 @@ where
         self.aggregate = T::default();
     }
 
-    fn next_frame_pair(&mut self) -> std::io::Result<LastRead<T>> {
-        let last_read: TimedRecord<T> = match &self.last_read {
-            LastRead::NoMoreToRead(record) => return Ok(LastRead::NoMoreToRead(record.clone())),
-            LastRead::Read(pair) => match &pair.next {
-                Some(record) => record.clone(),
-                None => return Ok(LastRead::NoMoreToRead(Some(pair.clone()))),
-            },
-        };
-
-        Mergeable::merge(&mut self.aggregate, &last_read.record());
-        let next = read_one_frame(&mut self.source).ok();
-        let pair = RecordPair {
-            current: TimedRecord {
-                record: self.aggregate.clone(),
-                timestamp: last_read.timestamp(),
-            },
-            next,
-        };
-
-        self.last_read = LastRead::Read(pair.clone());
-
-        Ok(LastRead::Read(pair))
+    fn next_frame_pair(&mut self) -> std::io::Result<RecordPair<T>> {
+        match &self.last_read.next {
+            None => Ok(self.last_read.clone()),
+            Some(record) => {
+                Mergeable::merge(&mut self.aggregate, &record.record);
+                let next = read_one_frame(&mut self.source).ok();
+                let pair = RecordPair {
+                    current: TimedRecord {
+                        record: self.aggregate.clone(),
+                        timestamp: record.timestamp(),
+                    },
+                    next,
+                };
+                Ok(pair)
+            }
+        }
     }
 
-    fn seek(&mut self, time: u128) -> std::io::Result<LastRead<T>> {
-        let start_time = match &self.last_read {
-            LastRead::NoMoreToRead(Some(pair)) => {
-                return Ok(LastRead::NoMoreToRead(Some(pair.clone())))
-            }
-            LastRead::NoMoreToRead(None) => {
-                return Ok(LastRead::NoMoreToRead(None));
-            }
-            LastRead::Read(pair) => pair.current.timestamp(),
-        };
+    fn seek(&mut self, time: u128) -> std::io::Result<RecordPair<T>> {
+        if self.last_read.next.is_none() {
+            return Ok(self.last_read.clone());
+        }
+        let start_time = self.last_read.current.timestamp();
         if time < start_time {
             self.reset();
         }
         loop {
-            match &self.last_read {
-                LastRead::NoMoreToRead(_) => break,
-                LastRead::Read(ref record) => match record.next {
-                    Some(ref next) => {
-                        if next.timestamp() > time {
-                            break;
-                        }
-                    }
-                    None => break,
-                },
+            let Some(next) = &self.last_read.next else {
+                break;
+            };
+            if next.timestamp() > time {
+                break;
             };
 
             self.next_frame_pair()?;
@@ -209,22 +177,14 @@ impl ReplaySimulation {
         let Some(ref mut source) = self.frame_source else {
             return Ok(None);
         };
-        match source.seek(time)? {
-            LastRead::NoMoreToRead(None) => Ok(None),
-            LastRead::NoMoreToRead(Some(pair)) => Ok(Some(pair.current)),
-            LastRead::Read(pair) => Ok(Some(pair.current)),
-        }
+        Ok(Some(source.seek(time)?.current))
     }
 
     fn seek_state(&mut self, time: u128) -> std::io::Result<Option<TimedRecord<StateUpdate>>> {
         let Some(ref mut source) = self.state_source else {
             return Ok(None);
         };
-        match source.seek(time)? {
-            LastRead::NoMoreToRead(None) => Ok(None),
-            LastRead::NoMoreToRead(Some(pair)) => Ok(Some(pair.current)),
-            LastRead::Read(pair) => Ok(Some(pair.current)),
-        }
+        Ok(Some(source.seek(time)?.current))
     }
 
     pub fn seek(
