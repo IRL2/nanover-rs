@@ -1,4 +1,3 @@
-use log::trace;
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek},
@@ -33,10 +32,6 @@ impl<T> TimedRecord<T>
 where
     T: Clone,
 {
-    fn record(&self) -> T {
-        self.record.clone()
-    }
-
     fn timestamp(&self) -> u128 {
         self.timestamp
     }
@@ -114,14 +109,10 @@ where
 
     fn next_frame_pair(&mut self) -> std::io::Result<RecordPair<T>> {
         match &self.last_read.next {
-            None => {
-                trace!("Done, keeping the old record");
-                Ok(self.last_read.clone())
-            }
+            None => Ok(self.last_read.clone()),
             Some(record) => {
                 Mergeable::merge(&mut self.aggregate, &record.record);
                 let next = read_one_frame(&mut self.source).ok();
-                trace!("reading new frame: {next:?}");
                 let pair = RecordPair {
                     current: TimedRecord {
                         record: self.aggregate.clone(),

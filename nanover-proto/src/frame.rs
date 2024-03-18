@@ -1,7 +1,6 @@
 use crate::protocol::value_array::Values;
 use crate::protocol::{FloatArray, IndexArray, StringArray, ValueArray};
 use crate::Mergeable;
-use log::trace;
 use pack_prost::ToProstValue;
 use prost_types::Value;
 use std::collections::HashMap;
@@ -84,7 +83,6 @@ impl Mergeable for FrameData {
 
 impl Mergeable for GetFrameResponse {
     fn merge(&mut self, other: &Self) {
-        trace!("Merge {self:?} <=== {other:?}");
         // We keep the index of the initial frame. However, if the new frame has
         // an index of 0, then it is a resetting frame: the existing frame is
         // erased and the frame index is set to 0 to convey this information.

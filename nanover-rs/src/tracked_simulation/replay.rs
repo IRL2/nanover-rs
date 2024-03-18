@@ -4,14 +4,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use log::trace;
-use nanover_proto::trajectory::{GetFrameRequest, GetFrameResponse};
+use nanover_proto::trajectory::GetFrameResponse;
 
 use super::{specific::TrackedSimulation, Configuration};
 use crate::{
     broadcaster::BroadcastSendError,
     frame_broadcaster::FrameBroadcaster,
-    recording::{RecordPair, ReplaySimulation, TimedRecord},
+    recording::{RecordPair, ReplaySimulation},
     simulation::{Simulation, ToFrameData},
 };
 
@@ -71,7 +70,6 @@ impl TrackedReplaySimulation {
         };
 
         if self.current_time > next_time {
-            trace!("Sending frame");
             self.send_regular_frame(
                 sim_clone.clone(),
                 configuration.with_velocities,
@@ -84,7 +82,6 @@ impl TrackedReplaySimulation {
                 .and_then(|pair| pair.next.as_ref())
                 .is_none()
             {
-                trace!("Reached last frame");
                 self.reached_end = true;
             } else {
                 self.read_next_frame();
@@ -135,8 +132,6 @@ impl TrackedSimulation for TrackedReplaySimulation {
         with_forces: bool,
     ) -> Result<(), BroadcastSendError> {
         let frame = self.simulation.to_framedata(with_velocities, with_forces);
-        trace!("frame: {frame:?}");
-        trace!("last read: {:?}", self.last_frame_read());
         sim_clone.lock().unwrap().send_frame(frame)
     }
 }
