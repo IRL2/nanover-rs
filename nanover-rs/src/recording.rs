@@ -1,3 +1,4 @@
+use log::trace;
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek},
@@ -16,13 +17,13 @@ use crate::simulation::{Simulation, ToFrameData};
 const MAGIC_NUMBER: u64 = 6661355757386708963;
 const FORMAT_VERSION: u64 = 2;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TimedRecord<T> {
     record: T,
     timestamp: u128,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RecordPair<T> {
     pub current: TimedRecord<T>,
     pub next: Option<TimedRecord<T>>,
@@ -99,8 +100,8 @@ where
         self.last_read.current.record.clone()
     }
 
-    fn delay_to_next_record(&self) -> Option<u128> {
-        Some(self.last_read.next.as_ref()?.timestamp())
+    pub fn last_read(&self) -> &RecordPair<T> {
+        &self.last_read
     }
 
     fn reset(&mut self) {
@@ -113,10 +114,14 @@ where
 
     fn next_frame_pair(&mut self) -> std::io::Result<RecordPair<T>> {
         match &self.last_read.next {
-            None => Ok(self.last_read.clone()),
+            None => {
+                trace!("Done, keeping the old record");
+                Ok(self.last_read.clone())
+            }
             Some(record) => {
                 Mergeable::merge(&mut self.aggregate, &record.record);
                 let next = read_one_frame(&mut self.source).ok();
+                trace!("reading new frame: {next:?}");
                 let pair = RecordPair {
                     current: TimedRecord {
                         record: self.aggregate.clone(),
@@ -124,6 +129,7 @@ where
                     },
                     next,
                 };
+                self.last_read = pair.clone();
                 Ok(pair)
             }
         }
@@ -187,6 +193,10 @@ impl ReplaySimulation {
         Ok(Some(source.seek(time)?.current))
     }
 
+    pub fn last_frame_read(&self) -> Option<&RecordPair<GetFrameResponse>> {
+        Some(self.frame_source.as_ref()?.last_read())
+    }
+
     pub fn seek(
         &mut self,
         time: u128,
@@ -199,8 +209,19 @@ impl ReplaySimulation {
         Ok((frame, state))
     }
 
-    pub fn delay_to_next_frame(&self) -> Option<u128> {
-        self.frame_source.as_ref()?.delay_to_next_record()
+    pub fn time_next_record(&self) -> Option<u128> {
+        Some(
+            self.frame_source
+                .as_ref()?
+                .last_read
+                .next
+                .as_ref()?
+                .timestamp(),
+        )
+    }
+
+    pub fn time_current_record(&self) -> Option<u128> {
+        Some(self.frame_source.as_ref()?.last_read.current.timestamp())
     }
 
     pub fn next_frame(&mut self) {

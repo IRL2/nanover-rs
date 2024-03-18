@@ -184,12 +184,9 @@ pub fn run_simulation_thread(
             let now = time::Instant::now();
             match cancel_rx.try_recv() {
                 Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    trace!("Simulation loop ended.");
                     break;
                 }
-                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
-                    trace!("Tick simulation loop");
-                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
             };
             let keep_going;
             (maybe_simulation, keep_going) = playback_loop(
