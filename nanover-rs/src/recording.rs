@@ -223,8 +223,11 @@ impl ReplaySimulation {
 }
 
 impl Simulation for ReplaySimulation {
-    fn step(&mut self, _steps: i32) {
-        unimplemented!();
+    fn step(&mut self, steps: i32) {
+        let steps = steps.max(0);
+        for _ in 0..steps {
+            self.next_frame();
+        }
     }
 
     fn reset(&mut self) {

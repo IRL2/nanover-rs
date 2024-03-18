@@ -108,7 +108,7 @@ impl TrackedReplaySimulation {
 
 impl TrackedSimulation for TrackedReplaySimulation {
     fn step(&mut self) {
-        unimplemented!();
+        self.simulation.step(1);
     }
 
     fn reset(&mut self) {
