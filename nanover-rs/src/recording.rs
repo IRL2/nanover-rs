@@ -32,12 +32,47 @@ impl<T> TimedRecord<T>
 where
     T: Clone,
 {
-    fn timestamp(&self) -> u128 {
+    pub fn record(&self) -> &T {
+        &self.record
+    }
+
+    pub fn as_record(self) -> T {
+        self.record
+    }
+
+    pub fn timestamp(&self) -> u128 {
         self.timestamp
     }
 }
 
-struct RecordingFile<T> {
+impl<T> Default for TimedRecord<T>
+where
+    T: Default,
+{
+    fn default() -> Self {
+        Self {
+            record: T::default(),
+            timestamp: 0,
+        }
+    }
+}
+
+impl<T> Default for RecordPair<T>
+where
+    T: Default,
+{
+    fn default() -> Self {
+        Self {
+            current: TimedRecord::default(),
+            next: None,
+        }
+    }
+}
+
+struct RecordingFile<T>
+where
+    T: Default,
+{
     source: BufReader<File>,
     first_record_position: u64,
     last_read: RecordPair<T>,

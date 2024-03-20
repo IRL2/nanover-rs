@@ -11,7 +11,7 @@ use crate::{
     broadcaster::BroadcastSendError,
     frame_broadcaster::FrameBroadcaster,
     recording::{RecordPair, ReplaySimulation},
-    simulation::{Simulation, ToFrameData},
+    simulation::Simulation,
 };
 
 const DEFAULT_DELAY: u128 = ((1.0 / 30.0) * 1_000_000.0) as u128;
@@ -19,20 +19,23 @@ const DEFAULT_DELAY: u128 = ((1.0 / 30.0) * 1_000_000.0) as u128;
 pub struct TrackedReplaySimulation {
     pub simulation: ReplaySimulation,
     reset_counter: usize,
-    simulation_counter: usize,
+    simulation_counter_base: usize,
+    last_original_simulation_couter_sent: Option<usize>,
     current_time: u128,
     reached_end: bool,
 }
 
 impl TrackedReplaySimulation {
-    pub fn new(simulation: ReplaySimulation, simulation_counter: usize) -> Self {
+    pub fn new(simulation: ReplaySimulation, simulation_counter_base: usize) -> Self {
         let reset_counter = 0;
         let current_time = 0;
         let reached_end = false;
+        let last_original_simulation_couter_sent = None;
         Self {
             simulation,
             reset_counter,
-            simulation_counter,
+            simulation_counter_base,
+            last_original_simulation_couter_sent,
             current_time,
             reached_end,
         }
@@ -122,16 +125,42 @@ impl TrackedSimulation for TrackedReplaySimulation {
     }
 
     fn simulation_counter(&self) -> usize {
-        self.simulation_counter
+        self.last_original_simulation_couter_sent
+            .unwrap_or_default()
     }
 
     fn send_regular_frame(
-        &self,
+        &mut self,
         sim_clone: Arc<Mutex<FrameBroadcaster>>,
-        with_velocities: bool,
-        with_forces: bool,
+        _with_velocities: bool,
+        _with_forces: bool,
     ) -> Result<(), BroadcastSendError> {
-        let frame = self.simulation.to_framedata(with_velocities, with_forces);
-        sim_clone.lock().unwrap().send_frame(frame)
+        let pair = self.last_frame_read().cloned().unwrap_or_default();
+        let frame_response = pair.current.as_record();
+        let frame_index = frame_response.frame_index;
+        let mut frame = frame_response.frame.unwrap_or_default();
+        let mut simulation_counter: Option<usize> = None;
+        frame
+            .values
+            .entry("system.simulation.counter".to_string())
+            .and_modify(|counter| {
+                let counter_base = self.simulation_counter_base as f64;
+                if let Some(prost_types::value::Kind::NumberValue(ref mut counter_from_record)) =
+                    counter.kind
+                {
+                    let simulation_counter_to_send = *counter_from_record + counter_base;
+                    simulation_counter = Some(simulation_counter_to_send as usize);
+                    *counter_from_record = simulation_counter_to_send;
+                };
+            });
+        if simulation_counter.is_some() {
+            self.last_original_simulation_couter_sent = simulation_counter;
+        }
+
+        if frame_index == 0 {
+            sim_clone.lock().unwrap().send_reset_frame(frame)
+        } else {
+            sim_clone.lock().unwrap().send_frame(frame)
+        }
     }
 }

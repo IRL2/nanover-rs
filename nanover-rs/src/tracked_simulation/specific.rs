@@ -27,7 +27,7 @@ pub trait TrackedSimulation {
     fn reset_counter(&self) -> usize;
     fn simulation_counter(&self) -> usize;
     fn send_regular_frame(
-        &self,
+        &mut self,
         sim_clone: Arc<Mutex<FrameBroadcaster>>,
         with_velocities: bool,
         with_forces: bool,
@@ -90,7 +90,7 @@ impl SpecificSimulationTracked {
     }
 
     pub fn send_regular_frame(
-        &self,
+        &mut self,
         sim_clone: Arc<Mutex<FrameBroadcaster>>,
         with_velocities: bool,
         with_forces: bool,

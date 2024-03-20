@@ -154,7 +154,7 @@ impl TrackedSimulation for TrackedOpenMMSimulation {
     }
 
     fn send_regular_frame(
-        &self,
+        &mut self,
         sim_clone: Arc<Mutex<FrameBroadcaster>>,
         with_velocities: bool,
         with_forces: bool,
