@@ -155,8 +155,7 @@ impl Manifest {
                         Ok(LoadedSimulation::OpenMM(simulation))
                     }
                     InputPath::Recording(path) => {
-                        let file = File::open(path)?;
-                        let simulation = ReplaySimulation::try_new(Some(file), None)?;
+                        let simulation = path.try_into()?;
                         Ok(LoadedSimulation::Recording(simulation))
                     }
                 }
@@ -176,7 +175,7 @@ impl Manifest {
                 .iter()
                 .map(|entry| match entry {
                     InputPath::OpenMM(path) => path.clone(),
-                    InputPath::Recording(path) => path.clone(),
+                    InputPath::Recording(path) => path.to_string(),
                 })
                 .collect(),
         }

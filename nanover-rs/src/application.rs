@@ -147,9 +147,49 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
 }
 
 #[derive(Clone)]
+pub struct RecordingPath {
+    pub trajectory: Option<String>,
+    pub state: Option<String>,
+}
+
+impl RecordingPath {
+    fn from_trajectory(trajectory: String) -> Self {
+        Self {
+            trajectory: Some(trajectory),
+            state: None,
+        }
+    }
+
+    fn from_satte(state: String) -> Self {
+        Self {
+            trajectory: None,
+            state: Some(state),
+        }
+    }
+
+    fn from_trajectory_and_state(trajectory: String, state: String) -> Self {
+        Self {
+            trajectory: Some(trajectory),
+            state: Some(state),
+        }
+    }
+}
+
+impl Display for RecordingPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (&self.trajectory, &self.state) {
+            (None, None) => f.write_str("~~Empty~~"),
+            (Some(trajectory), Some(state)) => f.write_str(&format!("{trajectory}:{state}")),
+            (Some(trajectory), None) => f.write_str(trajectory),
+            (None, Some(state)) => f.write_str(state),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub enum InputPath {
     OpenMM(String),
-    Recording(String),
+    Recording(RecordingPath),
 }
 
 impl Display for InputPath {
@@ -245,12 +285,27 @@ impl Default for Cli {
 struct UnrecognisedInput {}
 
 fn parse_input_path(value: &str) -> Result<InputPath, UnrecognisedInput> {
-    if value.ends_with(".xml") {
-        Ok(InputPath::OpenMM(value.to_string()))
-    } else if value.ends_with(".traj") {
-        Ok(InputPath::Recording(value.to_string()))
-    } else {
-        Err(UnrecognisedInput {})
+    match value.split_once(':') {
+        None => Err(UnrecognisedInput {}),
+        Some(("", "")) => Err(UnrecognisedInput {}),
+        Some((trajectory, "")) | Some(("", trajectory)) => {
+            if trajectory.ends_with(".xml") {
+                Ok(InputPath::OpenMM(trajectory.to_string()))
+            } else if trajectory.ends_with(".traj") {
+                Ok(InputPath::Recording(RecordingPath::from_trajectory(
+                    trajectory.to_string(),
+                )))
+            } else if trajectory.ends_with(".state") {
+                Ok(InputPath::Recording(RecordingPath::from_satte(
+                    trajectory.to_string(),
+                )))
+            } else {
+                Err(UnrecognisedInput {})
+            }
+        }
+        Some((trajectory, state)) => Ok(InputPath::Recording(
+            RecordingPath::from_trajectory_and_state(trajectory.to_string(), state.to_string()),
+        )),
     }
 }
 

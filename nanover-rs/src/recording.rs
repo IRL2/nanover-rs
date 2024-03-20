@@ -11,7 +11,10 @@ use nanover_proto::{
     Mergeable,
 };
 
-use crate::simulation::{Simulation, ToFrameData};
+use crate::{
+    application::RecordingPath,
+    simulation::{Simulation, ToFrameData},
+};
 
 const MAGIC_NUMBER: u64 = 6661355757386708963;
 const FORMAT_VERSION: u64 = 2;
@@ -186,6 +189,16 @@ where
 pub struct ReplaySimulation {
     frame_source: Option<RecordingFile<GetFrameResponse>>,
     state_source: Option<RecordingFile<StateUpdate>>,
+}
+
+impl TryFrom<&RecordingPath> for ReplaySimulation {
+    type Error = RecordingReadError;
+
+    fn try_from(value: &RecordingPath) -> Result<Self, Self::Error> {
+        let trajectory_file = value.trajectory.as_ref().map(File::open).transpose()?;
+        let state_file = value.state.as_ref().map(File::open).transpose()?;
+        Self::try_new(trajectory_file, state_file)
+    }
 }
 
 impl ReplaySimulation {
