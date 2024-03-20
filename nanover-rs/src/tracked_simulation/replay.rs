@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nanover_proto::trajectory::GetFrameResponse;
+use nanover_proto::{state_update::StateUpdate, trajectory::GetFrameResponse};
 
 use super::{specific::TrackedSimulation, Configuration};
 use crate::{
@@ -22,14 +22,16 @@ pub struct TrackedReplaySimulation {
     simulation_counter_base: usize,
     last_original_simulation_couter_sent: Option<usize>,
     current_time: u128,
-    reached_end: bool,
+    reached_end_frames: bool,
+    reached_end_state: bool,
 }
 
 impl TrackedReplaySimulation {
     pub fn new(simulation: ReplaySimulation, simulation_counter_base: usize) -> Self {
         let reset_counter = 0;
         let current_time = 0;
-        let reached_end = false;
+        let reached_end_frames = false;
+        let reached_end_state = false;
         let last_original_simulation_couter_sent = None;
         Self {
             simulation,
@@ -37,7 +39,8 @@ impl TrackedReplaySimulation {
             simulation_counter_base,
             last_original_simulation_couter_sent,
             current_time,
-            reached_end,
+            reached_end_frames,
+            reached_end_state,
         }
     }
 
@@ -45,16 +48,28 @@ impl TrackedReplaySimulation {
         self.simulation.time_next_record()
     }
 
-    fn time_current_record(&self) -> Option<u128> {
-        self.simulation.time_current_record()
+    fn time_current_frame(&self) -> Option<u128> {
+        self.simulation.time_current_frame()
+    }
+
+    fn time_current_state(&self) -> Option<u128> {
+        self.simulation.time_current_state()
     }
 
     pub fn read_next_frame(&mut self) {
         self.simulation.next_frame();
     }
 
+    pub fn read_next_state(&mut self) {
+        self.simulation.next_state();
+    }
+
     fn last_frame_read(&self) -> Option<&RecordPair<GetFrameResponse>> {
         self.simulation.last_frame_read()
+    }
+
+    fn last_state_read(&self) -> Option<&RecordPair<StateUpdate>> {
+        self.simulation.last_state_read()
     }
 
     pub fn simulation_loop_iteration(
@@ -63,33 +78,48 @@ impl TrackedReplaySimulation {
         now: &Instant,
         configuration: &Configuration,
     ) {
-        if self.reached_end {
+        let reached_end_recording = self.reached_end_frames && self.reached_end_state;
+        if reached_end_recording {
             thread::sleep(Duration::from_micros(DEFAULT_DELAY as u64));
             return;
         }
-        let Some(next_time) = self.time_current_record() else {
-            thread::sleep(Duration::from_micros(DEFAULT_DELAY as u64));
-            return;
+
+        if let Some(next_frame_time) = self.time_current_frame() {
+            if self.current_time > next_frame_time {
+                self.send_regular_frame(
+                    sim_clone.clone(),
+                    configuration.with_velocities,
+                    configuration.with_forces,
+                )
+                .expect("Cannot send replay frame");
+                if self
+                    .last_frame_read()
+                    .as_ref()
+                    .and_then(|pair| pair.next.as_ref())
+                    .is_none()
+                {
+                    self.reached_end_frames = true;
+                } else {
+                    self.read_next_frame();
+                }
+            }
         };
 
-        if self.current_time > next_time {
-            self.send_regular_frame(
-                sim_clone.clone(),
-                configuration.with_velocities,
-                configuration.with_forces,
-            )
-            .expect("Cannot send replay frame");
+        if let Some(next_state_time) = self.time_current_state() {
+            if self.current_time > next_state_time {
+                // TODO: Send state record
+            }
             if self
-                .last_frame_read()
+                .last_state_read()
                 .as_ref()
                 .and_then(|pair| pair.next.as_ref())
                 .is_none()
             {
-                self.reached_end = true;
+                self.reached_end_state = true;
             } else {
-                self.read_next_frame();
+                self.read_next_state();
             }
-        };
+        }
 
         let Some(next_time) = self.time_next_record() else {
             // There are no more record to read so we just stall, but not too long because we still

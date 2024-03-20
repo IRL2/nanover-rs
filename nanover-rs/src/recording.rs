@@ -236,6 +236,10 @@ impl ReplaySimulation {
         Some(self.frame_source.as_ref()?.last_read())
     }
 
+    pub fn last_state_read(&self) -> Option<&RecordPair<StateUpdate>> {
+        Some(self.state_source.as_ref()?.last_read())
+    }
+
     pub fn seek(
         &mut self,
         time: u128,
@@ -248,7 +252,7 @@ impl ReplaySimulation {
         Ok((frame, state))
     }
 
-    pub fn time_next_record(&self) -> Option<u128> {
+    pub fn time_next_frame(&self) -> Option<u128> {
         Some(
             self.frame_source
                 .as_ref()?
@@ -259,13 +263,45 @@ impl ReplaySimulation {
         )
     }
 
-    pub fn time_current_record(&self) -> Option<u128> {
+    pub fn time_next_state(&self) -> Option<u128> {
+        Some(
+            self.state_source
+                .as_ref()?
+                .last_read
+                .next
+                .as_ref()?
+                .timestamp(),
+        )
+    }
+
+    pub fn time_next_record(&self) -> Option<u128> {
+        match (self.time_next_frame(), self.time_next_state()) {
+            (None, None) => None,
+            (Some(frame), Some(state)) => Some(frame.min(state)),
+            (Some(frame), None) => Some(frame),
+            (None, Some(state)) => Some(state),
+        }
+    }
+
+    pub fn time_current_frame(&self) -> Option<u128> {
         Some(self.frame_source.as_ref()?.last_read.current.timestamp())
+    }
+
+    pub fn time_current_state(&self) -> Option<u128> {
+        Some(self.state_source.as_ref()?.last_read.current.timestamp())
     }
 
     pub fn next_frame(&mut self) {
         if let Some(ref mut source) = self.frame_source {
             source.next_frame_pair().expect("Could not load next frame");
+        };
+    }
+
+    pub fn next_state(&mut self) {
+        if let Some(ref mut source) = self.state_source {
+            source
+                .next_frame_pair()
+                .expect("Could not load next state update");
         };
     }
 }
