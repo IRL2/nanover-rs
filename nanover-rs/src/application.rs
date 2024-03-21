@@ -153,21 +153,21 @@ pub struct RecordingPath {
 }
 
 impl RecordingPath {
-    fn from_trajectory(trajectory: String) -> Self {
+    pub fn from_trajectory(trajectory: String) -> Self {
         Self {
             trajectory: Some(trajectory),
             state: None,
         }
     }
 
-    fn from_satte(state: String) -> Self {
+    pub fn from_state(state: String) -> Self {
         Self {
             trajectory: None,
             state: Some(state),
         }
     }
 
-    fn from_trajectory_and_state(trajectory: String, state: String) -> Self {
+    pub fn from_trajectory_and_state(trajectory: String, state: String) -> Self {
         Self {
             trajectory: Some(trajectory),
             state: Some(state),
@@ -296,7 +296,7 @@ fn parse_input_path(value: &str) -> Result<InputPath, UnrecognisedInput> {
                     trajectory.to_string(),
                 )))
             } else if trajectory.ends_with(".state") {
-                Ok(InputPath::Recording(RecordingPath::from_satte(
+                Ok(InputPath::Recording(RecordingPath::from_state(
                     trajectory.to_string(),
                 )))
             } else {

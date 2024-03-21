@@ -5,6 +5,7 @@ use nanover_proto::command::{
 };
 use nanover_rs::application::{
     cancellation_channels, main_to_wrap, AppError, CancellationSenders, Cli, InputPath,
+    RecordingPath,
 };
 use pack_prost::{ToProstValue, UnPack};
 use prost_types::Struct;
@@ -314,8 +315,71 @@ impl OpenMMFileField {
     }
 }
 
+struct ReplayFileField {
+    trajectory: String,
+    state: String,
+}
+
+impl ReplayFileField {
+    pub fn new() -> Self {
+        Self {
+            trajectory: String::new(),
+            state: String::new(),
+        }
+    }
+
+    pub fn has_path(&self) -> bool {
+        !self.trajectory.trim().is_empty() || !self.state.trim().is_empty()
+    }
+
+    fn widget(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut was_interacted_with = false;
+        ui.horizontal(|ui| {
+            ui.label("Trajectory");
+            was_interacted_with |= ui.text_edit_singleline(&mut self.trajectory).changed();
+            if ui.button("Select files").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("NanoVer trajectory recording", &["traj"])
+                    .pick_file()
+                {
+                    self.trajectory = path.display().to_string();
+                    was_interacted_with = true;
+                };
+            };
+            ui.label("State");
+            was_interacted_with |= ui.text_edit_singleline(&mut self.state).changed();
+            if ui.button("Select files").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("NanoVer state recording", &["state"])
+                    .pick_file()
+                {
+                    self.state = path.display().to_string();
+                    was_interacted_with = true;
+                };
+            }
+        });
+        was_interacted_with
+    }
+
+    fn value(&self) -> Option<InputPath> {
+        match (self.trajectory.trim(), self.state.trim()) {
+            ("", "") => None,
+            (trajectory, "") => Some(InputPath::Recording(RecordingPath::from_trajectory(
+                trajectory.to_string(),
+            ))),
+            ("", state) => Some(InputPath::Recording(RecordingPath::from_state(
+                state.to_string(),
+            ))),
+            (trajectory, state) => Some(InputPath::Recording(
+                RecordingPath::from_trajectory_and_state(trajectory.to_string(), state.to_string()),
+            )),
+        }
+    }
+}
+
 enum FileFieldType {
     OpenMM(OpenMMFileField),
+    Replay(ReplayFileField),
 }
 
 struct MultiFileFieldItem {
@@ -329,6 +393,7 @@ impl MultiFileFieldItem {
         ui.horizontal(|ui| {
             match self.field {
                 FileFieldType::OpenMM(ref mut field) => was_interacted_with = field.widget(ui),
+                FileFieldType::Replay(ref mut field) => was_interacted_with = field.widget(ui),
             };
 
             if ui.button("-").clicked() {
@@ -345,15 +410,24 @@ impl MultiFileFieldItem {
         }
     }
 
+    fn new_recording() -> Self {
+        Self {
+            field: FileFieldType::Replay(ReplayFileField::new()),
+            is_deleted: false,
+        }
+    }
+
     fn value(&self) -> Option<InputPath> {
         match self.field {
             FileFieldType::OpenMM(ref field) => field.value(),
+            FileFieldType::Replay(ref field) => field.value(),
         }
     }
 
     fn has_path(&self) -> bool {
         match self.field {
             FileFieldType::OpenMM(ref field) => field.has_path(),
+            FileFieldType::Replay(ref field) => field.has_path(),
         }
     }
 }
@@ -378,6 +452,9 @@ impl MultiFileField {
                 if ui.button("+ OpenMM").clicked() {
                     self.add_openmm_field();
                 };
+                if ui.button("+ Recording").clicked() {
+                    self.add_recording_field();
+                };
             })
         });
         was_interacted_with
@@ -385,6 +462,10 @@ impl MultiFileField {
 
     fn add_openmm_field(&mut self) {
         self.fields.push(MultiFileFieldItem::new_openmm());
+    }
+
+    fn add_recording_field(&mut self) {
+        self.fields.push(MultiFileFieldItem::new_recording());
     }
 
     pub fn paths(&self) -> Vec<InputPath> {
