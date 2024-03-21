@@ -303,17 +303,60 @@ impl OpenMMFileField {
         });
         was_interacted_with
     }
+
+    fn value(&self) -> Option<InputPath> {
+        let value_string = self.value.trim();
+        if value_string.is_empty() {
+            None
+        } else {
+            Some(InputPath::OpenMM(value_string.to_string()))
+        }
+    }
+}
+
+enum FileFieldType {
+    OpenMM(OpenMMFileField),
+}
+
+struct MultiFileFieldItem {
+    field: FileFieldType,
+    is_deleted: bool,
+}
+
+impl MultiFileFieldItem {
+    fn widget(&mut self, ui: &mut egui::Ui) -> bool {
+        match self.field {
+            FileFieldType::OpenMM(ref mut field) => field.widget(ui),
+        }
+    }
+
+    fn new_openmm() -> Self {
+        Self {
+            field: FileFieldType::OpenMM(OpenMMFileField::new()),
+            is_deleted: false,
+        }
+    }
+
+    fn value(&self) -> Option<InputPath> {
+        match self.field {
+            FileFieldType::OpenMM(ref field) => field.value(),
+        }
+    }
+
+    fn has_path(&self) -> bool {
+        match self.field {
+            FileFieldType::OpenMM(ref field) => field.has_path(),
+        }
+    }
 }
 
 struct MultiFileField {
-    fields: Vec<OpenMMFileField>,
+    fields: Vec<MultiFileFieldItem>,
 }
 
 impl MultiFileField {
     pub fn new() -> Self {
-        Self {
-            fields: vec![OpenMMFileField::new()],
-        }
+        Self { fields: vec![] }
     }
 
     fn widget(&mut self, ui: &mut egui::Ui) -> bool {
@@ -323,8 +366,8 @@ impl MultiFileField {
                 was_interacted_with |= field.widget(ui);
             }
             ui.horizontal(|ui| {
-                if ui.button("+").clicked() {
-                    self.add_field();
+                if ui.button("+ OpenMM").clicked() {
+                    self.add_openmm_field();
                 };
                 if ui.button("-").clicked() {
                     self.remove_field();
@@ -334,8 +377,8 @@ impl MultiFileField {
         was_interacted_with
     }
 
-    fn add_field(&mut self) {
-        self.fields.push(OpenMMFileField::new());
+    fn add_openmm_field(&mut self) {
+        self.fields.push(MultiFileFieldItem::new_openmm());
     }
 
     fn remove_field(&mut self) {
@@ -345,14 +388,7 @@ impl MultiFileField {
     pub fn paths(&self) -> Vec<InputPath> {
         self.fields
             .iter()
-            .filter_map(|field| {
-                let trimmed = field.value.trim();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(InputPath::OpenMM(trimmed.to_string()))
-                }
-            })
+            .filter_map(|field| field.value())
             .collect()
     }
 
