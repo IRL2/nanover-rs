@@ -205,7 +205,12 @@ pub fn run_simulation_thread(
                 match simulation {
                     SpecificSimulationTracked::Recording(simulation) => {
                         if playback_state.is_playing() {
-                            simulation.simulation_loop_iteration(&sim_clone, &now, &configuration)
+                            simulation.simulation_loop_iteration(
+                                &sim_clone,
+                                &state_clone,
+                                &now,
+                                &configuration,
+                            )
                         }
                     }
                     SpecificSimulationTracked::OpenMM(simulation) => {

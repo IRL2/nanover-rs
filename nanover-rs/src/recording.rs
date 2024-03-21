@@ -1,3 +1,4 @@
+use log::trace;
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek},
@@ -277,7 +278,10 @@ impl ReplaySimulation {
     pub fn time_next_record(&self) -> Option<u128> {
         match (self.time_next_frame(), self.time_next_state()) {
             (None, None) => None,
-            (Some(frame), Some(state)) => Some(frame.min(state)),
+            (Some(frame), Some(state)) => {
+                trace!("next: frame: {frame}, state: {state}");
+                Some(frame.min(state))
+            }
             (Some(frame), None) => Some(frame),
             (None, Some(state)) => Some(state),
         }
@@ -316,6 +320,9 @@ impl Simulation for ReplaySimulation {
 
     fn reset(&mut self) {
         if let Some(ref mut source) = self.frame_source {
+            source.reset()
+        };
+        if let Some(ref mut source) = self.state_source {
             source.reset()
         };
     }

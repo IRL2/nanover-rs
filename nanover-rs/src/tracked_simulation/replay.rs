@@ -4,14 +4,16 @@ use std::{
     time::{Duration, Instant},
 };
 
+use log::trace;
 use nanover_proto::{state_update::StateUpdate, trajectory::GetFrameResponse};
 
 use super::{specific::TrackedSimulation, Configuration};
 use crate::{
-    broadcaster::BroadcastSendError,
+    broadcaster::{BroadcastSendError, Broadcaster},
     frame_broadcaster::FrameBroadcaster,
     recording::{RecordPair, ReplaySimulation},
     simulation::Simulation,
+    state_broadcaster::StateBroadcaster,
 };
 
 const DEFAULT_DELAY: u128 = ((1.0 / 30.0) * 1_000_000.0) as u128;
@@ -75,6 +77,7 @@ impl TrackedReplaySimulation {
     pub fn simulation_loop_iteration(
         &mut self,
         sim_clone: &Arc<Mutex<FrameBroadcaster>>,
+        state_clone: &Arc<Mutex<StateBroadcaster>>,
         now: &Instant,
         configuration: &Configuration,
     ) {
@@ -86,6 +89,7 @@ impl TrackedReplaySimulation {
 
         if let Some(next_frame_time) = self.time_current_frame() {
             if self.current_time > next_frame_time {
+                trace!("Sending frame {next_frame_time}");
                 self.send_regular_frame(
                     sim_clone.clone(),
                     configuration.with_velocities,
@@ -107,17 +111,18 @@ impl TrackedReplaySimulation {
 
         if let Some(next_state_time) = self.time_current_state() {
             if self.current_time > next_state_time {
-                // TODO: Send state record
-            }
-            if self
-                .last_state_read()
-                .as_ref()
-                .and_then(|pair| pair.next.as_ref())
-                .is_none()
-            {
-                self.reached_end_state = true;
-            } else {
-                self.read_next_state();
+                trace!("Sending state {next_state_time}");
+                self.send_state_update(state_clone.clone());
+                if self
+                    .last_state_read()
+                    .as_ref()
+                    .and_then(|pair| pair.next.as_ref())
+                    .is_none()
+                {
+                    self.reached_end_state = true;
+                } else {
+                    self.read_next_state();
+                }
             }
         }
 
@@ -136,6 +141,21 @@ impl TrackedReplaySimulation {
         let time_left = Duration::from_micros(delay as u64).saturating_sub(elapsed);
         thread::sleep(time_left);
         self.current_time += delay;
+    }
+
+    fn send_state_update(&self, state_clone: Arc<Mutex<StateBroadcaster>>) {
+        let state_update = self
+            .simulation
+            .last_state_read()
+            .cloned()
+            .unwrap_or_default()
+            .current
+            .as_record();
+        state_clone
+            .lock()
+            .unwrap()
+            .send(state_update)
+            .expect("Cound not send state update");
     }
 }
 
