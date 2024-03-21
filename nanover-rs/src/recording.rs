@@ -164,27 +164,6 @@ where
             }
         }
     }
-
-    fn seek(&mut self, time: u128) -> std::io::Result<RecordPair<T>> {
-        if self.last_read.next.is_none() {
-            return Ok(self.last_read.clone());
-        }
-        let start_time = self.last_read.current.timestamp();
-        if time < start_time {
-            self.reset();
-        }
-        loop {
-            let Some(next) = &self.last_read.next else {
-                break;
-            };
-            if next.timestamp() > time {
-                break;
-            };
-
-            self.next_frame_pair()?;
-        }
-        Ok(self.last_read.clone())
-    }
 }
 
 pub struct ReplaySimulation {
@@ -219,38 +198,12 @@ impl ReplaySimulation {
         })
     }
 
-    fn seek_frame(&mut self, time: u128) -> std::io::Result<Option<TimedRecord<GetFrameResponse>>> {
-        let Some(ref mut source) = self.frame_source else {
-            return Ok(None);
-        };
-        Ok(Some(source.seek(time)?.current))
-    }
-
-    fn seek_state(&mut self, time: u128) -> std::io::Result<Option<TimedRecord<StateUpdate>>> {
-        let Some(ref mut source) = self.state_source else {
-            return Ok(None);
-        };
-        Ok(Some(source.seek(time)?.current))
-    }
-
     pub fn last_frame_read(&self) -> Option<&RecordPair<GetFrameResponse>> {
         Some(self.frame_source.as_ref()?.last_read())
     }
 
     pub fn last_state_read(&self) -> Option<&RecordPair<StateUpdate>> {
         Some(self.state_source.as_ref()?.last_read())
-    }
-
-    pub fn seek(
-        &mut self,
-        time: u128,
-    ) -> std::io::Result<(
-        Option<TimedRecord<GetFrameResponse>>,
-        Option<TimedRecord<StateUpdate>>,
-    )> {
-        let frame = self.seek_frame(time)?;
-        let state = self.seek_state(time)?;
-        Ok((frame, state))
     }
 
     pub fn time_next_frame(&self) -> Option<u128> {

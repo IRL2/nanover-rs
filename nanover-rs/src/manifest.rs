@@ -61,6 +61,7 @@ enum ManifestContent {
     MultiplePath(Vec<InputPath>),
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum LoadedSimulation {
     OpenMM(OpenMMSimulation),
     Recording(ReplaySimulation),
