@@ -325,9 +325,17 @@ struct MultiFileFieldItem {
 
 impl MultiFileFieldItem {
     fn widget(&mut self, ui: &mut egui::Ui) -> bool {
-        match self.field {
-            FileFieldType::OpenMM(ref mut field) => field.widget(ui),
-        }
+        let mut was_interacted_with = false;
+        ui.horizontal(|ui| {
+            match self.field {
+                FileFieldType::OpenMM(ref mut field) => was_interacted_with = field.widget(ui),
+            };
+
+            if ui.button("-").clicked() {
+                self.is_deleted = true;
+            };
+        });
+        was_interacted_with
     }
 
     fn new_openmm() -> Self {
@@ -360,6 +368,7 @@ impl MultiFileField {
     }
 
     fn widget(&mut self, ui: &mut egui::Ui) -> bool {
+        self.fields.retain(|field| !field.is_deleted);
         let mut was_interacted_with = false;
         ui.vertical(|ui| {
             for field in self.fields.iter_mut() {
@@ -369,9 +378,6 @@ impl MultiFileField {
                 if ui.button("+ OpenMM").clicked() {
                     self.add_openmm_field();
                 };
-                if ui.button("-").clicked() {
-                    self.remove_field();
-                }
             })
         });
         was_interacted_with
@@ -379,10 +385,6 @@ impl MultiFileField {
 
     fn add_openmm_field(&mut self) {
         self.fields.push(MultiFileFieldItem::new_openmm());
-    }
-
-    fn remove_field(&mut self) {
-        self.fields.pop();
     }
 
     pub fn paths(&self) -> Vec<InputPath> {
