@@ -234,10 +234,7 @@ fn match_bonds_to_atoms(originals: &[PreBond], atoms: &[PDBLine]) -> Vec<(usize,
         .collect()
 }
 
-fn parse_cif_bond_line(
-    line: &str,
-    loop_keys: &Vec<String>,
-) -> Result<Option<PreBond>, FormatError> {
+fn parse_cif_bond_line(line: &str, loop_keys: &[String]) -> Result<Option<PreBond>, FormatError> {
     let fields: Vec<String> = line.split_ascii_whitespace().map(String::from).collect();
     if fields.len() != loop_keys.len() {
         return Err(FormatError::UnexpectedFieldNumber(
@@ -272,7 +269,7 @@ fn parse_cif_bond_line(
     }
 }
 
-fn parse_cif_atom_line(line: &str, loop_keys: &Vec<String>) -> Result<PDBLine, FormatError> {
+fn parse_cif_atom_line(line: &str, loop_keys: &[String]) -> Result<PDBLine, FormatError> {
     let fields: Vec<String> = line.split_ascii_whitespace().map(String::from).collect();
     if fields.len() != loop_keys.len() {
         return Err(FormatError::UnexpectedFieldNumber(

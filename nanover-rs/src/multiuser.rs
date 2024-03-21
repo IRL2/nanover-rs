@@ -212,17 +212,13 @@ mod tests {
         };
         let fields = &inner_struct.fields;
         let perhaps_positions_value = fields.get("positions");
-        let Some(positions_value) = perhaps_positions_value else {
-            return None;
-        };
+        let positions_value = perhaps_positions_value?;
         let Some(Kind::ListValue(ref position_vector)) = positions_value.kind else {
             return None;
         };
         let perhaps_vector_numbers: Option<Vec<f64>> =
             position_vector.values.iter().map(unpack_number).collect();
-        let Some(vector_numbers) = perhaps_vector_numbers else {
-            return None;
-        };
+        let vector_numbers = perhaps_vector_numbers?;
         vector_numbers.try_into().ok()
     }
 

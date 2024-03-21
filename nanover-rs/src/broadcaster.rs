@@ -191,11 +191,7 @@ mod tests {
         }
 
         fn get_signal_tx(&self) -> Option<Sender<BroadcasterSignal>> {
-            if let Some(tx) = &self.signal_tx {
-                Some(tx.clone())
-            } else {
-                None
-            }
+            self.signal_tx.clone()
         }
     }
 
