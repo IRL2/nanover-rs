@@ -1,11 +1,12 @@
 use std::{
+    collections::BTreeMap,
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 
 use log::trace;
-use nanover_proto::{state_update::StateUpdate, trajectory::GetFrameResponse};
+use nanover_proto::{state_update::StateUpdate, trajectory::GetFrameResponse, Mergeable};
 
 use super::{specific::TrackedSimulation, Configuration};
 use crate::{
@@ -20,6 +21,7 @@ const DEFAULT_DELAY: u128 = ((1.0 / 30.0) * 1_000_000.0) as u128;
 
 pub struct TrackedReplaySimulation {
     pub simulation: ReplaySimulation,
+    aggregated_state: StateUpdate,
     reset_counter: usize,
     simulation_counter_base: usize,
     last_original_simulation_couter_sent: Option<usize>,
@@ -35,8 +37,10 @@ impl TrackedReplaySimulation {
         let reached_end_frames = false;
         let reached_end_state = false;
         let last_original_simulation_couter_sent = None;
+        let aggregated_state = StateUpdate::default();
         Self {
             simulation,
+            aggregated_state,
             reset_counter,
             simulation_counter_base,
             last_original_simulation_couter_sent,
@@ -143,7 +147,7 @@ impl TrackedReplaySimulation {
         self.current_time += delay;
     }
 
-    fn send_state_update(&self, state_clone: Arc<Mutex<StateBroadcaster>>) {
+    fn send_state_update(&mut self, state_clone: Arc<Mutex<StateBroadcaster>>) {
         let state_update = self
             .simulation
             .last_state_read()
@@ -151,6 +155,7 @@ impl TrackedReplaySimulation {
             .unwrap_or_default()
             .current
             .as_record();
+        self.aggregated_state.merge(&state_update);
         state_clone
             .lock()
             .unwrap()
@@ -212,5 +217,29 @@ impl TrackedSimulation for TrackedReplaySimulation {
         } else {
             sim_clone.lock().unwrap().send_frame(frame)
         }
+    }
+
+    fn clear_state(&mut self, state_clone: Arc<Mutex<StateBroadcaster>>) {
+        let Some(changed_keys) = &self.aggregated_state.changed_keys else {
+            return;
+        };
+        let keys_to_remove = BTreeMap::from_iter(changed_keys.fields.keys().map(|key| {
+            (
+                key.clone(),
+                prost_types::Value {
+                    kind: Some(prost_types::value::Kind::NullValue(0)),
+                },
+            )
+        }));
+        let changed_keys = Some(prost_types::Struct {
+            fields: keys_to_remove,
+        });
+        let update = StateUpdate { changed_keys };
+        state_clone
+            .lock()
+            .unwrap()
+            .send(update)
+            .expect("Could not send reset update.");
+        self.aggregated_state = StateUpdate::default();
     }
 }

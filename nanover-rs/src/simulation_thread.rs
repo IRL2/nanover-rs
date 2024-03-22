@@ -19,6 +19,7 @@ fn playback_loop(
     simulations_manifest: &mut Manifest,
     mut maybe_simulation: Option<SpecificSimulationTracked>,
     sim_clone: &Arc<Mutex<FrameBroadcaster>>,
+    state_clone: &Arc<Mutex<StateBroadcaster>>,
     configuration: &Configuration,
 ) -> (Option<SpecificSimulationTracked>, bool) {
     let mut keep_going = true;
@@ -27,6 +28,7 @@ fn playback_loop(
         match order_result {
             Ok(PlaybackOrder::Reset) => {
                 if let Some(ref mut simulation) = maybe_simulation {
+                    simulation.clear_state(state_clone.clone());
                     simulation.reset()
                 } else {
                     warn!("No simulation loaded, ignoring RESET command.");
@@ -54,6 +56,9 @@ fn playback_loop(
             Ok(PlaybackOrder::Load(simulation_index)) => {
                 maybe_simulation = match simulations_manifest.load_index(simulation_index) {
                     Ok(new_simulation) => {
+                        if let Some(ref mut current_simulation) = maybe_simulation {
+                            current_simulation.clear_state(state_clone.clone());
+                        }
                         let simulation = SpecificSimulationTracked::new(
                             new_simulation,
                             next_simulation_counter(maybe_simulation.as_ref()),
@@ -76,6 +81,9 @@ fn playback_loop(
             Ok(PlaybackOrder::Next) => {
                 maybe_simulation = match simulations_manifest.load_next() {
                     Ok(new_simulation) => {
+                        if let Some(ref mut current_simulation) = maybe_simulation {
+                            current_simulation.clear_state(state_clone.clone());
+                        }
                         let simulation = SpecificSimulationTracked::new(
                             new_simulation,
                             next_simulation_counter(maybe_simulation.as_ref()),
@@ -195,6 +203,7 @@ pub fn run_simulation_thread(
                 &mut simulations_manifest,
                 maybe_simulation,
                 &sim_clone,
+                &state_clone,
                 &configuration,
             );
             if !keep_going {

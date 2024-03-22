@@ -171,6 +171,8 @@ impl TrackedSimulation for TrackedOpenMMSimulation {
         let mut source = sim_clone.lock().unwrap();
         source.send_frame(frame)
     }
+
+    fn clear_state(&mut self, _state_clone: Arc<Mutex<StateBroadcaster>>) {}
 }
 
 impl ToFrameData for TrackedOpenMMSimulation {

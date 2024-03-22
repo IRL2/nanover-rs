@@ -8,7 +8,7 @@ use nanover_proto::trajectory::FrameData;
 use super::{openmm::TrackedOpenMMSimulation, replay::TrackedReplaySimulation};
 use crate::{
     broadcaster::BroadcastSendError, frame_broadcaster::FrameBroadcaster,
-    manifest::LoadedSimulation, simulation::ToFrameData,
+    manifest::LoadedSimulation, simulation::ToFrameData, state_broadcaster::StateBroadcaster,
 };
 
 pub struct Configuration {
@@ -32,6 +32,7 @@ pub trait TrackedSimulation {
         with_velocities: bool,
         with_forces: bool,
     ) -> Result<(), BroadcastSendError>;
+    fn clear_state(&mut self, state_clone: Arc<Mutex<StateBroadcaster>>);
 }
 
 pub enum SpecificSimulationTracked {
@@ -102,6 +103,13 @@ impl SpecificSimulationTracked {
             Self::Recording(simulation) => {
                 simulation.send_regular_frame(sim_clone, with_velocities, with_forces)
             }
+        }
+    }
+
+    pub fn clear_state(&mut self, state_clone: Arc<Mutex<StateBroadcaster>>) {
+        match self {
+            Self::OpenMM(simulation) => simulation.clear_state(state_clone),
+            Self::Recording(simulation) => simulation.clear_state(state_clone),
         }
     }
 }
