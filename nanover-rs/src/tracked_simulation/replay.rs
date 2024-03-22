@@ -24,7 +24,7 @@ pub struct TrackedReplaySimulation {
     aggregated_state: StateUpdate,
     reset_counter: usize,
     simulation_counter_base: usize,
-    last_original_simulation_couter_sent: Option<usize>,
+    last_original_simulation_counter_sent: Option<usize>,
     current_time: u128,
     reached_end_frames: bool,
     reached_end_state: bool,
@@ -36,14 +36,14 @@ impl TrackedReplaySimulation {
         let current_time = 0;
         let reached_end_frames = false;
         let reached_end_state = false;
-        let last_original_simulation_couter_sent = None;
+        let last_original_simulation_counter_sent = None;
         let aggregated_state = StateUpdate::default();
         Self {
             simulation,
             aggregated_state,
             reset_counter,
             simulation_counter_base,
-            last_original_simulation_couter_sent,
+            last_original_simulation_counter_sent,
             current_time,
             reached_end_frames,
             reached_end_state,
@@ -180,7 +180,7 @@ impl TrackedSimulation for TrackedReplaySimulation {
     }
 
     fn simulation_counter(&self) -> usize {
-        self.last_original_simulation_couter_sent
+        self.last_original_simulation_counter_sent
             .unwrap_or_default()
     }
 
@@ -209,7 +209,7 @@ impl TrackedSimulation for TrackedReplaySimulation {
                 };
             });
         if simulation_counter.is_some() {
-            self.last_original_simulation_couter_sent = simulation_counter;
+            self.last_original_simulation_counter_sent = simulation_counter;
         }
 
         if frame_index == 0 {
