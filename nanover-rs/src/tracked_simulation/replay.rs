@@ -17,6 +17,7 @@ use crate::{
 };
 
 const DEFAULT_DELAY: u128 = ((1.0 / 30.0) * 1_000_000.0) as u128;
+const SERVER_LOCK_TOKEN: &str = "server";
 
 pub struct TrackedReplaySimulation {
     pub simulation: ReplaySimulation,
@@ -84,6 +85,14 @@ impl TrackedReplaySimulation {
         now: &Instant,
         configuration: &Configuration,
     ) {
+        state_clone
+            .lock()
+            .unwrap()
+            .atomic_lock_updates(
+                SERVER_LOCK_TOKEN.into(),
+                BTreeMap::from([("scene".into(), Some(Duration::from_secs(1)))]),
+            )
+            .expect("Could not lock the scene");
         let reached_end_recording = self.reached_end_frames && self.reached_end_state;
         if reached_end_recording {
             thread::sleep(Duration::from_micros(DEFAULT_DELAY as u64));
@@ -232,11 +241,18 @@ impl TrackedSimulation for TrackedReplaySimulation {
             fields: keys_to_remove,
         });
         let update = StateUpdate { changed_keys };
-        state_clone
-            .lock()
-            .unwrap()
-            .send(update)
-            .expect("Could not send reset update.");
+        {
+            let mut locked_state = state_clone.lock().unwrap();
+            locked_state
+                .send(update)
+                .expect("Could not send reset update.");
+            locked_state
+                .atomic_lock_updates(
+                    SERVER_LOCK_TOKEN.into(),
+                    BTreeMap::from([("scene".into(), None)]),
+                )
+                .expect("Could not release the lock.");
+        }
         self.aggregated_state = StateUpdate::default();
     }
 }
