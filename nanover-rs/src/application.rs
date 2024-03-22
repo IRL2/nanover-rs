@@ -290,7 +290,21 @@ struct UnrecognisedInput {}
 
 fn parse_input_path(value: &str) -> Result<InputPath, UnrecognisedInput> {
     match value.split_once(':') {
-        None => Err(UnrecognisedInput {}),
+        None => {
+            if value.ends_with(".xml") {
+                Ok(InputPath::OpenMM(value.to_string()))
+            } else if value.ends_with(".traj") {
+                Ok(InputPath::Recording(RecordingPath::from_trajectory(
+                    value.to_string(),
+                )))
+            } else if value.ends_with(".state") {
+                Ok(InputPath::Recording(RecordingPath::from_state(
+                    value.to_string(),
+                )))
+            } else {
+                Err(UnrecognisedInput {})
+            }
+        }
         Some(("", "")) => Err(UnrecognisedInput {}),
         Some((trajectory, "")) | Some(("", trajectory)) => {
             if trajectory.ends_with(".xml") {
