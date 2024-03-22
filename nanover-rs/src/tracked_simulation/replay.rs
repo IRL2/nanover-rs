@@ -5,7 +5,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use log::trace;
 use nanover_proto::{state_update::StateUpdate, trajectory::GetFrameResponse, Mergeable};
 
 use super::{specific::TrackedSimulation, Configuration};
@@ -93,7 +92,6 @@ impl TrackedReplaySimulation {
 
         if let Some(next_frame_time) = self.time_current_frame() {
             if self.current_time > next_frame_time {
-                trace!("Sending frame {next_frame_time}");
                 self.send_regular_frame(
                     sim_clone.clone(),
                     configuration.with_velocities,
@@ -115,7 +113,6 @@ impl TrackedReplaySimulation {
 
         if let Some(next_state_time) = self.time_current_state() {
             if self.current_time > next_state_time {
-                trace!("Sending state {next_state_time}");
                 self.send_state_update(state_clone.clone());
                 if self
                     .last_state_read()
