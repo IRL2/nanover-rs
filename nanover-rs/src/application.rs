@@ -205,7 +205,11 @@ impl Display for InputPath {
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 pub struct Cli {
-    /// The path to the NanoVer XML file describing the simulation to run.
+    /// The path to the NanoVer input files. Files with a .xml extension will be read as NanoVer
+    /// OpenMM inputs, files with a .traj extension as trajectory recording in NanoVer format,
+    /// files with a .traj as shared state recording in NanoVer format, and a string containing a :
+    /// is interpreted as pair of trajectory and shared state recorgings formatted as
+    /// trajectory:state.
     #[clap(value_parser=parse_input_path)]
     pub input_xml_path: Vec<InputPath>,
     /// IP address to bind.
