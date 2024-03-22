@@ -1,3 +1,7 @@
+// Clippy complains about the #[macro_use] here.
+// However, removing it breaks the compilation.
+// This may be specific to rust 1.77
+#[allow(unused_imports)]
 #[macro_use]
 extern crate assert_float_eq;
 
