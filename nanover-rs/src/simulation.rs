@@ -1048,6 +1048,7 @@ unsafe fn compute_forces_single(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_float_eq::*;
     use rstest::rstest;
     use std::collections::HashSet;
 
