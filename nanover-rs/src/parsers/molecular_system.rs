@@ -189,7 +189,7 @@ mod tests {
         ]);
         let elements_for_one_residue = vec![7, 6, 6, 8, 6, 1, 1, 1, 1, 1, 1, 1]
             .into_iter()
-            .map(|element| Some(element))
+            .map(Some)
             .collect();
         let positions = std::iter::repeat([0.0; 3])
             .take(atoms_per_residue * number_of_residues)
@@ -291,8 +291,8 @@ mod tests {
         input
             .iter()
             .cycle()
-            .map(|element| element.clone())
             .take(input.len() * number)
+            .cloned()
             .collect()
     }
 

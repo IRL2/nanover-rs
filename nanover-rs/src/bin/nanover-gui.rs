@@ -873,9 +873,7 @@ impl MyEguiApp {
         if self.client.is_none() {
             self.try_connect_client();
         };
-        let Some(ref mut client) = self.client else {
-            return None;
-        };
+        let client = self.client.as_mut()?;
         match client.get_command_list(self.runtime.handle()) {
             Ok(commands) => Some(commands),
             Err(status) => {
@@ -889,9 +887,7 @@ impl MyEguiApp {
         if self.client.is_none() {
             self.try_connect_client();
         };
-        let Some(ref mut client) = self.client else {
-            return None;
-        };
+        let client = self.client.as_mut()?;
         match client.get_simulation_list(self.runtime.handle()) {
             Ok(commands) => Some(commands),
             Err(status) => {
