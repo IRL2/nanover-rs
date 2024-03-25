@@ -15,4 +15,3 @@ pack-prost = { path = "../pack-prost" }
 
 [build-dependencies]
 tonic-build = "0.9.2"
-

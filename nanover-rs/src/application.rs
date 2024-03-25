@@ -17,12 +17,14 @@ use crate::services::trajectory::{Trajectory, TrajectoryServiceServer};
 use crate::simulation::XMLParsingError;
 use crate::simulation_thread::run_simulation_thread;
 use crate::state_broadcaster::StateBroadcaster;
+use crate::tracked_simulation::Configuration;
 use futures::TryFutureExt;
 use indexmap::IndexMap;
 use log::{debug, error, info, trace};
 use nanover_proto::frame::FrameData;
 use nanover_proto::trajectory::GetFrameResponse;
 use prost::Message;
+use std::fmt::Display;
 use std::fs::File;
 use std::net::IpAddr;
 use std::net::SocketAddr;
@@ -55,6 +57,7 @@ pub struct CancellationReceivers {
     traj_service: tokio::sync::oneshot::Receiver<()>,
     state_service: tokio::sync::oneshot::Receiver<()>,
     essd: tokio::sync::oneshot::Receiver<()>,
+    simulation: tokio::sync::oneshot::Receiver<()>,
 }
 
 impl CancellationReceivers {
@@ -62,6 +65,7 @@ impl CancellationReceivers {
     pub fn unpack(
         self,
     ) -> (
+        oneshot::Receiver<()>,
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
@@ -76,6 +80,7 @@ impl CancellationReceivers {
             self.traj_service,
             self.state_service,
             self.essd,
+            self.simulation,
         )
     }
 }
@@ -91,6 +96,7 @@ pub struct CancellationSenders {
     traj_service: tokio::sync::oneshot::Sender<()>,
     state_service: tokio::sync::oneshot::Sender<()>,
     essd: tokio::sync::oneshot::Sender<()>,
+    simulation: tokio::sync::oneshot::Sender<()>,
 }
 
 impl CancellationSenders {
@@ -105,6 +111,7 @@ impl CancellationSenders {
             .send(())
             .map_err(|_| CancellationError {})?;
         self.essd.send(()).map_err(|_| CancellationError {})?;
+        self.simulation.send(()).map_err(|_| CancellationError {})?;
         Ok(())
     }
 }
@@ -116,6 +123,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
     let (traj_service_tx, traj_service_rx) = tokio::sync::oneshot::channel();
     let (state_service_tx, state_service_rx) = tokio::sync::oneshot::channel();
     let (essd_tx, essd_rx) = tokio::sync::oneshot::channel();
+    let (simulation_tx, simulation_rx) = tokio::sync::oneshot::channel();
     (
         CancellationSenders {
             server: server_tx,
@@ -124,6 +132,7 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
             traj_service: traj_service_tx,
             state_service: state_service_tx,
             essd: essd_tx,
+            simulation: simulation_tx,
         },
         CancellationReceivers {
             server: server_rx,
@@ -132,17 +141,77 @@ pub fn cancellation_channels() -> (CancellationSenders, CancellationReceivers) {
             traj_service: traj_service_rx,
             state_service: state_service_rx,
             essd: essd_rx,
+            simulation: simulation_rx,
         },
     )
+}
+
+#[derive(Clone)]
+pub struct RecordingPath {
+    pub trajectory: Option<String>,
+    pub state: Option<String>,
+}
+
+impl RecordingPath {
+    pub fn from_trajectory(trajectory: String) -> Self {
+        Self {
+            trajectory: Some(trajectory),
+            state: None,
+        }
+    }
+
+    pub fn from_state(state: String) -> Self {
+        Self {
+            trajectory: None,
+            state: Some(state),
+        }
+    }
+
+    pub fn from_trajectory_and_state(trajectory: String, state: String) -> Self {
+        Self {
+            trajectory: Some(trajectory),
+            state: Some(state),
+        }
+    }
+}
+
+impl Display for RecordingPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (&self.trajectory, &self.state) {
+            (None, None) => f.write_str("~~Empty~~"),
+            (Some(trajectory), Some(state)) => f.write_str(&format!("{trajectory}:{state}")),
+            (Some(trajectory), None) => f.write_str(trajectory),
+            (None, Some(state)) => f.write_str(state),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum InputPath {
+    OpenMM(String),
+    Recording(RecordingPath),
+}
+
+impl Display for InputPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OpenMM(path) => path.fmt(f),
+            Self::Recording(path) => path.fmt(f),
+        }
+    }
 }
 
 /// A NanoVer IMD server.
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 pub struct Cli {
-    /// The path to the NanoVer XML file describing the simulation to run.
-    #[clap(value_parser)]
-    pub input_xml_path: Vec<String>,
+    /// The path to the NanoVer input files. Files with a .xml extension will be read as NanoVer
+    /// OpenMM inputs, files with a .traj extension as trajectory recording in NanoVer format,
+    /// files with a .traj as shared state recording in NanoVer format, and a string containing a :
+    /// is interpreted as pair of trajectory and shared state recorgings formatted as
+    /// trajectory:state.
+    #[clap(value_parser=parse_input_path)]
+    pub input_xml_path: Vec<InputPath>,
     /// IP address to bind.
     #[clap(short, long, value_parser, default_value = "0.0.0.0")]
     pub address: IpAddr,
@@ -212,6 +281,49 @@ impl Default for Cli {
             include_velocity: false,
             include_forces: false,
         }
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("Could not identify the type of input.")]
+struct UnrecognisedInput {}
+
+fn parse_input_path(value: &str) -> Result<InputPath, UnrecognisedInput> {
+    match value.split_once(':') {
+        None => {
+            if value.ends_with(".xml") {
+                Ok(InputPath::OpenMM(value.to_string()))
+            } else if value.ends_with(".traj") {
+                Ok(InputPath::Recording(RecordingPath::from_trajectory(
+                    value.to_string(),
+                )))
+            } else if value.ends_with(".state") {
+                Ok(InputPath::Recording(RecordingPath::from_state(
+                    value.to_string(),
+                )))
+            } else {
+                Err(UnrecognisedInput {})
+            }
+        }
+        Some(("", "")) => Err(UnrecognisedInput {}),
+        Some((trajectory, "")) | Some(("", trajectory)) => {
+            if trajectory.ends_with(".xml") {
+                Ok(InputPath::OpenMM(trajectory.to_string()))
+            } else if trajectory.ends_with(".traj") {
+                Ok(InputPath::Recording(RecordingPath::from_trajectory(
+                    trajectory.to_string(),
+                )))
+            } else if trajectory.ends_with(".state") {
+                Ok(InputPath::Recording(RecordingPath::from_state(
+                    trajectory.to_string(),
+                )))
+            } else {
+                Err(UnrecognisedInput {})
+            }
+        }
+        Some((trajectory, state)) => Ok(InputPath::Recording(
+            RecordingPath::from_trajectory_and_state(trajectory.to_string(), state.to_string()),
+        )),
     }
 }
 
@@ -294,7 +406,7 @@ pub async fn main_to_wrap(
 ) -> Result<(), AppError> {
     // Read the user arguments.
     let xml_path = cli.input_xml_path;
-    let simulation_interval = ((1.0 / cli.simulation_fps) * 1000.0) as u64;
+    let simulation_interval = Duration::from_secs_f64(1.0 / cli.simulation_fps);
     let frame_interval = cli.frame_interval;
     let force_interval = cli.force_interval;
     let verbose = cli.progression;
@@ -340,7 +452,7 @@ pub async fn main_to_wrap(
             info! {"Running a queue of {} simulations.", xml_path.len()};
             xml_path.iter().for_each(|path| debug!("* {path}"));
         }
-        Manifest::from_simulation_xml_paths(xml_path)
+        Manifest::from_simulation_input_paths(xml_path)
     } else {
         let bytes = include_bytes!("../17-ala.xml");
         info!("Running the demo simulation.");
@@ -414,6 +526,7 @@ pub async fn main_to_wrap(
         cancel_traj_serv_rx,
         cancel_state_serv_rx,
         cancel_essd_rx,
+        cancel_simulation_rx,
     ) = cancel_rx.unpack();
     let syncronous_start = Instant::now();
     if let Some(path) = cli.trajectory {
@@ -447,20 +560,24 @@ pub async fn main_to_wrap(
     let sim_clone = Arc::clone(&frame_source);
     let state_clone = Arc::clone(&shared_state);
 
-    run_simulation_thread(
-        simulation_manifest,
-        sim_clone,
-        state_clone,
+    let simulation_configuration = Configuration {
         simulation_interval,
         frame_interval,
         force_interval,
+        with_velocities: cli.include_velocity,
+        with_forces: cli.include_forces,
+        auto_reset: true,
         verbose,
+    };
+    run_simulation_thread(
+        cancel_simulation_rx,
+        simulation_manifest,
+        sim_clone,
+        state_clone,
         playback_rx,
         simulation_tx,
-        true,
         !cli.start_paused,
-        cli.include_velocity,
-        cli.include_forces,
+        simulation_configuration,
     )?;
 
     // Advertise the server with ESSD

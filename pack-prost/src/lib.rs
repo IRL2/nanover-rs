@@ -88,6 +88,24 @@ impl UnPack<f64> for &Value {
     }
 }
 
+impl UnPack<f64> for &mut Value {
+    /// Get a number out of a reference to a prost Value
+    ///
+    /// ```
+    /// use pack_prost::UnPack;
+    /// use prost_types::{Value, value::Kind};
+    /// let mut value = Value{ kind: Some(Kind::NumberValue(42.0)) };
+    /// let unpacked: f64 = (&mut value).unpack().unwrap();
+    /// assert_eq!(unpacked, 42.0);
+    /// ```
+    fn unpack(self) -> Option<f64> {
+        let Some(Kind::NumberValue(number)) = self.kind else {
+            return None;
+        };
+        Some(number)
+    }
+}
+
 impl UnPack<f64> for Value {
     /// Get a number out of a prost Value
     ///
