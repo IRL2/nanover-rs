@@ -4,10 +4,9 @@
  * Author : Andrei Leonard Nicusan <a.l.nicusan@bham.ac.uk>
  * Date   : 13.08.2020
  */
-
 use std::env;
-use std::io::{self, ErrorKind};
 use std::fs;
+use std::io::{self, ErrorKind};
 use std::path::Path;
 use std::process::Command;
 
@@ -29,7 +28,7 @@ struct BuildOptions {
     OPENMM_GENERATE_API_DOCS: Option<bool>,
 
     OPENMM_BUILD_C_AND_FORTRAN_WRAPPERS: Option<bool>,
-    OPENMM_BUILD_PYTHON_WRAPPERS: Option<bool>,         // Always false due to crates.io size limit
+    OPENMM_BUILD_PYTHON_WRAPPERS: Option<bool>, // Always false due to crates.io size limit
 }
 
 impl BuildOptions {
@@ -98,7 +97,11 @@ impl BuildOptions {
 }
 
 fn bool_to_cmake(option: bool) -> &'static str {
-    if option { "ON" } else { "OFF" }
+    if option {
+        "ON"
+    } else {
+        "OFF"
+    }
 }
 
 fn add_build_options(cmaker: &mut cmake::Config, build_options: BuildOptions) {
@@ -219,11 +222,14 @@ fn link_cxx_stdlib() {
     if static_lib && !target.contains("msvc") {
         match env::var("CXXSTDLIB") {
             Ok(stdlib) => {
-                println!("cargo:warning=CXXSTDLIB is set to `{}`, overriding the C++ standard \
-                    library name for the system linker.", &stdlib);
+                println!(
+                    "cargo:warning=CXXSTDLIB is set to `{}`, overriding the C++ standard \
+                    library name for the system linker.",
+                    &stdlib
+                );
 
                 println!("cargo:rustc-link-lib={}", stdlib);
-            },
+            }
             _ => {
                 let stdlib = if target.contains("apple") {
                     "c++"
@@ -236,7 +242,7 @@ fn link_cxx_stdlib() {
                 };
 
                 println!("cargo:rustc-link-lib={}", stdlib);
-            },
+            }
         }
     }
 }
@@ -251,8 +257,11 @@ fn copy_openmm_libs(openmm_home: &str) -> io::Result<String> {
     if let Err(err) = fs::create_dir(&out_lib) {
         match err.kind() {
             ErrorKind::AlreadyExists => (),
-            _ => panic!("Error creating directory `lib` in Cargo's `$OUT_DIR`: {}. Do you have \
-                write access to your current directory?", err),
+            _ => panic!(
+                "Error creating directory `lib` in Cargo's `$OUT_DIR`: {}. Do you have \
+                write access to your current directory?",
+                err
+            ),
         }
     }
 
@@ -261,15 +270,19 @@ fn copy_openmm_libs(openmm_home: &str) -> io::Result<String> {
 
     // Check whether "$OPENMM_HOME/lib" exists
     if let Err(err) = fs::metadata(&openmm_lib) {
-        panic!("Filepath `$OPENMM_HOME/lib` (`{}`) does not exist: {}.",
-            openmm_lib.display(), err);
+        panic!(
+            "Filepath `$OPENMM_HOME/lib` (`{}`) does not exist: {}.",
+            openmm_lib.display(),
+            err
+        );
     }
 
     for file in openmm_lib.read_dir()? {
         let f = file?;
-        let fname = f.file_name().into_string().expect(&format!(
-            "Could not convert file name `{:?}` to UTF-8.", &f
-        ));
+        let fname = f
+            .file_name()
+            .into_string()
+            .expect(&format!("Could not convert file name `{:?}` to UTF-8.", &f));
 
         if fname.to_uppercase().contains("OPENMM") {
             fs::copy(f.path(), out_lib.join(f.file_name()))?;
@@ -299,8 +312,11 @@ fn main() {
     if let Ok(openmm_home) = env::var("OPENMM_HOME") {
         let openmm_path = match copy_openmm_libs(&openmm_home) {
             Ok(out_dir) => out_dir,
-            Err(err) => panic!("Error accessing / copying OpenMM libraries from \
-                `$OPENMM_HOME/lib` to `$CARGO_OUT_DIR/lib`: {}", err),
+            Err(err) => panic!(
+                "Error accessing / copying OpenMM libraries from \
+                `$OPENMM_HOME/lib` to `$CARGO_OUT_DIR/lib`: {}",
+                err
+            ),
         };
 
         let lib_path = Path::new(&openmm_path).join("lib");
@@ -311,9 +327,12 @@ fn main() {
         link_cxx_stdlib();
 
         println!("cargo:home={}", openmm_path);
-        println!("cargo:warning=[OpenMM-sys] The OPENMM_HOME environment variable is set to \
+        println!(
+            "cargo:warning=[OpenMM-sys] The OPENMM_HOME environment variable is set to \
             `{}`. Searching for the library there. Note: OpenMM is not built if OPENMM_HOME is \
-            set.", openmm_home);
+            set.",
+            openmm_home
+        );
 
         println!("cargo:rerun-if-changed=build.rs");
         println!("cargo:rerun-if-env-changed=OPENMM_HOME");
@@ -330,7 +349,7 @@ fn main() {
 
     // Build OpenMM using CMake, setting the relevant options
     let mut cmaker = cmake::Config::new("openmm");
-    cmaker.profile("Release");
+    cmaker.profile("Debug");
     configure_cmake(&mut cmaker);
 
     // Pass -D options to cmake (e.g. OPENMM_BUILD_CUDA_LIB) from the "OPENMM_CMAKE_OPTIONS"
@@ -360,10 +379,13 @@ fn main() {
     link_cxx_stdlib();
 
     println!("cargo:home={}", install_path.display());
-    println!("cargo:warning=[OpenMM-sys] The OpenMM library was built and installed in `{}`. \
+    println!(
+        "cargo:warning=[OpenMM-sys] The OpenMM library was built and installed in `{}`. \
         You can copy / move that directory somewhere else and set the `OPENMM_HOME` environment \
         variable to point to its path. This way, the OpenMM library will no longer require \
-        building.", install_path.display());
+        building.",
+        install_path.display()
+    );
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=OPENMM_HOME");
