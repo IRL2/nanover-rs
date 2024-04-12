@@ -36,6 +36,25 @@ jobs:
         env:
           RUST_BACKTRACE: 1
           RUST_LOG: trace
+  windows_tests:
+    name: Rust tests on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run the tests
+        run: cargo test
+        env:
+          RUST_BACKTRACE: 1
+          RUST_LOG: trace
   lint:
       name: Lint
       runs-on: ubuntu-latest
