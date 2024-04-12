@@ -4,6 +4,6 @@ members = [
   "components",
   "pack-prost",
   "nanover-proto",
-  "openmm_sys",
+  "openmm-sys",
 ]
 resolver = "2"
