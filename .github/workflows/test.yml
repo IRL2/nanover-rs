@@ -50,10 +50,8 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
       - run: |
-          choco install -y doxygen.install
+          choco install -y doxygen.install protoc
       - name: Run the tests
         run: cargo test
         env:
