@@ -4,7 +4,6 @@
  * Author : Andrei Leonard Nicusan <a.l.nicusan@bham.ac.uk>
  * Date   : 10.08.2020
  */
-
 // Example using OpenMM's C Wrapper from Rust to simulate three argon atoms in vacuum. This is
 // translated almost 1:1 from https://github.com/openmm/openmm/blob/master/examples/HelloArgonInC.c
 
@@ -17,10 +16,9 @@
  * The example is available in C++, C, and Fortran 95.
  *
  * The system modeled here is a small number of argon atoms in a vacuum.
- * A multi-frame PDB file is written to stdout which  can be read by VMD or 
+ * A multi-frame PDB file is written to stdout which  can be read by VMD or
  * other visualization tool to produce an animation of the resulting trajectory.
  * -------------------------------------------------------------------------- */
-
 use openmm_sys::*;
 
 unsafe fn simulate_argon() {
@@ -44,10 +42,10 @@ unsafe fn simulate_argon() {
 
         OpenMM_Vec3Array_set(init_pos, a, pos);
 
-        OpenMM_System_addParticle(system, 39.95);                           /*mass of Ar, grams/mole*/
+        OpenMM_System_addParticle(system, 39.95); /*mass of Ar, grams/mole*/
 
         // charge, L-J sigma (nm), well depth (kJ)
-        OpenMM_NonbondedForce_addParticle(nonbond, 0.0, 0.3350, 0.996);     /*vdWRad(Ar)=.188 nm*/
+        OpenMM_NonbondedForce_addParticle(nonbond, 0.0, 0.3350, 0.996); /*vdWRad(Ar)=.188 nm*/
     }
 
     // Create particular integrator, and recast to generic one.
@@ -70,14 +68,14 @@ unsafe fn simulate_argon() {
         let state = OpenMM_Context_getState(
             context,
             OpenMM_State_DataType_OpenMM_State_Positions as i32,
-            0
+            0,
         );
         let time = OpenMM_State_getTime(state);
         write_pdb_frame(frame_num, state);
 
         OpenMM_State_destroy(state);
         if time >= 1. {
-            break
+            break;
         }
 
         // Advance state many steps at a time, for efficient use of OpenMM.
@@ -89,7 +87,6 @@ unsafe fn simulate_argon() {
     OpenMM_Context_destroy(context);
     OpenMM_Integrator_destroy(integrator);
     OpenMM_System_destroy(system);
-
 }
 
 fn main() {
@@ -109,10 +106,9 @@ unsafe fn write_pdb_frame(frame_num: i32, state: *mut OpenMM_State) {
     for a in 0..OpenMM_Vec3Array_getSize(pos_state) {
         let pos = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, a), 1.);
 
-        println!("ATOM  {:>5}  AR   AR     1    ", a + 1);              /*atom number*/
-        println!("{}  {}  {}  1.00  0.00\n", pos.x, pos.y, pos.z);      /*coordinates*/
+        println!("ATOM  {:>5}  AR   AR     1    ", a + 1); /*atom number*/
+        println!("{}  {}  {}  1.00  0.00\n", pos.x, pos.y, pos.z); /*coordinates*/
     }
 
     println!("ENDMDL"); /*end of frame*/
 }
-
