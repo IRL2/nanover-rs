@@ -46,9 +46,9 @@ tonic-build = "0.11.0"
 [dependencies.openmm-sys]
 version = "*"
 #features = ["static-lib"]#, "cpu"]
-#path = "/home/jon/rust/openmm-rust/openmm-sys/"
+path = "../openmm-sys/"
 #features = ["minimal", "static-lib"]
-features = ["minimal"]
+features = ["minimal", "cpu"]
 
 [dev-dependencies]
 rstest = "0.18.2"
