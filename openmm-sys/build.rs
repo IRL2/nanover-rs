@@ -231,11 +231,10 @@ fn link_cxx_stdlib() {
                 println!("cargo:rustc-link-lib={}", stdlib);
             }
             _ => {
-                let stdlib = if target.contains("apple") {
-                    "c++"
-                } else if target.contains("freebsd") {
-                    "c++"
-                } else if target.contains("openbsd") {
+                let stdlib = if target.contains("apple")
+                    || target.contains("freebsd")
+                    || target.contains("openbsd")
+                {
                     "c++"
                 } else {
                     "stdc++"
@@ -282,7 +281,7 @@ fn copy_openmm_libs(openmm_home: &str) -> io::Result<String> {
         let fname = f
             .file_name()
             .into_string()
-            .expect(&format!("Could not convert file name `{:?}` to UTF-8.", &f));
+            .unwrap_or_else(|_| panic!("Could not convert file name `{:?}` to UTF-8.", &f));
 
         if fname.to_uppercase().contains("OPENMM") {
             fs::copy(f.path(), out_lib.join(f.file_name()))?;
@@ -343,7 +342,7 @@ fn main() {
     // from the https://github.com/anicusan/openmm-mirrors.git repository, branch `7.4.2`
     if !Path::new("openmm/.git").exists() {
         let _ = Command::new("git")
-            .args(&["submodule", "update", "--init", "openmm"])
+            .args(["submodule", "update", "--init", "openmm"])
             .status();
     }
 
@@ -357,14 +356,14 @@ fn main() {
     if let Ok(cmake_options) = env::var("OPENMM_CMAKE_OPTIONS") {
         for option in cmake_options.split_whitespace() {
             assert!(
-                option.contains("="),
+                option.contains('='),
                 "\n[OpenMM-sys] Error: The OpenMM CMake options defined in the \
                 `OPENMM_CMAKE_OPTIONS` environment variable must be space-separated `key=value` \
                 pairs (e.g. 'OPENMM_BUILD_CUDA_LIB=ON PYTHON_EXECUTABLE=usr/bin/python'). \
                 Found ill-defined option '{}'.",
                 option
             );
-            let mut key_value = option.split("=");
+            let mut key_value = option.split('=');
             cmaker.define(key_value.next().unwrap(), key_value.next().unwrap());
         }
     }
