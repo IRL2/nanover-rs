@@ -381,6 +381,11 @@ pub struct OpenMM_Vec3 {
     pub z: f64,
 }
 #[test]
+// These are tests from the original version of openmm-sys. They dereference null pointers, which
+// should be avoided as it is undefined behaviour. I want to make sure all the original tests keep
+// passing, but I do not want to get the warning everytime I run the tests to not get used to
+// ignore warnings. This is why I allow the null pointer dereference here.
+#[allow(deref_nullptr)]
 fn bindgen_test_layout_OpenMM_Vec3() {
     assert_eq!(
         ::std::mem::size_of::<OpenMM_Vec3>(),
