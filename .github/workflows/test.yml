@@ -18,21 +18,43 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install APT dependencies
-        run: sudo apt-get update && sudo apt-get install -y libclang-dev libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libssl-dev protobuf-compiler libprotobuf-dev
-      - name: Install OpenMM
-        uses: ./.github/composite/openmm
-        with:
-          version: "7.7.0"
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libssl-dev protobuf-compiler libprotobuf-dev doxygen
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
+      - name: Run the tests
+        run: |
+          # `cargo test --doc` does not find the dynamic library, on the contrary to
+          # `cargo test --lib`. This is an issue as running `cargo test` fails because
+          # cargo does not find libOpenMM when running the doctests.
+          # This issue is reported upstream in <https://github.com/rust-lang/cargo/issues/8531>.
+          # It is fixed upstream, but the fix will only be released as part of rust 1.78 in May.
+          # When the fix will be released, we can just run `cargo test`.
+          cargo test --lib 2>&1 | tee test.log
+          LD_LIBRARY_PATH=$(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' test.log)/lib cargo test --doc
         env:
-          LD_LIBRARY_PATH: /home/runner/local/lib/
-          OPENMM_HOME: /home/runner/local/
+          RUST_BACKTRACE: 1
+          RUST_LOG: trace
+  windows_tests:
+    name: Rust tests on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - run: |
+          choco install -y doxygen.install protoc
+      - name: Run the tests
+        run: cargo test
+        env:
           RUST_BACKTRACE: 1
           RUST_LOG: trace
   lint:
@@ -50,16 +72,9 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install APT dependencies
-        run: sudo apt-get update && sudo apt-get install -y libclang-dev libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libssl-dev protobuf-compiler libprotobuf-dev
-      - name: Install OpenMM
-        uses: ./.github/composite/openmm
-        with:
-          version: "7.7.0"
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libssl-dev protobuf-compiler libprotobuf-dev doxygen
       - name: Clippy
         run: cargo clippy -- --deny warnings
-        env:
-          LD_LIBRARY_PATH: /home/runner/local/lib/
-          OPENMM_HOME: /home/runner/local/
   format:
     name: Format
     runs-on: ubuntu-latest

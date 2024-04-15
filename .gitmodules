@@ -1,0 +1,3 @@
+[submodule "openmm-sys/openmm"]
+	path = openmm-sys/openmm
+	url = https://github.com/openmm/openmm.git

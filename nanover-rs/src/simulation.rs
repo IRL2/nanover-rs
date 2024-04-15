@@ -1047,10 +1047,12 @@ unsafe fn compute_forces_single(
 
 #[cfg(test)]
 mod tests {
+    use crate::test_ressource;
+
     use super::*;
     use assert_float_eq::*;
     use rstest::rstest;
-    use std::collections::HashSet;
+    use std::{collections::HashSet, fs::File};
 
     const EXP_1: f64 = 0.6065306597126334; // exp(-0.5)
     const EXP_3: f64 = 0.22313016014842982; // exp(-3.0/2.0)
@@ -1316,5 +1318,23 @@ mod tests {
             .iter()
             .zip(actual.forces)
             .for_each(|(e, a)| assert_interaction_force_near(e, &a));
+    }
+
+    #[test]
+    fn test_load_simulation_xml() {
+        let simulation_path = test_ressource!("17-ala.xml");
+        let file = File::open(simulation_path).expect("Could not open the file");
+        let file_buffer = BufReader::new(file);
+        let _ = OpenMMSimulation::from_xml(file_buffer).expect("Failing to create a simulation.");
+    }
+
+    #[test]
+    fn test_simulation_step() {
+        let simulation_path = test_ressource!("17-ala.xml");
+        let file = File::open(simulation_path).expect("Could not open the file");
+        let file_buffer = BufReader::new(file);
+        let mut simulation =
+            OpenMMSimulation::from_xml(file_buffer).expect("Failing to create a simulation.");
+        simulation.step(5);
     }
 }

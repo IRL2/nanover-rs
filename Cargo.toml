@@ -1,8 +1,9 @@
 [workspace]
 members = [
-    "nanover-rs",
-    "components",
-    "pack-prost",
-    "nanover-proto",
+  "nanover-rs",
+  "components",
+  "pack-prost",
+  "nanover-proto",
+  "openmm-sys",
 ]
 resolver = "2"
