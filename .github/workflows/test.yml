@@ -57,6 +57,27 @@ jobs:
         env:
           RUST_BACKTRACE: 1
           RUST_LOG: trace
+  macos_tests:
+    name: Rust tests on MacOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - run: |
+          brew install doxygen protobuf
+      - name: Run the tests
+        run: cargo test
+        env:
+          RUST_BACKTRACE: 1
+          RUST_LOG: trace
   lint:
       name: Lint
       runs-on: ubuntu-latest
