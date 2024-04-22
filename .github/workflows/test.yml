@@ -34,7 +34,7 @@ jobs:
           cargo test --lib 2>&1 | tee test.log
           LD_LIBRARY_PATH=$(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' test.log)/lib cargo test --doc
         env:
-          RUST_BACKTRACE: 1
+          RUST_BACKTRACE: full
           RUST_LOG: trace
   windows_tests:
     name: Rust tests on Windows
@@ -55,7 +55,7 @@ jobs:
       - name: Run the tests
         run: cargo test
         env:
-          RUST_BACKTRACE: 1
+          RUST_BACKTRACE: full
           RUST_LOG: trace
   macos_tests:
     name: Rust tests on MacOS
@@ -76,7 +76,7 @@ jobs:
       - name: Run the tests
         run: cargo test
         env:
-          RUST_BACKTRACE: 1
+          RUST_BACKTRACE: full
           RUST_LOG: trace
   lint:
       name: Lint
