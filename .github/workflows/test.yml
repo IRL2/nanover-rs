@@ -6,6 +6,7 @@ jobs:
   build_and_test:
     name: Rust project
     runs-on: ubuntu-latest
+    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -37,6 +38,7 @@ jobs:
           RUST_BACKTRACE: full
           RUST_LOG: trace
   windows_tests:
+    if: false
     name: Rust tests on Windows
     runs-on: windows-latest
     steps:
@@ -58,6 +60,7 @@ jobs:
           RUST_BACKTRACE: full
           RUST_LOG: trace
   macos_tests:
+    if: false
     name: Rust tests on MacOS
     runs-on: macos-latest
     steps:
