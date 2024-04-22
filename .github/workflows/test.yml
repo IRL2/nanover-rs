@@ -102,11 +102,16 @@ jobs:
           cargo build --release 2>&1 | tee build.log
           ls -ltra target/release
           mkdir output
-          cp $(ggrep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib/* output
+          cp -r $(ggrep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib/* output
+          cp target/release/nanover-{cli,gui} output
           ls -ltr output
         env:
           RUST_BACKTRACE: full
           RUST_LOG: trace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: output
   lint:
       name: Lint
       runs-on: ubuntu-latest
