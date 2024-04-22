@@ -251,8 +251,8 @@ pub async fn find_servers(
     flag_socket.set_broadcast(true)?;
 
     // set_reuse_port is not available on Windows
-    #[cfg(not(target_os = "windows"))]
-    flag_socket.set_reuse_port(true)?;
+    // #[cfg(not(target_os = "windows"))]
+    // flag_socket.set_reuse_port(true)?;
 
     let socket = UdpSocket::from_std(flag_socket.into())?;
 
