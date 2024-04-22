@@ -102,7 +102,7 @@ jobs:
           cargo build --release 2>&1 | tee build.log
           ls -ltra target/release
           mkdir output
-          cp $(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' test.log)/lib/* output
+          cp $(ggrep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' test.log)/lib/* output
           ls -ltr output
         env:
           RUST_BACKTRACE: full
