@@ -78,6 +78,32 @@ jobs:
         env:
           RUST_BACKTRACE: full
           RUST_LOG: trace
+  macos_build:
+    name: Build MacOS artefact
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - run: |
+          brew install doxygen protobuf grep
+      - name: Generate the build
+        run: |
+          cargo build --release 2>&1 | tee build.log
+          ls -ltra target/release
+          mkdir output
+          cp $(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' test.log)/lib/* output
+          ls -ltr output
+        env:
+          RUST_BACKTRACE: full
+          RUST_LOG: trace
   lint:
       name: Lint
       runs-on: ubuntu-latest
