@@ -83,7 +83,7 @@ jobs:
           RUST_LOG: trace
   macos_build:
     name: Build MacOS artefact
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -112,6 +112,42 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: macos-build
+          path: output
+  linux_build:
+    name: Linux build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install APT dependencies
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libssl-dev protobuf-compiler libprotobuf-dev doxygen
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Generate the build
+        run: |
+          cargo build --release 2>&1 | tee build.log
+          ls -ltra target/release
+          mkdir output
+          cp -r $(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib/* output
+          cp target/release/nanover-{cli,gui} output
+          chmod -R u+x output/*
+          ls -ltr output
+        env:
+          RUST_BACKTRACE: full
+          RUST_LOG: trace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
           path: output
   lint:
       name: Lint
