@@ -62,7 +62,7 @@ jobs:
   macos_tests:
     if: false
     name: Rust tests on MacOS
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -104,6 +104,7 @@ jobs:
           mkdir output
           cp -r $(ggrep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib/* output
           cp target/release/nanover-{cli,gui} output
+          chmod -R u+x output/*
           ls -ltr output
         env:
           RUST_BACKTRACE: full
