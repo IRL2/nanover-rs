@@ -97,8 +97,8 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - run: |
           brew install doxygen protobuf grep coreutils
-          echo $PATH >> $GITHUB_PATH
           echo /opt/homebrew/opt/coreutils/libexec/gnubin >> $GITHUB_PATH
+          echo $PATH >> $GITHUB_PATH
       - run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup.sh
           bash rustup.sh -y
@@ -107,13 +107,13 @@ jobs:
         run: |
           echo $PATH
           which grep
-          #cargo build --release 2>&1 | tee build.log
-          #ls -ltra target/release
-          #mkdir output
-          #cp -r $(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib/* output
-          #cp target/release/nanover-{cli,gui} output
-          #chmod -R u+x output/*
-          #ls -ltr output
+          cargo build --release 2>&1 | tee build.log
+          ls -ltra target/release
+          mkdir output
+          cp -r $(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib/* output
+          cp target/release/nanover-{cli,gui} output
+          chmod -R u+x output/*
+          ls -ltr output
         env:
           RUST_BACKTRACE: full
           RUST_LOG: trace
