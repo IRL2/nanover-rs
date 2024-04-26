@@ -114,6 +114,8 @@ jobs:
           cp target/release/nanover-{cli,gui} output
           chmod -R u+x output/*
           ls -ltr output
+          cd output
+          otool -l nanover-gui
         env:
           RUST_BACKTRACE: full
           RUST_LOG: trace
