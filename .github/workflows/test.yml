@@ -107,10 +107,10 @@ jobs:
         run: |
           echo $PATH
           which grep
-          cargo build --release 2>&1 | tee build.log
+          RUSTFLAGS="-C link-args="-Wl,-rpath,\$ORIGIN/lib"" cargo build --release 2>&1 | tee build.log
           ls -ltra target/release
           mkdir output
-          cp -r $(ggrep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib/* output
+          cp -r $(ggrep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib output
           cp target/release/nanover-{cli,gui} output
           chmod -R u+x output/*
           ls -ltr output
@@ -126,7 +126,6 @@ jobs:
   linux_build:
     name: Linux build
     runs-on: ubuntu-latest
-    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -146,10 +145,10 @@ jobs:
           override: true
       - name: Generate the build
         run: |
-          cargo build --release 2>&1 | tee build.log
+          RUSTFLAGS="-C link-args="-Wl,-rpath,\$ORIGIN/lib"" cargo build --release 2>&1 | tee build.log
           ls -ltra target/release
           mkdir output
-          cp -r $(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib/* output
+          cp -r $(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/lib output
           cp target/release/nanover-{cli,gui} output
           chmod -R u+x output/*
           ls -ltr output

@@ -828,9 +828,8 @@ impl IMD for OpenMMSimulation {
 
 /// Look for the OpenMM plugins next to the current program.
 ///
-/// Loading the plugins from there makes it easier to distribute OpenMM next
-/// to the nanover server. It is especially convenient on Windows, there the
-/// OS will look for OpenMM.dll next to the program.
+/// Plugins are expected to be in $ORIGIN/lib/plugins where $ORIGIN is the directory of the
+/// executable.
 fn get_local_plugin_path() -> Option<PathBuf> {
     let Ok(exe_path) = std::env::current_exe() else {
         trace!("Could not get the executable path to find the OpenMM plugins.");
@@ -841,7 +840,7 @@ fn get_local_plugin_path() -> Option<PathBuf> {
         trace!("Could not get the executable parent path to find the OpenMM plugins.");
         return None;
     };
-    let tentative_plugin_path = exe_parent.join("plugins");
+    let tentative_plugin_path = exe_parent.join("lib").join("plugins");
     if tentative_plugin_path.is_dir() {
         trace!(
             "Found OpenMM plugins in {}.",
