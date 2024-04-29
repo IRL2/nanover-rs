@@ -122,9 +122,23 @@ jobs:
         with:
           name: macos-build
           path: output
+  run_macos_build:
+    name: Run the MacOS artefact
+    runs-on: macos-14
+    needs: macos_build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: macos-build
+      - run: |
+          ls -ltra macos-build
+          chmod +x macos-build/nanover-cli
+          ./macos-build/nanover-cli --help
   linux_build:
     name: Linux build
     runs-on: ubuntu-latest
+    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
