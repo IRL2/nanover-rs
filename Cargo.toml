@@ -7,3 +7,6 @@ members = [
   "openmm-sys",
 ]
 resolver = "2"
+
+[profile.release]
+rpath = true
