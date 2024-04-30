@@ -72,6 +72,10 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup.sh
+          bash rustup.sh -y
+          echo ~/.cargo/bin >> $GITHUB_PATH
+      - run: |
           brew install doxygen protobuf
       - name: Run the tests
         run: cargo test
@@ -95,7 +99,6 @@ jobs:
       - run: |
           brew install doxygen protobuf grep coreutils
           echo /opt/homebrew/opt/coreutils/libexec/gnubin >> $GITHUB_PATH
-          #echo $PATH >> $GITHUB_PATH
       - run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup.sh
           bash rustup.sh -y
