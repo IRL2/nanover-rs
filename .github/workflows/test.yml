@@ -107,7 +107,7 @@ jobs:
         run: |
           echo $PATH
           which grep
-          RUSTFLAGS="-C link-args="-Wl,-rpath,\$ORIGIN/lib"" cargo build --release 2>&1 | tee build.log
+          RUSTFLAGS="-C link-args="-Wl,-rpath,@executable_path/lib"" cargo build --release 2>&1 | tee build.log
           ls -ltra target/release
           mkdir output
           cp -r $(ggrep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/{lib,licenses} output
