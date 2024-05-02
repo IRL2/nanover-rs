@@ -215,7 +215,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - run: |
-          choco install -y doxygen.install protoc
+          choco install -y doxygen.install protoc cuda
       - name: Generate the build
         shell: bash
         run: |
@@ -236,6 +236,8 @@ jobs:
           RUST_BACKTRACE: full
           RUST_LOG: trace
           LC_ALL: en_US.utf8
+          CARGO_FEATURE_CUDA: on
+          CARGO_FEATURE_OPENCL: on
       - uses: actions/upload-artifact@v4
         with:
           name: windows-build
