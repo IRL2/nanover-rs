@@ -215,17 +215,8 @@ jobs:
       - name: Generate the build
         shell: bash
         run: |
-          pwd
-          ls *
           # Compile the project
           cargo build --release 2>&1 | tee build.log
-          echo '---'
-          ls -ltra target\\release
-          echo '---'
-          ls -ltra target\\release\\build
-          echo '---'
-          ls -ltra target/release/build/openmm-*
-          echo '---'
           # Get OpenMM
           # We put the OpenMM DLL directly next to the executable for Windows to find it.
           openmm_path=$(grep -oP '(?<=The OpenMM library was built and installed in `D:\\a\\nanover-rs\\nanover-rs\\)[^`]*' build.log | sed 's/\\/\//g')
