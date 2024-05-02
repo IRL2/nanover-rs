@@ -215,12 +215,27 @@ jobs:
       - name: Generate the build
         shell: bash
         run: |
+          pwd
+          ls *
+          # Compile the project
           cargo build --release 2>&1 | tee build.log
-          ls -ltra target/release
+          echo '---'
+          ls -ltra target\\release
+          echo '---'
+          ls -ltra target\\release\\build
+          echo '---'
+          ls -ltra target/release/build/openmm-*
+          echo '---'
+          # Get OpenMM
+          # We put the OpenMM DLL directly next to the executable for Windows to find it.
+          openmm_path=$(grep -oP '(?<=The OpenMM library was built and installed in `D:\\a\\nanover-rs\\nanover-rs\\)[^`]*' build.log | sed 's/\\/\//g')
           mkdir output
-          cp -r $(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)/{lib,licenses} output
+          mkdir output/licenses
+          cp -r ${openmm_path}/lib/* output
+          cp -r ${openmm_path}/licenses output/licenses/OpenMM
+          # Get NanoVer
           cp target/release/nanover-{cli,gui} output
-          cp LICENSE output/licenses
+          cp LICENSE output/licenses/LICENSE-NanoVer.txt
           ls -ltrR output
         env:
           RUST_BACKTRACE: full
