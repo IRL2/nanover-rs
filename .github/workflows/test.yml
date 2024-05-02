@@ -215,7 +215,10 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - run: |
-          choco install -y doxygen.install protoc cuda
+          choco install -y doxygen.install protoc
+      - run: |
+          Invoke-WebRequest -Uri https://developer.download.nvidia.com/compute/cuda/12.4.1/network_installers/cuda_12.4.1_windows_network.exe -OutFile cuda.exe
+          ./cuda.exe
       - name: Generate the build
         shell: bash
         run: |
