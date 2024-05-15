@@ -26,14 +26,7 @@ jobs:
           override: true
       - name: Run the tests
         run: |
-          # `cargo test --doc` does not find the dynamic library, on the contrary to
-          # `cargo test --lib`. This is an issue as running `cargo test` fails because
-          # cargo does not find libOpenMM when running the doctests.
-          # This issue is reported upstream in <https://github.com/rust-lang/cargo/issues/8531>.
-          # It is fixed upstream, but the fix will only be released as part of rust 1.78 in May.
-          # When the fix will be released, we can just run `cargo test`.
-          cargo test --lib 2>&1 | tee test.log
-          LD_LIBRARY_PATH=$(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' test.log)/lib cargo test --doc
+          cargo test
         env:
           RUST_BACKTRACE: full
           RUST_LOG: trace
