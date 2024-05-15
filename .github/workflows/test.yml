@@ -92,7 +92,6 @@ jobs:
   macos_build:
     name: Build MacOS artefact
     runs-on: macos-14
-    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -203,6 +202,7 @@ jobs:
   windows_build:
     name: Build Windows artifact
     runs-on: windows-latest
+    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
