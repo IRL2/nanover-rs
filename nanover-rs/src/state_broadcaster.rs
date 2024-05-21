@@ -201,8 +201,7 @@ impl StateBroadcaster {
 fn has_lock_expired(lock: &StateLock, now: &Instant) -> bool {
     match lock.timeout {
         None => false,
-        Some(timeout) if &timeout < now => false,
-        Some(_) => true,
+        Some(timeout) => &timeout < now,
     }
 }
 
