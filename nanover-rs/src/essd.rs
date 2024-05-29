@@ -18,7 +18,7 @@ pub async fn serve_essd(
 
     // We need a tokio socket to work with async, that socket needs the "reuse
     // port" flag set which needs a socket2 socket.
-    let address = format!("0.0.0.0:0").parse::<SocketAddr>().unwrap();
+    let address = "0.0.0.0:0".to_string().parse::<SocketAddr>().unwrap();
     let socket = UdpSocket::bind(address).await.unwrap();
     let flag_socket = socket2::SockRef::from(&socket);
     flag_socket.set_nonblocking(true)?;
