@@ -47,7 +47,6 @@ pub async fn serve_essd(
                 let Some(broadcast_address) = address.broadcast() else {
                     continue;
                 };
-                trace!("Address found for ESSD: {address:?}");
                 // UDP broadcast does not work with IPv6
                 if matches!(broadcast_address, IpAddr::V6(_)) {
                     continue;
