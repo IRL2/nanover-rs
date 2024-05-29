@@ -205,7 +205,7 @@ jobs:
           choco install -y doxygen.install protoc
       - run: |
           Invoke-WebRequest -Uri https://developer.download.nvidia.com/compute/cuda/12.4.1/network_installers/cuda_12.4.1_windows_network.exe -OutFile cuda.exe
-          ./cuda.exe
+          ./cuda.exe --verbose
       - name: Generate the build
         shell: bash
         run: |
