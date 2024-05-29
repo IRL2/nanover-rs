@@ -164,6 +164,7 @@ jobs:
       - name: Install nanover dependancies
         run: conda install -y cudatoolkit-dev
       - name: Generate the build
+        shell: bash -el {0}
         run: |
           RUSTFLAGS="-C link-args="-Wl,-rpath,\$ORIGIN/lib"" cargo build --release 2>&1 | tee build.log
           ls -ltra target/release
@@ -217,7 +218,7 @@ jobs:
         with:
           auto-update-conda: true
           miniforge-version: latest
-      - name: Install nanover dependancies
+      - name: Install CUDA
         run: conda install -y cudatoolkit-dev
       - name: Generate the build
         shell: bash -el {0}
