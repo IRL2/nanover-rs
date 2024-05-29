@@ -34,7 +34,7 @@ jobs:
     runs-on: windows-latest
     # The tests fail and need to be fixed: https://github.com/IRL2/nanover-rs/issues/219
     # In the meantime, this job is deactivated
-    if: false
+    #if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -56,9 +56,6 @@ jobs:
   macos_tests:
     name: Rust tests on MacOS
     runs-on: macos-14
-    # The tests fail and need to be fixed: https://github.com/IRL2/nanover-rs/issues/218
-    # In the meantime, this job is deactivated
-    # if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -140,7 +137,6 @@ jobs:
   linux_build:
     name: Linux build
     runs-on: ubuntu-latest
-    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -194,7 +190,6 @@ jobs:
   windows_build:
     name: Build Windows artifact
     runs-on: windows-latest
-    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -252,7 +247,6 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -271,7 +265,6 @@ jobs:
   format:
     name: Format
     runs-on: ubuntu-latest
-    if: false
     steps:
       - uses: actions/checkout@v3
       - name: Format
