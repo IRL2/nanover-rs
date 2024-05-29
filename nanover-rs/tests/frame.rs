@@ -390,6 +390,4 @@ async fn test_essd_stop() {
     info!("Requesting ESSD after closing the server.");
     let server_is_found = is_server_in_essd(&server_name).await;
     assert!(!server_is_found);
-
-    assert!(false); // Fail the test on purpose for DEBUG
 }
