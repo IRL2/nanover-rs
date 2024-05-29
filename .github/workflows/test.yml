@@ -213,7 +213,7 @@ jobs:
           auto-update-conda: true
           miniforge-version: latest
       - name: Install nanover dependancies
-        run: conda install -y cudatoolkit
+        run: conda install -y cudatoolkit-dev
       - name: Generate the build
         shell: bash -el {0}
         run: |
