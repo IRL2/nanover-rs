@@ -215,8 +215,9 @@ jobs:
       - name: Install nanover dependancies
         run: conda install -y cudatoolkit
       - name: Generate the build
-        shell: bash
+        shell: bash -el {0}
         run: |
+          which nvcc
           # Compile the project
           cargo build --release 2>&1 | tee build.log
           # Get OpenMM
