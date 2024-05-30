@@ -32,9 +32,6 @@ jobs:
   windows_tests:
     name: Rust tests on Windows
     runs-on: windows-latest
-    # The tests fail and need to be fixed: https://github.com/IRL2/nanover-rs/issues/219
-    # In the meantime, this job is deactivated
-    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
