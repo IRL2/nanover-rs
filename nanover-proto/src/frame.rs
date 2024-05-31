@@ -89,7 +89,7 @@ impl Mergeable for GetFrameResponse {
         let other_frame_index = other.frame_index;
         if other_frame_index == 0 {
             self.frame_index = 0;
-            self.frame = other.frame.clone();
+            self.frame.clone_from(&other.frame);
         } else {
             match (&mut self.frame, &other.frame) {
                 (_, None) => {}

@@ -242,19 +242,19 @@ pub async fn find_servers(
     search_time: Duration,
 ) -> std::io::Result<HashMap<String, ServiceHub>> {
     // We need a tokio socket to work with async, that socket needs the "reuse
-    // port" flag set which needs a socket2 socket. Socket2's socket are tricky
-    // to build, standard library's socket are easier to create.
+    // port" flag set which needs a socket2 socket.
     let address = format!("0.0.0.0:{port}").parse::<SocketAddr>().unwrap();
-    let std_socket = std::net::UdpSocket::bind(address)?;
-    let flag_socket: socket2::Socket = std_socket.into();
+    let socket = UdpSocket::bind(address).await.unwrap();
+    let flag_socket = socket2::SockRef::from(&socket);
     flag_socket.set_nonblocking(true)?;
     flag_socket.set_broadcast(true)?;
 
-    // set_reuse_port is not available on Windows
+    // These options are not available on windows
     #[cfg(not(target_os = "windows"))]
-    flag_socket.set_reuse_port(true)?;
-
-    let socket = UdpSocket::from_std(flag_socket.into())?;
+    {
+        flag_socket.set_reuse_port(true)?;
+        flag_socket.set_reuse_address(true)?;
+    }
 
     let mut buffer = [0u8; MAXIMUM_MESSAGE_SIZE];
     let mut servers = HashMap::new();

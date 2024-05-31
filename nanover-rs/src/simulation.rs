@@ -828,9 +828,8 @@ impl IMD for OpenMMSimulation {
 
 /// Look for the OpenMM plugins next to the current program.
 ///
-/// Loading the plugins from there makes it easier to distribute OpenMM next
-/// to the nanover server. It is especially convenient on Windows, there the
-/// OS will look for OpenMM.dll next to the program.
+/// Plugins are expected to be in $ORIGIN/lib/plugins where $ORIGIN is the directory of the
+/// executable.
 fn get_local_plugin_path() -> Option<PathBuf> {
     let Ok(exe_path) = std::env::current_exe() else {
         trace!("Could not get the executable path to find the OpenMM plugins.");
@@ -841,17 +840,39 @@ fn get_local_plugin_path() -> Option<PathBuf> {
         trace!("Could not get the executable parent path to find the OpenMM plugins.");
         return None;
     };
-    let tentative_plugin_path = exe_parent.join("plugins");
-    if tentative_plugin_path.is_dir() {
+    // Depending on the platform we store the plugins directory just next to the executable or in a
+    // lib directory next to the executable. On Windows, when building the distribution archive we
+    // go for the formet option because we cannot easily change where DLLs are searched. On Linux
+    // and MacOS, we go for the later option because having a lib directory looks neater.
+    // Regardless of the platform, we want both options to be possible. We arbitrarily give
+    // priority to the lib option.
+    let tentative_plugin_path_lib_plugins = exe_parent.join("lib").join("plugins");
+    let tentative_plugin_path_plugins = exe_parent.join("plugins");
+    if tentative_plugin_path_lib_plugins.is_dir() {
         trace!(
             "Found OpenMM plugins in {}.",
-            tentative_plugin_path.display()
+            tentative_plugin_path_lib_plugins.display(),
         );
-        Some(tentative_plugin_path)
+        if tentative_plugin_path_plugins.is_dir() {
+            warn!(
+                "OpenMM plugins have been found both in {} and {}. We use the ones in {}.",
+                tentative_plugin_path_lib_plugins.display(),
+                tentative_plugin_path_plugins.display(),
+                tentative_plugin_path_lib_plugins.display(),
+            );
+        };
+        Some(tentative_plugin_path_lib_plugins)
+    } else if tentative_plugin_path_plugins.is_dir() {
+        trace!(
+            "Found OpenMM plugins in {}.",
+            tentative_plugin_path_plugins.display(),
+        );
+        Some(tentative_plugin_path_plugins)
     } else {
         trace!(
-            "Did not find the OpenMM plugins next to the executable: {} is not a directory.",
-            tentative_plugin_path.display()
+            "Did not find the OpenMM plugins next to the executable: neither {} nor {} are directories.",
+            tentative_plugin_path_lib_plugins.display(),
+            tentative_plugin_path_plugins.display(),
         );
         None
     }

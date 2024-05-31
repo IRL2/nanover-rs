@@ -25,16 +25,9 @@ jobs:
           override: true
       - name: Run the tests
         run: |
-          # `cargo test --doc` does not find the dynamic library, on the contrary to
-          # `cargo test --lib`. This is an issue as running `cargo test` fails because
-          # cargo does not find libOpenMM when running the doctests.
-          # This issue is reported upstream in <https://github.com/rust-lang/cargo/issues/8531>.
-          # It is fixed upstream, but the fix will only be released as part of rust 1.78 in May.
-          # When the fix will be released, we can just run `cargo test`.
-          cargo test --lib 2>&1 | tee test.log
-          LD_LIBRARY_PATH=$(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' test.log)/lib cargo test --doc
+          cargo test
         env:
-          RUST_BACKTRACE: 1
+          RUST_BACKTRACE: full
           RUST_LOG: trace
   windows_tests:
     name: Rust tests on Windows
@@ -55,12 +48,218 @@ jobs:
       - name: Run the tests
         run: cargo test
         env:
-          RUST_BACKTRACE: 1
+          RUST_BACKTRACE: full
           RUST_LOG: trace
+  macos_tests:
+    name: Rust tests on MacOS
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup.sh
+          bash rustup.sh -y
+          echo ~/.cargo/bin >> $GITHUB_PATH
+      - run: |
+          brew install doxygen protobuf
+      - name: Run the tests
+        run: cargo test
+        env:
+          RUST_BACKTRACE: full
+          RUST_LOG: trace
+  macos_build:
+    name: Build MacOS artefact
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - run: |
+          brew install doxygen protobuf grep coreutils
+          echo /opt/homebrew/opt/coreutils/libexec/gnubin >> $GITHUB_PATH
+      - run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup.sh
+          bash rustup.sh -y
+          echo ~/.cargo/bin >> $GITHUB_PATH
+      - name: Generate the build
+        run: |
+          echo $PATH
+          which grep
+          RUSTFLAGS="-C link-args="-Wl,-rpath,@executable_path/lib"" cargo build --release 2>&1 | tee build.log
+          ls -ltra target/release
+          mkdir output
+          mkdir output/licenses
+          openmm_path=$(ggrep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)
+          cp -r ${openmm_path}/lib output
+          cp -r ${openmm_path}/licenses output/licenses/OpenMM
+          cp target/release/nanover-{cli,gui} output
+          cp LICENSE output/licenses
+          chmod -R u+x output/*
+          ls -ltr output
+        env:
+          RUST_BACKTRACE: full
+          RUST_LOG: trace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: output
+  run_macos_build:
+    name: Run the MacOS artefact
+    runs-on: macos-14
+    needs: macos_build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: build
+      - run: |
+          ls -ltra build
+          chmod +x build/nanover-cli
+          ./build/nanover-cli --help
+  linux_build:
+    name: Linux build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install APT dependencies
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libssl-dev protobuf-compiler libprotobuf-dev doxygen
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          miniforge-version: latest
+      - name: Install nanover dependancies
+        run: conda install -y cudatoolkit-dev
+      - name: Generate the build
+        shell: bash -el {0}
+        run: |
+          export PATH="/usr/share/miniconda3/bin:$PATH"
+          echo $PATH
+          which nvcc
+          RUSTFLAGS="-C link-args="-Wl,-rpath,\$ORIGIN/lib"" cargo build --release 2>&1 | tee build.log
+          ls -ltra target/release
+          mkdir output
+          mkdir output/licenses
+          openmm_path=$(grep -oP '(?<=The OpenMM library was built and installed in `)[^`]*' build.log)
+          cp -r ${openmm_path}/lib output
+          cp -r ${openmm_path}/licenses output/licenses/OpenMM
+          cp target/release/nanover-{cli,gui} output
+          cp LICENSE output/licenses/LICENSE-NanoVer.txt
+          chmod -R u+x output/*
+          ls -ltrR output
+        env:
+          RUST_BACKTRACE: full
+          RUST_LOG: trace
+          CARGO_FEATURE_CUDA: on
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: output
+  run_linux_build:
+    name: Run the Linux artefact
+    runs-on: ubuntu-latest
+    needs: linux_build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+          path: build
+      - run: |
+          ls -ltra build
+          chmod +x build/nanover-cli
+          ./build/nanover-cli --help
+  windows_build:
+    name: Build Windows artifact
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - run: |
+          choco install -y doxygen.install protoc
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          miniforge-version: latest
+      - name: Install CUDA
+        run: conda install -y cudatoolkit-dev
+      - name: Generate the build
+        shell: bash -el {0}
+        run: |
+          which nvcc
+          # Compile the project
+          cargo build --release 2>&1 | tee build.log
+          # Get OpenMM
+          # We put the OpenMM DLL directly next to the executable for Windows to find it.
+          openmm_path=$(grep -oP '(?<=The OpenMM library was built and installed in `D:\\a\\nanover-rs\\nanover-rs\\)[^`]*' build.log | sed 's/\\/\//g')
+          mkdir output
+          mkdir output/licenses
+          cp -r ${openmm_path}/lib/* output
+          cp -r ${openmm_path}/licenses output/licenses/OpenMM
+          # Get NanoVer
+          cp target/release/nanover-{cli,gui} output
+          cp LICENSE output/licenses/LICENSE-NanoVer.txt
+          ls -ltrR output
+        env:
+          RUST_BACKTRACE: full
+          RUST_LOG: trace
+          LC_ALL: en_US.utf8
+          CARGO_FEATURE_CUDA: on
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: output
+  run_windows_build:
+    name: Run the Windows artefact
+    runs-on: windows-latest
+    needs: windows_build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: build
+      - shell: bash
+        run: |
+          ls  build
+          ./build/nanover-cli.exe --help
   lint:
-      name: Lint
-      runs-on: ubuntu-latest
-      steps:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
         with:

@@ -267,7 +267,7 @@ where
                 .text_color_opt(text_color)
                 .show(ui);
             if ui.button("Set to default").clicked() {
-                self.raw = self.default.clone();
+                self.raw.clone_from(&self.default);
             }
         });
     }
@@ -633,7 +633,7 @@ impl MyEguiApp {
                 ui.label("Server name");
                 ui.text_edit_singleline(&mut self.server_name);
                 if ui.button("Set to default").clicked() {
-                    self.server_name = self.reference.name.clone();
+                    self.server_name.clone_from(&self.reference.name);
                 }
             });
             self.port.widget(ui);
