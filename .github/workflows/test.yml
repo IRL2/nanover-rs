@@ -303,6 +303,10 @@ jobs:
         with:
           name: macos-build
           path: ./macos-build
+      - name: Make binaries executable
+        run: |
+          chmod uog+x linux-build/nanover-cli linux-build/nanover-gui
+          chmod uog+x macos-build/nanover-cli macos-build/nanover-gui
       - name: Zip builds
         run: |
           zip -r nanover-rs-windows.zip windows-build
