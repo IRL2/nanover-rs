@@ -176,7 +176,7 @@ fn get_number(frame: &FrameData, key: &str) -> f64 {
 }
 
 fn has_value(frame: &FrameData, key: &str) -> bool {
-    frame.values.get(key).is_some()
+    frame.values.contains_key(key)
 }
 
 pub const ESSD_DEFAULT_PORT: u16 = 54545;
