@@ -286,7 +286,7 @@ jobs:
     name: Publish the latest Build
     runs-on: ubuntu-latest
     needs: [run_linux_build, run_macos_build, run_windows_build]
-    if: github.ref == 'refs/heads/releases'
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
