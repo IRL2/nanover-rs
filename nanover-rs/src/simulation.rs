@@ -46,7 +46,7 @@ pub enum InteractionKind {
     #[default]
     GAUSSIAN,
     HARMONIC,
-    CONSTANT
+    CONSTANT,
 }
 
 #[derive(Debug)]
