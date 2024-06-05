@@ -46,6 +46,7 @@ pub enum InteractionKind {
     #[default]
     GAUSSIAN,
     HARMONIC,
+    CONSTANT
 }
 
 #[derive(Debug)]
@@ -996,6 +997,22 @@ fn compute_harmonic_force(diff: Coordinate, k: f64) -> (Coordinate, f64) {
     (force, energy)
 }
 
+fn compute_constant_force(diff: Coordinate) -> (Coordinate, f64) {
+    let distance_magnitude = (diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]).sqrt();
+    if distance_magnitude > 0 {
+        let force = [
+            (diff[0] / distance_magnitude),
+            (diff[1] / distance_magnitude),
+            (diff[2] / distance_magnitude),
+        ];
+        let energy = 1.0;
+    } else {
+        let force = [0.0, 0.0, 0.0];
+        let energy = 0.0;
+    }
+    (force, energy)
+}
+
 unsafe fn get_selection_positions_from_state_positions(
     selection: &[i32],
     pos_state: *const OpenMM_Vec3Array,
@@ -1054,6 +1071,7 @@ unsafe fn compute_forces_single(
     let (com_force, energy) = match imd.kind {
         InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
         InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
+        InteractionKind::CONSTANT => compute_constant_force(diff),
     };
     build_interaction(
         &com_force,
