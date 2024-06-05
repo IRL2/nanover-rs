@@ -999,16 +999,15 @@ fn compute_harmonic_force(diff: Coordinate, k: f64) -> (Coordinate, f64) {
 
 fn compute_constant_force(diff: Coordinate) -> (Coordinate, f64) {
     let distance_magnitude = (diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]).sqrt();
+    let force = [0.0, 0.0, 0.0];
+    let energy = 0.0;
     if distance_magnitude > 0 {
-        let force = [
+        force = [
             (diff[0] / distance_magnitude),
             (diff[1] / distance_magnitude),
             (diff[2] / distance_magnitude),
         ];
-        let energy = 1.0;
-    } else {
-        let force = [0.0, 0.0, 0.0];
-        let energy = 0.0;
+        energy = 1.0;
     }
     (force, energy)
 }
