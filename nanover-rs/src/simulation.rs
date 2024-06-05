@@ -1001,7 +1001,7 @@ fn compute_constant_force(diff: Coordinate) -> (Coordinate, f64) {
     let distance_magnitude = (diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]).sqrt();
     let force = [0.0, 0.0, 0.0];
     let energy = 0.0;
-    if distance_magnitude > 0 {
+    if distance_magnitude > 0.0 {
         force = [
             (diff[0] / distance_magnitude),
             (diff[1] / distance_magnitude),
