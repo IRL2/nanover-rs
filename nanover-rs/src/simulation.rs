@@ -1160,6 +1160,34 @@ mod tests {
         assert_f64_near!(energy, expected_energy);
     }
 
+    #[rstest]
+    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], 1.0)]
+    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 1.0)]
+    #[case([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], 1.0)]
+    #[case([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 1.0)]
+    #[case([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0)]
+    #[case([0.0, 0.0, 0.0], UNIT, UNIT, 1.0)]
+    #[case([0.0, 0.0, 0.0], [-1.0 * UNIT[0]; 3], [-1.0 * UNIT[0]; 3], 1.0)]
+    #[case([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], UNIT, 1.0)]
+    #[case([1.0, 2.0, 3.0], [-1.0, 2.0, 3.0], [-1.0, 0.0, 0.0], 1.0)]
+    fn test_constant_force(
+        #[case] position: Coordinate,
+        #[case] interaction_position: Coordinate,
+        #[case] expected_force: Coordinate,
+        #[case] expected_energy: f64,
+    ) {
+        let diff = [
+            position[0] - interaction_position[0],
+            position[1] - interaction_position[1],
+            position[2] - interaction_position[2],
+        ];
+        let (force, energy) = compute_constant_force(diff);
+        assert_f64_near!(force[0], expected_force[0]);
+        assert_f64_near!(force[1], expected_force[1]);
+        assert_f64_near!(force[2], expected_force[2]);
+        assert_f64_near!(energy, expected_energy);
+    }
+
     #[test]
     fn test_accumulate_forces() {
         let interactions: Vec<Interaction> = vec![
