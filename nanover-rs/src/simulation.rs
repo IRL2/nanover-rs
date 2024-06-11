@@ -1003,9 +1003,9 @@ fn compute_constant_force(diff: Coordinate) -> (Coordinate, f64) {
     let mut energy = 0.0;
     if distance_magnitude > 0.0 {
         force = [
-            (diff[0] / distance_magnitude),
-            (diff[1] / distance_magnitude),
-            (diff[2] / distance_magnitude),
+            -(diff[0] / distance_magnitude),
+            -(diff[1] / distance_magnitude),
+            -(diff[2] / distance_magnitude),
         ];
         energy = 1.0;
     }
