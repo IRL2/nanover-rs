@@ -74,6 +74,8 @@ fn get_kind(content: &Struct, key: &str) -> Result<InteractionKind, ()> {
         Ok(InteractionKind::GAUSSIAN)
     } else if kind == "spring" {
         Ok(InteractionKind::HARMONIC)
+    } else if kind == "constant" {
+        Ok(InteractionKind::CONSTANT)
     } else {
         Err(())
     }

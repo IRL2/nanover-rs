@@ -46,6 +46,7 @@ pub enum InteractionKind {
     #[default]
     GAUSSIAN,
     HARMONIC,
+    CONSTANT,
 }
 
 #[derive(Debug)]
@@ -996,6 +997,21 @@ fn compute_harmonic_force(diff: Coordinate, k: f64) -> (Coordinate, f64) {
     (force, energy)
 }
 
+fn compute_constant_force(diff: Coordinate) -> (Coordinate, f64) {
+    let distance_magnitude = (diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]).sqrt();
+    let mut force = [0.0, 0.0, 0.0];
+    let mut energy = 0.0;
+    if distance_magnitude > 0.0 {
+        force = [
+            -(diff[0] / distance_magnitude),
+            -(diff[1] / distance_magnitude),
+            -(diff[2] / distance_magnitude),
+        ];
+        energy = 1.0;
+    }
+    (force, energy)
+}
+
 unsafe fn get_selection_positions_from_state_positions(
     selection: &[i32],
     pos_state: *const OpenMM_Vec3Array,
@@ -1054,6 +1070,7 @@ unsafe fn compute_forces_single(
     let (com_force, energy) = match imd.kind {
         InteractionKind::GAUSSIAN => compute_gaussian_force(diff, sigma),
         InteractionKind::HARMONIC => compute_harmonic_force(diff, sigma),
+        InteractionKind::CONSTANT => compute_constant_force(diff),
     };
     build_interaction(
         &com_force,
@@ -1137,6 +1154,34 @@ mod tests {
             position[2] - interaction_position[2],
         ];
         let (force, energy) = compute_harmonic_force(diff, k);
+        assert_f64_near!(force[0], expected_force[0]);
+        assert_f64_near!(force[1], expected_force[1]);
+        assert_f64_near!(force[2], expected_force[2]);
+        assert_f64_near!(energy, expected_energy);
+    }
+
+    #[rstest]
+    #[case([1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], 1.0)]
+    #[case([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 1.0)]
+    #[case([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], 1.0)]
+    #[case([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 1.0)]
+    #[case([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.0)]
+    #[case([0.0, 0.0, 0.0], UNIT, UNIT, 1.0)]
+    #[case([0.0, 0.0, 0.0], [-1.0 * UNIT[0]; 3], [-1.0 * UNIT[0]; 3], 1.0)]
+    #[case([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], UNIT, 1.0)]
+    #[case([1.0, 2.0, 3.0], [-1.0, 2.0, 3.0], [-1.0, 0.0, 0.0], 1.0)]
+    fn test_constant_force(
+        #[case] position: Coordinate,
+        #[case] interaction_position: Coordinate,
+        #[case] expected_force: Coordinate,
+        #[case] expected_energy: f64,
+    ) {
+        let diff = [
+            position[0] - interaction_position[0],
+            position[1] - interaction_position[1],
+            position[2] - interaction_position[2],
+        ];
+        let (force, energy) = compute_constant_force(diff);
         assert_f64_near!(force[0], expected_force[0]);
         assert_f64_near!(force[1], expected_force[1]);
         assert_f64_near!(force[2], expected_force[2]);
