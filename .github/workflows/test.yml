@@ -50,6 +50,7 @@ jobs:
         env:
           RUST_BACKTRACE: full
           RUST_LOG: trace
+          OPENMM_CMAKE_OPTIONS: OPENMM_BUILD_OPENCL_LIB=OFF
   macos_tests:
     name: Rust tests on MacOS
     runs-on: macos-14
