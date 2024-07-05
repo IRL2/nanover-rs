@@ -536,6 +536,58 @@ impl OpenMMSimulation {
         }
     }
 
+    pub fn get_positions(&self) -> *const OpenMM_Vec3Array {
+        unsafe {
+            let state = OpenMM_Context_getState(
+                self.context,
+                OpenMM_State_DataType_OpenMM_State_Positions as i32,
+                0,
+            );
+            let pos_state = OpenMM_State_getPositions(state);
+
+            OpenMM_State_destroy(state);
+
+            pos_state
+        }
+    }
+
+    pub fn get_particle_position(&self, positions: &OpenMM_Vec3Array, index: i32) -> Coordinate {
+
+        unsafe{
+            let mut position = [0.0, 0.0, 0.0];
+            let particle_position = OpenMM_Vec3_scale(
+                *OpenMM_Vec3Array_get(positions, index),
+                1.0
+            );
+            position = [
+                particle_position.x,
+                particle_position.y,
+                particle_position.z,
+            ];
+
+            position
+
+        }
+
+    }
+
+    pub fn get_potential_energy(&self) -> f64 {
+        let potential_energy;
+
+        unsafe {
+            let state = OpenMM_Context_getState(
+                self.context,
+                OpenMM_State_DataType_OpenMM_State_Energy as i32,
+                0,
+            );
+            potential_energy = OpenMM_State_getPotentialEnergy(state);
+
+            OpenMM_State_destroy(state);
+        }
+
+        potential_energy
+    }
+
     pub fn reset_state(&mut self) {
         unsafe {
             OpenMM_Context_setState(self.context, self.initial_state);

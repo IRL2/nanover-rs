@@ -161,11 +161,19 @@ impl TrackedSimulation for TrackedOpenMMSimulation {
     ) -> Result<(), BroadcastSendError> {
         let mut frame = self.simulation.to_framedata(with_velocities, with_forces);
         let energy_total = self.user_energies();
+        let potential_energy = self.simulation.get_potential_energy();
+        let potential_energy_correction = compute_potential_energy_correction(
+            self.user_forces(),
+            &self.simulation);
         frame
             .insert_number_value("energy.user.total", energy_total)
             .unwrap();
         frame
             .insert_number_value("system.reset.counter", self.reset_counter as f64)
+            .unwrap();
+        frame
+            .insert_number_value("energy.potential_corrected",
+                                 potential_energy + potential_energy_correction)
             .unwrap();
         add_force_map_to_frame(self.user_forces(), &mut frame);
         let mut source = sim_clone.lock().unwrap();
@@ -233,3 +241,23 @@ fn add_force_map_to_frame(force_map: &CoordMap, frame: &mut FrameData) {
         .insert_float_array("forces.user.sparse", sparse)
         .unwrap();
 }
+
+fn compute_potential_energy_correction(
+    force_map: &CoordMap,
+    simulation: &OpenMMSimulation)
+    -> f64 {
+        unsafe {
+            let positions = simulation.get_positions();
+            let mut energy_correction = 0.0;
+            let n_particles = force_map.len();
+
+            for particle in 0..n_particles {
+                    let pos = simulation.get_particle_position(positions, particle as i32);
+                    let force = force_map[&particle];
+                    energy_correction = energy_correction +
+                        force[0] * pos[0] + force[1] * pos[1] + force[2] * pos[2]
+            }
+
+            energy_correction
+        }
+    }
