@@ -551,7 +551,7 @@ impl OpenMMSimulation {
         }
     }
 
-    pub fn get_particle_position(&self, positions: &OpenMM_Vec3Array, index: i32) -> Coordinate {
+    pub fn get_particle_position(&self, positions: *const OpenMM_Vec3Array, index: i32) -> Coordinate {
 
         unsafe{
             let mut position = [0.0, 0.0, 0.0];
