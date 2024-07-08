@@ -551,14 +551,14 @@ impl OpenMMSimulation {
         }
     }
 
-    pub fn get_particle_position(&self, positions: *const OpenMM_Vec3Array, index: i32) -> Coordinate {
-
-        unsafe{
-            let mut position = [0.0, 0.0, 0.0];
-            let particle_position = OpenMM_Vec3_scale(
-                *OpenMM_Vec3Array_get(positions, index),
-                1.0
-            );
+    pub fn get_particle_position(
+        &self,
+        positions: *const OpenMM_Vec3Array,
+        index: i32,
+    ) -> Coordinate {
+        unsafe {
+            let mut position;
+            let particle_position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(positions, index), 1.0);
             position = [
                 particle_position.x,
                 particle_position.y,
@@ -566,9 +566,7 @@ impl OpenMMSimulation {
             ];
 
             position
-
         }
-
     }
 
     pub fn get_potential_energy(&self) -> f64 {
