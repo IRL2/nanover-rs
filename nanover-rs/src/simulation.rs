@@ -536,7 +536,7 @@ impl OpenMMSimulation {
         }
     }
 
-    unsafe fn get_positions(&self) -> *const OpenMM_Vec3Array {
+    pub unsafe fn get_positions(&self) -> *const OpenMM_Vec3Array {
 
         let state = OpenMM_Context_getState(
             self.context,
@@ -551,7 +551,7 @@ impl OpenMMSimulation {
 
     }
 
-    unsafe fn get_particle_position(
+    pub unsafe fn get_particle_position(
         &self,
         positions: *const OpenMM_Vec3Array,
         index: i32,
