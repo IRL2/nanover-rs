@@ -536,6 +536,10 @@ impl OpenMMSimulation {
         }
     }
 
+    /// # Safety
+    ///
+    /// This function returns the positions of the system from an OpenMM state, but perhaps it is only necessary to retrieve the selection positions
+    /// TODO: investigate whether this function can be rewritten to only return desired selections
     pub unsafe fn get_positions(&self) -> Vec<Coordinate> {
         let state = OpenMM_Context_getState(
             self.context,
