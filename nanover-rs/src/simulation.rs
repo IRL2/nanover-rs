@@ -557,9 +557,8 @@ impl OpenMMSimulation {
         index: i32,
     ) -> Coordinate {
         unsafe {
-            let mut position;
             let particle_position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(positions, index), 1.0);
-            position = [
+            let position = [
                 particle_position.x,
                 particle_position.y,
                 particle_position.z,
