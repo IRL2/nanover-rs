@@ -536,36 +536,36 @@ impl OpenMMSimulation {
         }
     }
 
-    pub fn get_positions(&self) -> *const OpenMM_Vec3Array {
-        unsafe {
-            let state = OpenMM_Context_getState(
-                self.context,
-                OpenMM_State_DataType_OpenMM_State_Positions as i32,
-                0,
-            );
-            let pos_state = OpenMM_State_getPositions(state);
+    unsafe fn get_positions(&self) -> *const OpenMM_Vec3Array {
 
-            OpenMM_State_destroy(state);
+        let state = OpenMM_Context_getState(
+            self.context,
+            OpenMM_State_DataType_OpenMM_State_Positions as i32,
+            0,
+        );
+        let pos_state = OpenMM_State_getPositions(state);
 
-            pos_state
-        }
+        OpenMM_State_destroy(state);
+
+        pos_state
+
     }
 
-    pub fn get_particle_position(
+    unsafe fn get_particle_position(
         &self,
         positions: *const OpenMM_Vec3Array,
         index: i32,
     ) -> Coordinate {
-        unsafe {
-            let particle_position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(positions, index), 1.0);
-            let position = [
-                particle_position.x,
-                particle_position.y,
-                particle_position.z,
-            ];
 
-            position
-        }
+        let particle_position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(positions, index), 1.0);
+        let position = [
+            particle_position.x,
+            particle_position.y,
+            particle_position.z,
+        ];
+
+        position
+
     }
 
     pub fn get_potential_energy(&self) -> f64 {
