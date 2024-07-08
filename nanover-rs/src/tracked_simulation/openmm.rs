@@ -244,7 +244,6 @@ fn add_force_map_to_frame(force_map: &CoordMap, frame: &mut FrameData) {
 }
 
 fn compute_potential_energy_correction(force_map: &CoordMap, simulation: &OpenMMSimulation) -> f64 {
-
     unsafe {
         let positions = simulation.get_positions();
         let mut energy_correction = 0.0;
@@ -258,5 +257,4 @@ fn compute_potential_energy_correction(force_map: &CoordMap, simulation: &OpenMM
 
         energy_correction
     }
-
 }

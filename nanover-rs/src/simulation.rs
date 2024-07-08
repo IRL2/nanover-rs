@@ -537,7 +537,6 @@ impl OpenMMSimulation {
     }
 
     pub unsafe fn get_positions(&self) -> Vec<Coordinate> {
-
         let state = OpenMM_Context_getState(
             self.context,
             OpenMM_State_DataType_OpenMM_State_Positions as i32,
@@ -548,7 +547,8 @@ impl OpenMMSimulation {
         let mut positions = Vec::<Coordinate>::new();
 
         for index in 0..self.n_particles {
-            let particle_position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, index as i32), 1.0);
+            let particle_position =
+                OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, index as i32), 1.0);
             let position = [
                 particle_position.x,
                 particle_position.y,
@@ -560,7 +560,6 @@ impl OpenMMSimulation {
         OpenMM_State_destroy(state);
 
         positions
-
     }
 
     pub fn get_potential_energy(&self) -> f64 {
