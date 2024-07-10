@@ -250,8 +250,8 @@ fn compute_potential_energy_correction(force_map: &CoordMap, simulation: &OpenMM
         let mut energy_correction = 0.0;
 
         for particle in force_map.keys() {
-            let pos = positions[&particle];
-            let force = force_map[&particle];
+            let pos = positions[particle];
+            let force = force_map[particle];
             energy_correction =
                 energy_correction + force[0] * pos[0] + force[1] * pos[1] + force[2] * pos[2]
         }

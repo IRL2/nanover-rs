@@ -1072,9 +1072,8 @@ unsafe fn get_selected_position_from_state_positions(
     pos_state: *const OpenMM_Vec3Array,
 ) -> Coordinate {
     let position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *selection), 1.0);
-    let selected_position = [position.x, position.y, position.z];
 
-    selected_position
+    [position.x, position.y, position.z]
 }
 
 fn get_masses_for_selection(selection: &[i32], masses: &[f64]) -> Vec<f64> {
