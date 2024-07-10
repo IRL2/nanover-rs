@@ -161,6 +161,10 @@ impl TrackedSimulation for TrackedOpenMMSimulation {
     ) -> Result<(), BroadcastSendError> {
         let mut frame = self.simulation.to_framedata(with_velocities, with_forces);
         let energy_total = self.user_energies();
+        // It would be better to simply amend the potential energy in the frame. This would avoid
+        // having to retrieve it again from the OpenMM state again (as below) and writing the
+        // corrected potential energy to the frame in a new field (energy.potential_corrected)
+        // TODO: Add functionality to amend values of fields in FrameData
         let potential_energy = self.simulation.get_potential_energy();
         let potential_energy_correction =
             compute_potential_energy_correction(self.user_forces(), &self.simulation);
@@ -243,6 +247,12 @@ fn add_force_map_to_frame(force_map: &CoordMap, frame: &mut FrameData) {
         .unwrap();
 }
 
+// Currently, this function has to retrieve the positions of the atoms with which the user is
+// interacting from OpenMM in a way that is separate to what is currently happening for the frame.
+// It would be good to think of a way to avoid doing this, as this information must already be
+// accessed to calculate the forces from the interactions.
+// TODO: Investigate whether this function can be reworked to avoid retrieving the positions from
+//       the OpenMM state again here
 fn compute_potential_energy_correction(force_map: &CoordMap, simulation: &OpenMMSimulation) -> f64 {
     unsafe {
         let selection = force_map.keys().map(|value| *value as i32).collect();
