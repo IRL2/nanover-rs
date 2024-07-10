@@ -538,50 +538,8 @@ impl OpenMMSimulation {
 
     /// # Safety
     ///
-    /// This function returns the positions of the system from an OpenMM state, but perhaps it is only necessary to retrieve the selection positions
-    /// TODO: investigate whether this function can be rewritten to only return desired selections
-    pub unsafe fn get_positions(&self) -> Vec<Coordinate> {
-        let state = OpenMM_Context_getState(
-            self.context,
-            OpenMM_State_DataType_OpenMM_State_Positions as i32,
-            0,
-        );
-        let pos_state = OpenMM_State_getPositions(state);
-
-        let mut positions = Vec::<Coordinate>::new();
-
-        for index in 0..self.n_particles {
-            let particle_position =
-                OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, index as i32), 1.0);
-            let position = [
-                particle_position.x,
-                particle_position.y,
-                particle_position.z,
-            ];
-            positions.push(position);
-        }
-
-        OpenMM_State_destroy(state);
-
-        positions
-    }
-
-    pub unsafe fn get_selected_positions(&self, selection: Vec<i32>) -> Vec<[f64; 3]> {
-        let state = OpenMM_Context_getState(
-            self.context,
-            OpenMM_State_DataType_OpenMM_State_Positions as i32,
-            0,
-        );
-        let positions = OpenMM_State_getPositions(state);
-
-        let selected_positions = get_selection_positions_from_state_positions(&selection, positions);
-
-        OpenMM_State_destroy(state);
-
-        selected_positions
-    }
-
-    pub unsafe fn get_selected_positions_coord_map(&self, indices: &HashSet<i32>) -> CoordMap {
+    /// A function that accepts a &HashSet<i32> denoting a selection of atoms and returns the positions of those atoms as a CoordMap
+    pub unsafe fn get_selected_positions(&self, indices: &HashSet<i32>) -> CoordMap {
         let state = OpenMM_Context_getState(
             self.context,
             OpenMM_State_DataType_OpenMM_State_Positions as i32,

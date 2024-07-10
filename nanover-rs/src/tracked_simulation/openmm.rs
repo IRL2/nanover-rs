@@ -246,7 +246,7 @@ fn add_force_map_to_frame(force_map: &CoordMap, frame: &mut FrameData) {
 fn compute_potential_energy_correction(force_map: &CoordMap, simulation: &OpenMMSimulation) -> f64 {
     unsafe {
         let selection = force_map.keys().map(|value| *value as i32).collect();
-        let positions = simulation.get_selected_positions_coord_map(&selection);
+        let positions = simulation.get_selected_positions(&selection);
         let mut energy_correction = 0.0;
 
         for particle in force_map.keys() {
