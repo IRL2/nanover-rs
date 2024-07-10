@@ -550,7 +550,10 @@ impl OpenMMSimulation {
         let mut selected_positions_map = BTreeMap::new();
 
         indices.iter().for_each(|i| {
-            selected_positions_map.insert(*i as usize, get_selected_position_from_state_positions(i, positions));
+            selected_positions_map.insert(
+                *i as usize,
+                get_selected_position_from_state_positions(i, positions),
+            );
         });
 
         OpenMM_State_destroy(state);
