@@ -259,19 +259,3 @@ fn compute_potential_energy_correction(force_map: &CoordMap, simulation: &OpenMM
         energy_correction
     }
 }
-
-// fn compute_potential_energy_correction_selected(force_map: &CoordMap, simulation: &OpenMMSimulation) -> f64 {
-//     unsafe {
-//         let positions = simulation.get_positions();
-//         let mut energy_correction = 0.0;
-//
-//         for particle in force_map.keys() {
-//             let pos = positions[*particle];
-//             let force = force_map[particle];
-//             energy_correction =
-//                 energy_correction + force[0] * pos[0] + force[1] * pos[1] + force[2] * pos[2]
-//         }
-//
-//         energy_correction
-//     }
-// }
