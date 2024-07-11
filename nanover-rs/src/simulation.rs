@@ -536,6 +536,48 @@ impl OpenMMSimulation {
         }
     }
 
+    /// # Safety
+    ///
+    /// A function that accepts a &HashSet<i32> denoting a selection of atoms and returns the positions of those atoms as a CoordMap
+    pub unsafe fn get_selected_positions(&self, indices: &HashSet<i32>) -> CoordMap {
+        let state = OpenMM_Context_getState(
+            self.context,
+            OpenMM_State_DataType_OpenMM_State_Positions as i32,
+            0,
+        );
+        let positions = OpenMM_State_getPositions(state);
+
+        let mut selected_positions_map = BTreeMap::new();
+
+        indices.iter().for_each(|i| {
+            selected_positions_map.insert(
+                *i as usize,
+                get_selected_position_from_state_positions(i, positions),
+            );
+        });
+
+        OpenMM_State_destroy(state);
+
+        selected_positions_map
+    }
+
+    pub fn get_potential_energy(&self) -> f64 {
+        let potential_energy;
+
+        unsafe {
+            let state = OpenMM_Context_getState(
+                self.context,
+                OpenMM_State_DataType_OpenMM_State_Energy as i32,
+                0,
+            );
+            potential_energy = OpenMM_State_getPotentialEnergy(state);
+
+            OpenMM_State_destroy(state);
+        }
+
+        potential_energy
+    }
+
     pub fn reset_state(&mut self) {
         unsafe {
             OpenMM_Context_setState(self.context, self.initial_state);
@@ -1023,6 +1065,15 @@ unsafe fn get_selection_positions_from_state_positions(
             [position.x, position.y, position.z]
         })
         .collect()
+}
+
+unsafe fn get_selected_position_from_state_positions(
+    selection: &i32,
+    pos_state: *const OpenMM_Vec3Array,
+) -> Coordinate {
+    let position = OpenMM_Vec3_scale(*OpenMM_Vec3Array_get(pos_state, *selection), 1.0);
+
+    [position.x, position.y, position.z]
 }
 
 fn get_masses_for_selection(selection: &[i32], masses: &[f64]) -> Vec<f64> {
