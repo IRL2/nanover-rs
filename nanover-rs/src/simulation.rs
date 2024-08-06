@@ -23,7 +23,7 @@ use openmm_sys::{
     OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create,
     OpenMM_Vec3Array_destroy, OpenMM_Vec3Array_get, OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set,
     OpenMM_Vec3_scale, OpenMM_XmlSerializer_deserializeIntegrator,
-    OpenMM_XmlSerializer_deserializeSystem,
+    OpenMM_XmlSerializer_deserializeSystem, OpenMM_Force_setForceGroup,
 };
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Reader;
@@ -496,6 +496,7 @@ impl OpenMMSimulation {
     unsafe fn add_imd_force(n_particles: i32) -> *mut OpenMM_CustomExternalForce {
         let energy_expression = CString::new("-fx * x - fy * y - fz * z").unwrap();
         let force = OpenMM_CustomExternalForce_create(energy_expression.into_raw() as *const i8);
+        OpenMM_Force_setForceGroup(force, 31);
         OpenMM_CustomExternalForce_addPerParticleParameter(
             force,
             CString::new("fx").unwrap().into_raw(),
