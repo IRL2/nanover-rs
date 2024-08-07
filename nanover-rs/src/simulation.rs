@@ -496,7 +496,7 @@ impl OpenMMSimulation {
     unsafe fn add_imd_force(n_particles: i32) -> *mut OpenMM_CustomExternalForce {
         let energy_expression = CString::new("-fx * x - fy * y - fz * z").unwrap();
         let force = OpenMM_CustomExternalForce_create(energy_expression.into_raw() as *const i8);
-        OpenMM_Force_setForceGroup(force.try_into().unwrap(), 31);
+        OpenMM_Force_setForceGroup(force as OpenMM_Force, 31);
         OpenMM_CustomExternalForce_addPerParticleParameter(
             force,
             CString::new("fx").unwrap().into_raw(),
