@@ -10,9 +10,9 @@ use openmm_sys::{
     OpenMM_CustomExternalForce_addPerParticleParameter, OpenMM_CustomExternalForce_create,
     OpenMM_CustomExternalForce_setParticleParameters,
     OpenMM_CustomExternalForce_updateParametersInContext, OpenMM_DoubleArray_create,
-    OpenMM_DoubleArray_set, OpenMM_Force, OpenMM_Integrator, OpenMM_Integrator_destroy,
-    OpenMM_Integrator_step, OpenMM_Platform_getName, OpenMM_Platform_getNumPlatforms,
-    OpenMM_Platform_loadPluginsFromDirectory, OpenMM_State,
+    OpenMM_DoubleArray_set, OpenMM_Force, OpenMM_Force_setForceGroup, OpenMM_Integrator,
+    OpenMM_Integrator_destroy, OpenMM_Integrator_step, OpenMM_Platform_getName,
+    OpenMM_Platform_getNumPlatforms, OpenMM_Platform_loadPluginsFromDirectory, OpenMM_State,
     OpenMM_State_DataType_OpenMM_State_Energy, OpenMM_State_DataType_OpenMM_State_Forces,
     OpenMM_State_DataType_OpenMM_State_ParameterDerivatives,
     OpenMM_State_DataType_OpenMM_State_Parameters, OpenMM_State_DataType_OpenMM_State_Positions,
@@ -23,7 +23,7 @@ use openmm_sys::{
     OpenMM_System_getParticleMass, OpenMM_Vec3, OpenMM_Vec3Array, OpenMM_Vec3Array_create,
     OpenMM_Vec3Array_destroy, OpenMM_Vec3Array_get, OpenMM_Vec3Array_getSize, OpenMM_Vec3Array_set,
     OpenMM_Vec3_scale, OpenMM_XmlSerializer_deserializeIntegrator,
-    OpenMM_XmlSerializer_deserializeSystem, OpenMM_Force_setForceGroup,
+    OpenMM_XmlSerializer_deserializeSystem,
 };
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Reader;
