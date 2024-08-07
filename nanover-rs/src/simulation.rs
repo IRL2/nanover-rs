@@ -10,9 +10,9 @@ use openmm_sys::{
     OpenMM_CustomExternalForce_addPerParticleParameter, OpenMM_CustomExternalForce_create,
     OpenMM_CustomExternalForce_setParticleParameters,
     OpenMM_CustomExternalForce_updateParametersInContext, OpenMM_DoubleArray_create,
-    OpenMM_DoubleArray_set, OpenMM_Force, OpenMM_Integrator, OpenMM_Integrator_destroy,
-    OpenMM_Integrator_step, OpenMM_Platform_getName, OpenMM_Platform_getNumPlatforms,
-    OpenMM_Platform_loadPluginsFromDirectory, OpenMM_State,
+    OpenMM_DoubleArray_set, OpenMM_Force, OpenMM_Force_setForceGroup, OpenMM_Integrator,
+    OpenMM_Integrator_destroy, OpenMM_Integrator_step, OpenMM_Platform_getName,
+    OpenMM_Platform_getNumPlatforms, OpenMM_Platform_loadPluginsFromDirectory, OpenMM_State,
     OpenMM_State_DataType_OpenMM_State_Energy, OpenMM_State_DataType_OpenMM_State_Forces,
     OpenMM_State_DataType_OpenMM_State_ParameterDerivatives,
     OpenMM_State_DataType_OpenMM_State_Parameters, OpenMM_State_DataType_OpenMM_State_Positions,
@@ -496,6 +496,7 @@ impl OpenMMSimulation {
     unsafe fn add_imd_force(n_particles: i32) -> *mut OpenMM_CustomExternalForce {
         let energy_expression = CString::new("-fx * x - fy * y - fz * z").unwrap();
         let force = OpenMM_CustomExternalForce_create(energy_expression.into_raw() as *const i8);
+        OpenMM_Force_setForceGroup(force as *mut OpenMM_Force, 31);
         OpenMM_CustomExternalForce_addPerParticleParameter(
             force,
             CString::new("fx").unwrap().into_raw(),
